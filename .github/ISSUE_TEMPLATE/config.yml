@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: ❓ Question / discussion
+    url: https://github.com/alexisometric/nopaynoplay/discussions
+    about: Pour les questions, retours d'expérience et idées en discussion libre.
+  - name: 🛡️ Faille de sécurité
+    url: https://github.com/alexisometric/nopaynoplay/security/advisories/new
+    about: N'ouvre pas d'issue publique — utilise une advisory privée.

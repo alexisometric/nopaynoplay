@@ -1,0 +1,57 @@
+name: 💡 Feature request
+description: Proposer une amélioration ou une nouvelle fonctionnalité
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci pour ta suggestion ! Plus tu décris le besoin, mieux on peut prioriser.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Quel problème ça résout ?
+      description: Décris le besoin / la frustration actuelle.
+      placeholder: "Aujourd'hui, je ne peux pas... ce qui m'oblige à..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Solution proposée
+      description: Comment imagines-tu la fonctionnalité ?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives envisagées
+      description: As-tu pensé à d'autres approches ?
+
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Périmètre
+      multiple: true
+      options:
+        - Côté admin (page de configuration)
+        - Côté utilisateur (UI injectée)
+        - API REST
+        - Notifications
+        - Tâche planifiée
+        - Stockage / configuration
+        - CI / Release
+        - Documentation
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Vérifications
+      options:
+        - label: J'ai cherché dans les issues / discussions existantes
+          required: true
+        - label: Je suis prêt(e) à contribuer un PR pour cette feature
+          required: false

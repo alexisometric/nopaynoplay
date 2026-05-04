@@ -1,0 +1,74 @@
+name: 🐞 Bug report
+description: Signaler un comportement inattendu
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps de remplir ce formulaire. Plus tu donnes de contexte, plus vite on peut corriger.
+
+  - type: input
+    id: jellyfin-version
+    attributes:
+      label: Version de Jellyfin
+      placeholder: "10.11.8"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Version de NoPayNoPlay
+      placeholder: "1.0.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-mode
+    attributes:
+      label: Mode d'installation
+      options:
+        - Dépôt Jellyfin (manifest.json)
+        - Installation manuelle (zip)
+        - Build local
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Que s'est-il passé ?
+      description: Décris le comportement observé vs attendu.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Étapes pour reproduire
+      placeholder: |
+        1. Aller dans...
+        2. Cliquer sur...
+        3. Voir l'erreur...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs pertinents
+      description: |
+        Coller les lignes pertinentes de `<jellyfin-data>/log/jellyfin*.log`.
+        Utilise un bloc ```text pour la lisibilité.
+      render: text
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Vérifications
+      options:
+        - label: J'ai cherché dans les issues existantes (ouvertes et fermées)
+          required: true
+        - label: J'ai bien le plugin [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) installé (si problème d'UI)
+          required: false
