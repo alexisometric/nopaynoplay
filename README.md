@@ -52,12 +52,12 @@ Une fois le repo GitHub publié et une release créée, l'installation depuis Je
 1. Ouvrir **Tableau de bord → Plugins → Dépôts → +**.
 2. Renseigner :
    - **Nom du dépôt** : `NoPayNoPlay`
-   - **URL du dépôt** : `https://raw.githubusercontent.com/<ton-user>/<ton-repo>/main/manifest.json`
+   - **URL du dépôt** : `https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/manifest.json`
 3. Aller dans **Catalogue**, retrouver « NoPayNoPlay » et cliquer sur **Installer**.
 4. Redémarrer Jellyfin.
 5. Configurer le plugin dans **Tableau de bord → Plugins → NoPayNoPlay**.
 
-> Le dépôt est public ; remplace `<ton-user>/<ton-repo>` par les valeurs réelles.
+> Le dépôt est public et hébergé sur GitHub : https://github.com/alexisometric/nopaynoplay
 
 ### Publier une nouvelle version
 
