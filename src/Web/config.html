@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <title>NoPayNoPlay</title>
+</head>
+<body>
+<div id="NoPayNoPlayConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="verticalSection">
+                <div class="sectionTitleContainer">
+                    <h2 class="sectionTitle">NoPayNoPlay — Paramètres</h2>
+                </div>
+
+                <form id="npnpSettingsForm">
+                    <div class="inputContainer">
+                        <label for="npnpPrice">Montant mensuel</label>
+                        <input is="emby-input" id="npnpPrice" type="number" step="0.01" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpCurrency">Devise (code)</label>
+                        <input is="emby-input" id="npnpCurrency" type="text" maxlength="5" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpGrace">Jours de grâce après expiration</label>
+                        <input is="emby-input" id="npnpGrace" type="number" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpTrial">Jours d'essai à la création</label>
+                        <input is="emby-input" id="npnpTrial" type="number" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpWarning">Alerte avant expiration (jours)</label>
+                        <input is="emby-input" id="npnpWarning" type="number" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpPaypal">Lien PayPal.me</label>
+                        <input is="emby-input" id="npnpPaypal" type="url" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpLydia">Lien Lydia</label>
+                        <input is="emby-input" id="npnpLydia" type="url" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpIban">RIB / IBAN</label>
+                        <textarea is="emby-textarea" id="npnpIban" rows="3"></textarea>
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpNote">Note libre (modal utilisateur)</label>
+                        <textarea is="emby-textarea" id="npnpNote" rows="2"></textarea>
+                    </div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Enregistrer</span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="verticalSection">
+                <h2 class="sectionTitle">Membres</h2>
+                <div id="npnpUsersTable"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="configurationpage?name=NoPayNoPlayJs" defer></script>
+</div>
+</body>
+</html>

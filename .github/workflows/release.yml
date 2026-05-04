@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (ex: 1.0.0.0)'
+        required: true
+      target_abi:
+        description: 'Jellyfin target ABI (ex: 10.11.8.0)'
+        required: true
+        default: '10.11.8.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "abi=${{ inputs.target_abi }}" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${GITHUB_REF#refs/tags/v}"
+            echo "version=$TAG" >> "$GITHUB_OUTPUT"
+            echo "abi=10.11.8.0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Tests
+        run: dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj -c Release
+
+      - name: Package
+        env:
+          TARGET_ABI: ${{ steps.ver.outputs.abi }}
+        run: ./scripts/build.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Compute checksum
+        id: sum
+        run: |
+          MD5=$(md5sum "artifacts/nopaynoplay_${{ steps.ver.outputs.version }}.zip" | awk '{print $1}')
+          echo "md5=$MD5" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        id: gh_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: NoPayNoPlay ${{ steps.ver.outputs.version }}
+          files: artifacts/nopaynoplay_${{ steps.ver.outputs.version }}.zip
+          generate_release_notes: true
+
+      - name: Update manifest.json
+        env:
+          TARGET_ABI: ${{ steps.ver.outputs.abi }}
+          CHANGELOG: 'Voir les notes de release ${{ steps.gh_release.outputs.url }}'
+        run: |
+          ZIP_URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.ver.outputs.version }}/nopaynoplay_${{ steps.ver.outputs.version }}.zip"
+          ./scripts/update-manifest.sh "${{ steps.ver.outputs.version }}" "$ZIP_URL" "${{ steps.sum.outputs.md5 }}"
+
+      - name: Commit manifest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish ${{ steps.ver.outputs.version }} in manifest"
+            git push origin HEAD:main
+          fi
