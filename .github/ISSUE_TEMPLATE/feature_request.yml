@@ -1,0 +1,40 @@
+name: 💡 Feature request
+description: Suggest an improvement or new feature
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea! Please describe the use case as clearly as possible so it can be evaluated.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this feature solve? Who is affected?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would you like it to work?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workaround or alternative approach you thought about.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Mockups, links, related issues, etc.
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate.
+          required: true

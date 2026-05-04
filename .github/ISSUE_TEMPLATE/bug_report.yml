@@ -1,0 +1,69 @@
+name: 🐞 Bug report
+description: Report a defect in the plugin
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much detail as possible — it really helps reproduce and fix the issue faster.
+  - type: input
+    id: jellyfin-version
+    attributes:
+      label: Jellyfin version
+      placeholder: "10.11.8"
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: NoPayNoPlay version
+      placeholder: "1.0.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install-source
+    attributes:
+      label: Installation method
+      options:
+        - Jellyfin plugin catalog (this repo)
+        - Manual install (zip)
+        - Built from source
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the bug clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Go to '...'
+        2. Click '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: "Lines from `<jellyfin-data>/log/jellyfin*.log`. Redact any personal data."
+      render: shell
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have searched existing issues and confirmed this is not a duplicate.
+          required: true

@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>NoPayNoPlay</title>
+</head>
+<body>
+<div id="NoPayNoPlayConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <div class="verticalSection">
+                <div class="sectionTitleContainer">
+                    <h2 class="sectionTitle" data-i18n="admin.settings.title">NoPayNoPlay — Settings</h2>
+                </div>
+
+                <form id="npnpSettingsForm">
+                    <div class="inputContainer">
+                        <label for="npnpPrice" data-i18n="admin.settings.price">Monthly price</label>
+                        <input is="emby-input" id="npnpPrice" type="number" step="0.01" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpCurrency" data-i18n="admin.settings.currency">Currency (code)</label>
+                        <input is="emby-input" id="npnpCurrency" type="text" maxlength="5" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpGrace" data-i18n="admin.settings.grace">Grace days after expiry</label>
+                        <input is="emby-input" id="npnpGrace" type="number" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpTrial" data-i18n="admin.settings.trial">Trial days on creation</label>
+                        <input is="emby-input" id="npnpTrial" type="number" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpWarning" data-i18n="admin.settings.warning">Warning before expiry (days)</label>
+                        <input is="emby-input" id="npnpWarning" type="number" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpPaypal" data-i18n="admin.settings.paypal">PayPal.me link</label>
+                        <input is="emby-input" id="npnpPaypal" type="url" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpLydia" data-i18n="admin.settings.lydia">Lydia link</label>
+                        <input is="emby-input" id="npnpLydia" type="url" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpIban" data-i18n="admin.settings.iban">IBAN</label>
+                        <textarea is="emby-textarea" id="npnpIban" rows="3"></textarea>
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpNote" data-i18n="admin.settings.note">Free-form note (user modal)</label>
+                        <textarea is="emby-textarea" id="npnpNote" rows="2"></textarea>
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpUiCulture" data-i18n="admin.settings.uiCulture">Plugin language override (empty = follow Jellyfin UI culture)</label>
+                        <input is="emby-input" id="npnpUiCulture" type="text" maxlength="10" placeholder="en, fr, ..." />
+                    </div>
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span data-i18n="admin.settings.save">Save</span>
+                    </button>
+                </form>
+            </div>
+
+            <div class="verticalSection">
+                <h2 class="sectionTitle" data-i18n="admin.users.title">Members</h2>
+                <div id="npnpUsersTable"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="configurationpage?name=NoPayNoPlayJs" defer></script>
+</div>
+</body>
+</html>

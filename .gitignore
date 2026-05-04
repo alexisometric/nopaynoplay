@@ -1,0 +1,74 @@
+# .NET build output
+bin/
+obj/
+artifacts/
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# IDEs / editors
+*.user
+*.suo
+*.userprefs
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test / coverage
+TestResults/
+*.trx
+coverage/
+*.coverage
+*.coveragexml
+
+# NuGet
+.nuget/
+*.nupkg
+packages/
+
+# Tooling caches
+.dotnet/
+*.binlog
+msbuild.binlog
+*.cache
+*.pidb
+BenchmarkDotNet.Artifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.tmp
+
+# Secrets / env
+.env
+.env.*
+*.log
+
+# Local Jellyfin runtime data (if used during dev)
+jellyfin-config/
+jellyfin-cache/
+
+# AI / coding assistant local artifacts
+.github/copilot-instructions.md
+.github/instructions/
+.github/prompts/
+.github/chatmodes/
+.github/hooks/
+AGENTS.md
+CLAUDE.md
+.claude/
+.cursor/
+.cursorrules
+.aider*
+.continue/
+.windsurfrules
+.rtk/
+

@@ -1,0 +1,128 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (e.g. 1.0.0.0)'
+        required: true
+      target_abi:
+        description: 'Jellyfin target ABI'
+        required: true
+        default: '10.11.8.0'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ inputs.version }}"
+            ABI="${{ inputs.target_abi }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            ABI="10.11.8.0"
+          fi
+          {
+            echo "version=$VERSION"
+            echo "abi=$ABI"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Cache NuGet
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Test
+        run: dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj -c Release
+
+      - name: Package
+        env:
+          TARGET_ABI: ${{ steps.ver.outputs.abi }}
+        run: ./scripts/build.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Compute checksums
+        id: sum
+        run: |
+          ZIP="artifacts/nopaynoplay_${{ steps.ver.outputs.version }}.zip"
+          MD5=$(md5sum "$ZIP" | awk '{print $1}')
+          SHA256=$(sha256sum "$ZIP" | awk '{print $1}')
+          SIZE=$(stat -c%s "$ZIP")
+          {
+            echo "md5=$MD5"
+            echo "sha256=$SHA256"
+            echo "size=$SIZE"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        id: gh_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: NoPayNoPlay ${{ steps.ver.outputs.version }}
+          files: artifacts/nopaynoplay_${{ steps.ver.outputs.version }}.zip
+          generate_release_notes: true
+
+      - name: Update manifest.json
+        env:
+          TARGET_ABI: ${{ steps.ver.outputs.abi }}
+          CHANGELOG: 'See release notes at ${{ steps.gh_release.outputs.url }}'
+        run: |
+          ZIP_URL="https://github.com/${{ github.repository }}/releases/download/v${{ steps.ver.outputs.version }}/nopaynoplay_${{ steps.ver.outputs.version }}.zip"
+          ./scripts/update-manifest.sh "${{ steps.ver.outputs.version }}" "$ZIP_URL" "${{ steps.sum.outputs.md5 }}"
+
+      - name: Commit manifest
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout main
+          git add manifest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: publish ${{ steps.ver.outputs.version }} in manifest [skip ci]"
+            git push origin HEAD:main
+          fi
+
+      - name: Job summary
+        run: |
+          {
+            echo "### Release ${{ steps.ver.outputs.version }}"
+            echo ""
+            echo "- Asset: \`nopaynoplay_${{ steps.ver.outputs.version }}.zip\`"
+            echo "- Size: ${{ steps.sum.outputs.size }} bytes"
+            echo "- MD5: \`${{ steps.sum.outputs.md5 }}\`"
+            echo "- SHA256: \`${{ steps.sum.outputs.sha256 }}\`"
+            echo "- URL: ${{ steps.gh_release.outputs.url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
