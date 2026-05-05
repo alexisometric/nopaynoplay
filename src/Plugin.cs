@@ -55,7 +55,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         yield return new PluginPageInfo
         {
             Name = "NoPayNoPlay",
-            EmbeddedResourcePath = $"{GetType().Namespace}.Web.config.html"
+            DisplayName = "NoPayNoPlay",
+            EmbeddedResourcePath = $"{GetType().Namespace}.Web.config.html",
+            EnableInMainMenu = true,
+            MenuSection = "server",
+            MenuIcon = "monetization_on"
         };
         yield return new PluginPageInfo
         {

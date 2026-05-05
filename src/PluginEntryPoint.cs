@@ -17,6 +17,9 @@ public class PluginEntryPoint : IHostedService
 {
     private readonly ILogger<PluginEntryPoint> _logger;
 
+    /// <summary>True once the File Transformation registration has succeeded.</summary>
+    public static bool FileTransformationRegistered { get; private set; }
+
     public PluginEntryPoint(ILogger<PluginEntryPoint> logger)
     {
         _logger = logger;
@@ -24,14 +27,33 @@ public class PluginEntryPoint : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        TryRegisterFileTransformation();
+        // Try immediately, then retry once after a short delay in case the
+        // File Transformation plugin assembly hasn't been loaded yet.
+        if (!TryRegisterFileTransformation())
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
+                    TryRegisterFileTransformation();
+                }
+                catch (TaskCanceledException) { /* shutdown */ }
+            }, cancellationToken);
+        }
+
         return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
-    private void TryRegisterFileTransformation()
+    private bool TryRegisterFileTransformation()
     {
+        if (FileTransformationRegistered)
+        {
+            return true;
+        }
+
         try
         {
             Assembly? ftAssembly = AssemblyLoadContext.All
@@ -42,7 +64,7 @@ public class PluginEntryPoint : IHostedService
             {
                 _logger.LogWarning(
                     "NoPayNoPlay: 'File Transformation' plugin not found. Install it to enable the user-facing UI (header button, modal, banner).");
-                return;
+                return false;
             }
 
             Type? pluginInterfaceType = ftAssembly.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface");
@@ -50,7 +72,7 @@ public class PluginEntryPoint : IHostedService
             if (register == null)
             {
                 _logger.LogWarning("NoPayNoPlay: could not locate PluginInterface.RegisterTransformation");
-                return;
+                return false;
             }
 
             var payload = new Newtonsoft.Json.Linq.JObject
@@ -63,11 +85,14 @@ public class PluginEntryPoint : IHostedService
             };
 
             register.Invoke(null, new object?[] { payload });
+            FileTransformationRegistered = true;
             _logger.LogInformation("NoPayNoPlay: index.html transformation registered with File Transformation");
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "NoPayNoPlay: failed to register File Transformation callback");
+            return false;
         }
     }
 }

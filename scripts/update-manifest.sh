@@ -28,7 +28,7 @@ if plugin is None:
         "overview": "Tracks a monthly subscription per Jellyfin user. Admins validate payments manually; playback is blocked when the subscription expires without deleting the account.",
         "owner": "alexisometric",
         "category": "General",
-        "imageUrl": "",
+        "imageUrl": "https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/images/logo.png",
         "versions": []
     }
     manifest.append(plugin)

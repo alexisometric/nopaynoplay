@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
+using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.NoPayNoPlay.Configuration;
 using Jellyfin.Plugin.NoPayNoPlay.Localization;
 using Jellyfin.Plugin.NoPayNoPlay.Services;
@@ -71,6 +73,9 @@ public class MeDto
     /// <summary>Translation strings for the resolved culture.</summary>
     public IReadOnlyDictionary<string, string> Strings { get; set; } =
         new Dictionary<string, string>();
+
+    /// <summary>Personal payment history (most recent first).</summary>
+    public List<TransactionEntry> Transactions { get; set; } = new();
 }
 
 /// <summary>NoPayNoPlay public REST API.</summary>
@@ -144,21 +149,77 @@ public class NoPayNoPlayController : ControllerBase
         });
     }
 
-    /// <summary>Lists every tracked subscription (admin).</summary>
+    /// <summary>Returns plugin runtime status (admin).</summary>
+    [HttpGet("Status")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetStatus()
+    {
+        return Ok(new
+        {
+            fileTransformationRegistered = PluginEntryPoint.FileTransformationRegistered,
+            trackedUsers = Cfg.Subscriptions.Count
+        });
+    }
+
+    /// <summary>Lists every tracked subscription (admin). Administrator accounts are hidden.</summary>
     [HttpGet("Users")]
     [Authorize(Policy = Policies.RequiresElevation)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     public ActionResult<IEnumerable<UserSubscriptionDto>> GetUsers()
     {
-        // Make sure every Jellyfin user is represented.
+        // Make sure every non-admin Jellyfin user is represented.
+        var adminIds = new HashSet<Guid>();
         foreach (var u in _userManager.Users)
         {
+            if (u.HasPermission(PermissionKind.IsAdministrator))
+            {
+                adminIds.Add(u.Id);
+                continue;
+            }
+
             _service.EnsureUserTracked(u.Id);
         }
 
         string culture = ResolveCulture();
-        var dto = Cfg.Subscriptions.Select(s => Project(s, culture)).ToList();
+        var dto = Cfg.Subscriptions
+            .Where(s => !adminIds.Contains(s.UserId))
+            .Select(s => Project(s, culture))
+            .ToList();
         return Ok(dto);
+    }
+
+    /// <summary>Aggregated activity log across all members (admin).</summary>
+    [HttpGet("Activity")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetActivity()
+    {
+        var adminIds = new HashSet<Guid>();
+        foreach (var u in _userManager.Users)
+        {
+            if (u.HasPermission(PermissionKind.IsAdministrator))
+            {
+                adminIds.Add(u.Id);
+            }
+        }
+
+        var rows = Cfg.Subscriptions
+            .Where(s => !adminIds.Contains(s.UserId))
+            .SelectMany(s => s.Transactions.Select(t => new
+            {
+                UserId = s.UserId,
+                Username = _userManager.GetUserById(s.UserId)?.Username ?? "(deleted)",
+                t.Date,
+                t.Amount,
+                t.MonthsAdded,
+                t.Method,
+                t.AdminNote
+            }))
+            .OrderByDescending(t => t.Date)
+            .ToList();
+
+        return Ok(rows);
     }
 
     /// <summary>Records a payment and extends the expiry date.</summary>
@@ -329,6 +390,13 @@ public class NoPayNoPlayController : ControllerBase
         SubscriptionState state = _service.EvaluateState(sub);
         string culture = ResolveCulture();
 
+        // Administrators see no payment UI: they are exempt by default.
+        var user = _userManager.GetUserById(userId.Value);
+        if (user is not null && user.HasPermission(PermissionKind.IsAdministrator))
+        {
+            state = SubscriptionState.Exempt;
+        }
+
         return Ok(new MeDto
         {
             ExpiryDate = sub.ExpiryDate,
@@ -343,7 +411,10 @@ public class NoPayNoPlayController : ControllerBase
             WarningDaysBefore = Cfg.WarningDaysBefore,
             GraceDays = Cfg.GraceDays,
             Lang = culture,
-            Strings = _localizer.GetBundle(culture)
+            Strings = _localizer.GetBundle(culture),
+            Transactions = sub.Transactions
+                .OrderByDescending(t => t.Date)
+                .ToList()
         });
     }
 

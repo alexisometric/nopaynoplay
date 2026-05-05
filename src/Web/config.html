@@ -5,67 +5,214 @@
     <title>NoPayNoPlay</title>
 </head>
 <body>
-<div id="NoPayNoPlayConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox">
+<div id="NoPayNoPlayConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
+
+    <style>
+        .npnp-tabs { display:flex; gap:4px; border-bottom:1px solid rgba(255,255,255,.15); margin-bottom:18px; flex-wrap:wrap; }
+        .npnp-tab-btn { background:transparent; border:none; color:inherit; padding:10px 18px; cursor:pointer; font-size:14px; opacity:.7; border-bottom:2px solid transparent; }
+        .npnp-tab-btn:hover { opacity:1; }
+        .npnp-tab-btn.active { opacity:1; border-bottom-color:#00a4dc; font-weight:600; }
+        .npnp-tab-panel { display:none; }
+        .npnp-tab-panel.active { display:block; }
+
+        .npnp-toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
+        .npnp-toolbar .inputContainer { margin:0; flex:1 1 200px; }
+
+        .npnp-table-wrap { overflow-x:auto; }
+        .npnp-table { width:100%; border-collapse:collapse; font-size:14px; }
+        .npnp-table th, .npnp-table td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; vertical-align:middle; }
+        .npnp-table th { font-weight:600; opacity:.8; cursor:pointer; user-select:none; white-space:nowrap; }
+        .npnp-table th .npnp-sort-arrow { opacity:.5; font-size:10px; margin-left:4px; }
+        .npnp-table tbody tr:hover { background:rgba(255,255,255,.04); }
+
+        .npnp-state-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; color:#fff; font-weight:600; }
+        .npnp-actions { display:flex; gap:6px; flex-wrap:wrap; }
+        .npnp-actions button { padding:6px 8px; font-size:12px; min-width:0; }
+        .npnp-actions .material-icons { font-size:18px; }
+        .npnp-danger { background:rgba(231,76,60,.15); }
+        .npnp-danger:hover { background:rgba(231,76,60,.35); }
+
+        .npnp-summary { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+        .npnp-stat { background:rgba(255,255,255,.04); border:2px solid transparent; border-radius:6px;
+            padding:10px 14px; cursor:pointer; color:inherit; display:flex; flex-direction:column;
+            align-items:flex-start; min-width:110px; transition:border-color .15s, background .15s; }
+        .npnp-stat:hover { background:rgba(255,255,255,.08); }
+        .npnp-stat.active { border-color:var(--c); background:rgba(255,255,255,.08); }
+        .npnp-stat-num { font-size:22px; font-weight:700; color:var(--c); line-height:1; }
+        .npnp-stat-lbl { font-size:11px; opacity:.75; text-transform:uppercase; letter-spacing:.5px; margin-top:4px; }
+
+        .npnp-status { padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:13px;
+            display:flex; gap:10px; align-items:center; }
+        .npnp-status.ok { background:rgba(46,204,113,.12); color:#2ecc71; }
+        .npnp-status.warn { background:rgba(243,156,18,.12); color:#f39c12; }
+        .npnp-status .material-icons { font-size:18px; }
+
+        .npnp-empty { padding:24px; text-align:center; opacity:.6; font-style:italic; }
+
+        .npnp-section { background:rgba(255,255,255,.03); border-radius:6px; padding:18px; margin-bottom:18px; }
+        .npnp-section h3 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.5px; opacity:.8; }
+        .npnp-grid-2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
+
+        .npnp-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:10000; display:flex; align-items:center; justify-content:center; }
+        .npnp-modal { background:#202020; color:#fff; padding:24px; border-radius:8px; min-width:340px; max-width:90vw; max-height:90vh; overflow:auto; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+        .npnp-modal h2 { margin:0 0 14px; }
+        .npnp-modal .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:18px; }
+        .npnp-modal .close { float:right; cursor:pointer; background:none; border:none; color:#fff; font-size:20px; line-height:1; }
+
+        .npnp-flash { padding:8px 14px; border-radius:4px; background:#2ecc71; color:#fff; font-weight:600; margin-bottom:12px; display:none; }
+        .npnp-flash.error { background:#e74c3c; }
+        .npnp-flash.show { display:block; }
+    </style>
+
     <div data-role="content">
         <div class="content-primary">
-            <div class="verticalSection">
-                <div class="sectionTitleContainer">
-                    <h2 class="sectionTitle" data-i18n="admin.settings.title">NoPayNoPlay — Settings</h2>
-                </div>
 
+            <h1 style="margin:0 0 8px;">NoPayNoPlay</h1>
+            <div id="npnpStatus" class="npnp-status warn" style="display:none;"></div>
+            <div id="npnpFlash" class="npnp-flash" role="status" aria-live="polite"></div>
+
+            <div class="npnp-tabs" role="tablist">
+                <button type="button" class="npnp-tab-btn active" data-tab="settings" data-i18n="admin.tabs.settings">Settings</button>
+                <button type="button" class="npnp-tab-btn" data-tab="members" data-i18n="admin.tabs.members">Members</button>
+                <button type="button" class="npnp-tab-btn" data-tab="activity" data-i18n="admin.tabs.activity">Activity</button>
+                <button type="button" class="npnp-tab-btn" data-tab="test" data-i18n="admin.tabs.test">Test mode</button>
+            </div>
+
+            <!-- SETTINGS -->
+            <section id="npnpTab-settings" class="npnp-tab-panel active">
                 <form id="npnpSettingsForm">
-                    <div class="inputContainer">
-                        <label for="npnpPrice" data-i18n="admin.settings.price">Monthly price</label>
-                        <input is="emby-input" id="npnpPrice" type="number" step="0.01" min="0" />
+                    <div class="npnp-section">
+                        <h3 data-i18n="admin.settings.section.subscription">Subscription</h3>
+                        <div class="npnp-grid-2">
+                            <div class="inputContainer">
+                                <label for="npnpPrice" data-i18n="admin.settings.price">Monthly price</label>
+                                <input is="emby-input" id="npnpPrice" type="number" step="0.01" min="0" />
+                            </div>
+                            <div class="inputContainer">
+                                <label for="npnpCurrency" data-i18n="admin.settings.currency">Currency code</label>
+                                <input is="emby-input" id="npnpCurrency" type="text" maxlength="5" />
+                            </div>
+                            <div class="inputContainer">
+                                <label for="npnpTrial" data-i18n="admin.settings.trial">Trial days on first sign-in</label>
+                                <input is="emby-input" id="npnpTrial" type="number" min="0" />
+                            </div>
+                            <div class="inputContainer">
+                                <label for="npnpGrace" data-i18n="admin.settings.grace">Grace days after expiry</label>
+                                <input is="emby-input" id="npnpGrace" type="number" min="0" />
+                            </div>
+                            <div class="inputContainer">
+                                <label for="npnpWarning" data-i18n="admin.settings.warning">Warn user this many days before expiry</label>
+                                <input is="emby-input" id="npnpWarning" type="number" min="0" />
+                            </div>
+                        </div>
                     </div>
-                    <div class="inputContainer">
-                        <label for="npnpCurrency" data-i18n="admin.settings.currency">Currency (code)</label>
-                        <input is="emby-input" id="npnpCurrency" type="text" maxlength="5" />
+
+                    <div class="npnp-section">
+                        <h3 data-i18n="admin.settings.section.payment">Payment instructions</h3>
+                        <div class="npnp-grid-2">
+                            <div class="inputContainer">
+                                <label for="npnpPaypal" data-i18n="admin.settings.paypal">PayPal.me link</label>
+                                <input is="emby-input" id="npnpPaypal" type="url" />
+                            </div>
+                            <div class="inputContainer">
+                                <label for="npnpLydia" data-i18n="admin.settings.lydia">Lydia link</label>
+                                <input is="emby-input" id="npnpLydia" type="url" />
+                            </div>
+                        </div>
+                        <div class="inputContainer">
+                            <label for="npnpIban" data-i18n="admin.settings.iban">IBAN / bank details</label>
+                            <textarea is="emby-textarea" id="npnpIban" rows="3"></textarea>
+                        </div>
+                        <div class="inputContainer">
+                            <label for="npnpNote" data-i18n="admin.settings.note">Custom note (shown in user modal)</label>
+                            <textarea is="emby-textarea" id="npnpNote" rows="2"></textarea>
+                        </div>
                     </div>
-                    <div class="inputContainer">
-                        <label for="npnpGrace" data-i18n="admin.settings.grace">Grace days after expiry</label>
-                        <input is="emby-input" id="npnpGrace" type="number" min="0" />
+
+                    <div class="npnp-section">
+                        <h3 data-i18n="admin.settings.section.appearance">Appearance</h3>
+                        <div class="inputContainer">
+                            <label for="npnpUiCulture" data-i18n="admin.settings.uiCulture">Plugin language</label>
+                            <select is="emby-select" id="npnpUiCulture"></select>
+                        </div>
                     </div>
-                    <div class="inputContainer">
-                        <label for="npnpTrial" data-i18n="admin.settings.trial">Trial days on creation</label>
-                        <input is="emby-input" id="npnpTrial" type="number" min="0" />
-                    </div>
-                    <div class="inputContainer">
-                        <label for="npnpWarning" data-i18n="admin.settings.warning">Warning before expiry (days)</label>
-                        <input is="emby-input" id="npnpWarning" type="number" min="0" />
-                    </div>
-                    <div class="inputContainer">
-                        <label for="npnpPaypal" data-i18n="admin.settings.paypal">PayPal.me link</label>
-                        <input is="emby-input" id="npnpPaypal" type="url" />
-                    </div>
-                    <div class="inputContainer">
-                        <label for="npnpLydia" data-i18n="admin.settings.lydia">Lydia link</label>
-                        <input is="emby-input" id="npnpLydia" type="url" />
-                    </div>
-                    <div class="inputContainer">
-                        <label for="npnpIban" data-i18n="admin.settings.iban">IBAN</label>
-                        <textarea is="emby-textarea" id="npnpIban" rows="3"></textarea>
-                    </div>
-                    <div class="inputContainer">
-                        <label for="npnpNote" data-i18n="admin.settings.note">Free-form note (user modal)</label>
-                        <textarea is="emby-textarea" id="npnpNote" rows="2"></textarea>
-                    </div>
-                    <div class="inputContainer">
-                        <label for="npnpUiCulture" data-i18n="admin.settings.uiCulture">Plugin language override (empty = follow Jellyfin UI culture)</label>
-                        <input is="emby-input" id="npnpUiCulture" type="text" maxlength="10" placeholder="en, fr, ..." />
-                    </div>
+
                     <button is="emby-button" type="submit" class="raised button-submit block">
                         <span data-i18n="admin.settings.save">Save</span>
                     </button>
                 </form>
-            </div>
+            </section>
 
-            <div class="verticalSection">
-                <h2 class="sectionTitle" data-i18n="admin.users.title">Members</h2>
-                <div id="npnpUsersTable"></div>
-            </div>
+            <!-- MEMBERS -->
+            <section id="npnpTab-members" class="npnp-tab-panel">
+                <div id="npnpUsersSummary" class="npnp-summary"></div>
+                <div class="npnp-toolbar">
+                    <div class="inputContainer">
+                        <label for="npnpUserSearch" data-i18n="admin.users.search">Search a member…</label>
+                        <input is="emby-input" id="npnpUserSearch" type="search" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpStateFilter" data-i18n="admin.users.filter.state">Filter by state</label>
+                        <select is="emby-select" id="npnpStateFilter">
+                            <option value="" data-i18n="admin.users.filter.all">All states</option>
+                            <option value="Ok" data-i18n="state.ok">Up to date</option>
+                            <option value="WarningSoon" data-i18n="state.warningSoon">Expiring soon</option>
+                            <option value="InGrace" data-i18n="state.inGrace">Grace period</option>
+                            <option value="Blocked" data-i18n="state.blocked">Blocked</option>
+                            <option value="Exempt" data-i18n="state.exempt">Free access</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="npnpUsersTable" class="npnp-table-wrap"></div>
+            </section>
+
+            <!-- ACTIVITY -->
+            <section id="npnpTab-activity" class="npnp-tab-panel">
+                <div class="npnp-toolbar">
+                    <div class="inputContainer">
+                        <label for="npnpActivitySearch" data-i18n="admin.activity.search">Search…</label>
+                        <input is="emby-input" id="npnpActivitySearch" type="search" />
+                    </div>
+                </div>
+                <div id="npnpActivityTable" class="npnp-table-wrap"></div>
+            </section>
+
+            <!-- TEST MODE -->
+            <section id="npnpTab-test" class="npnp-tab-panel">
+                <div class="npnp-section">
+                    <h3 data-i18n="admin.test.title">Banner test mode</h3>
+                    <p data-i18n="admin.test.help" style="opacity:.8;">
+                        Open Jellyfin in another tab with the URL parameter ?npnpTest=STATE to preview banners without changing real data.
+                    </p>
+                    <div class="npnp-grid-2">
+                        <div class="inputContainer">
+                            <label for="npnpTestState" data-i18n="admin.test.state">Force state</label>
+                            <select is="emby-select" id="npnpTestState">
+                                <option value="ok" data-i18n="state.ok">Up to date</option>
+                                <option value="warningSoon" data-i18n="state.warningSoon" selected>Expiring soon</option>
+                                <option value="inGrace" data-i18n="state.inGrace">Grace period</option>
+                                <option value="blocked" data-i18n="state.blocked">Blocked</option>
+                                <option value="exempt" data-i18n="state.exempt">Free access</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="npnp-toolbar" style="margin-top:12px;">
+                        <button is="emby-button" type="button" id="npnpTestPreview" class="raised">
+                            <span data-i18n="admin.test.preview">Preview in a new tab</span>
+                        </button>
+                        <button is="emby-button" type="button" id="npnpTestCopy">
+                            <span data-i18n="admin.test.copy">Copy URL</span>
+                        </button>
+                    </div>
+                    <div class="inputContainer" style="margin-top:12px;">
+                        <input is="emby-input" id="npnpTestUrl" type="text" readonly />
+                    </div>
+                </div>
+            </section>
         </div>
     </div>
+
+    <div id="npnpModalRoot"></div>
 
     <script src="configurationpage?name=NoPayNoPlayJs" defer></script>
 </div>

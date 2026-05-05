@@ -6,7 +6,7 @@
     "overview": "Tracks a monthly subscription per Jellyfin user. Admins validate payments manually; playback is blocked when the subscription expires without deleting the account. Built-in i18n with English and French; the UI follows the Jellyfin UI culture.",
     "owner": "alexisometric",
     "category": "General",
-    "imageUrl": "",
+    "imageUrl": "https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/images/logo.png",
     "versions": [
       {
         "version": "1.0.0.0",

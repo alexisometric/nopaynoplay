@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="images/banner.png" alt="NoPayNoPlay — No pay, no play" width="100%" />
+
 # 💳 NoPayNoPlay
 
 **Jellyfin plugin for tracking manually-validated monthly subscriptions.**
