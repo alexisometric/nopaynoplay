@@ -23,6 +23,16 @@
         .npnp-table th, .npnp-table td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; vertical-align:middle; }
         .npnp-table th { font-weight:600; opacity:.8; cursor:pointer; user-select:none; white-space:nowrap; }
         .npnp-table th .npnp-sort-arrow { opacity:.5; font-size:10px; margin-left:4px; }
+        .npnp-stats-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+        .npnp-stats-row .npnp-stat-card { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+            border-radius:6px; padding:12px 16px; min-width:160px; }
+        .npnp-stats-row .npnp-stat-card .npnp-stat-num { font-size:1.4em; font-weight:600; display:block; }
+        .npnp-stats-row .npnp-stat-card .npnp-stat-lbl { opacity:.7; font-size:.85em; }
+        .npnp-bulk-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 12px;
+            background:rgba(0,164,220,.12); border:1px solid #00a4dc; border-radius:6px; margin-bottom:8px; }
+        .npnp-bulk-bar[hidden] { display:none; }
+        .npnp-bulk-count { font-weight:600; margin-right:8px; }
+        .npnp-table .npnp-row-check { width:32px; }
         .npnp-table tbody tr:hover { background:rgba(255,255,255,.04); }
 
         .npnp-state-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; color:#fff; font-weight:600; }
@@ -57,7 +67,8 @@
         .npnp-section .inputContainer > input,
         .npnp-section .inputContainer > textarea,
         .npnp-section .inputContainer > select { display:block; width:100%; box-sizing:border-box; }
-        .npnp-section .inputContainer > textarea { resize:vertical; min-height:64px; font-family:inherit; }
+        /* Match Jellyfin's emby-input visual treatment for textareas (background, border, focus). */
+        .npnp-section .inputContainer > textarea { resize:vertical; min-height:64px; font-family:inherit; line-height:1.4; padding:.5em .6em; }
         .npnp-grid-2 { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
         .npnp-grid-2 .inputContainer { margin-bottom:0; }
 
@@ -130,11 +141,11 @@
                         </div>
                         <div class="inputContainer">
                             <label for="npnpIban" data-i18n="admin.settings.iban">IBAN / bank details</label>
-                            <textarea is="emby-textarea" id="npnpIban" rows="3"></textarea>
+                            <textarea is="emby-textarea" class="emby-input" id="npnpIban" rows="3"></textarea>
                         </div>
                         <div class="inputContainer">
                             <label for="npnpNote" data-i18n="admin.settings.note">Custom note (shown in user modal)</label>
-                            <textarea is="emby-textarea" id="npnpNote" rows="2"></textarea>
+                            <textarea is="emby-textarea" class="emby-input" id="npnpNote" rows="2"></textarea>
                         </div>
                     </div>
 
@@ -154,6 +165,7 @@
 
             <!-- MEMBERS -->
             <section id="npnpTab-members" class="npnp-tab-panel">
+                <div id="npnpStats" class="npnp-stats-row"></div>
                 <div id="npnpUsersSummary" class="npnp-summary"></div>
                 <div class="npnp-toolbar">
                     <div class="inputContainer">
@@ -171,6 +183,36 @@
                             <option value="Exempt" data-i18n="state.exempt">Free access</option>
                         </select>
                     </div>
+                    <div class="inputContainer">
+                        <label for="npnpMethodFilter" data-i18n="admin.users.filter.method">Filter by payment method</label>
+                        <select is="emby-select" id="npnpMethodFilter">
+                            <option value="" data-i18n="admin.users.filter.allMethods">All methods</option>
+                        </select>
+                    </div>
+                    <div class="inputContainer" style="align-self:flex-end;">
+                        <button is="emby-button" type="button" id="npnpExportUsers">
+                            <span class="material-icons" aria-hidden="true">download</span>
+                            <span data-i18n="admin.users.export">Export CSV</span>
+                        </button>
+                    </div>
+                </div>
+                <div id="npnpBulkBar" class="npnp-bulk-bar" hidden>
+                    <span class="npnp-bulk-count"></span>
+                    <button is="emby-button" type="button" id="npnpBulkPay" class="raised">
+                        <span class="material-icons" aria-hidden="true">payments</span>
+                        <span data-i18n="admin.users.bulk.pay">Record payment</span>
+                    </button>
+                    <button is="emby-button" type="button" id="npnpBulkExempt">
+                        <span class="material-icons" aria-hidden="true">lock_open</span>
+                        <span data-i18n="admin.users.bulk.exempt">Toggle exemption</span>
+                    </button>
+                    <button is="emby-button" type="button" id="npnpBulkReset" class="npnp-danger">
+                        <span class="material-icons" aria-hidden="true">restart_alt</span>
+                        <span data-i18n="admin.users.bulk.reset">Reset</span>
+                    </button>
+                    <button is="emby-button" type="button" id="npnpBulkClear">
+                        <span data-i18n="admin.users.bulk.clear">Clear selection</span>
+                    </button>
                 </div>
                 <div id="npnpUsersTable" class="npnp-table-wrap"></div>
             </section>
@@ -181,6 +223,20 @@
                     <div class="inputContainer">
                         <label for="npnpActivitySearch" data-i18n="admin.activity.search">Search…</label>
                         <input is="emby-input" id="npnpActivitySearch" type="search" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpActivityFrom" data-i18n="admin.activity.from">From</label>
+                        <input is="emby-input" id="npnpActivityFrom" type="date" />
+                    </div>
+                    <div class="inputContainer">
+                        <label for="npnpActivityTo" data-i18n="admin.activity.to">To</label>
+                        <input is="emby-input" id="npnpActivityTo" type="date" />
+                    </div>
+                    <div class="inputContainer" style="align-self:flex-end;">
+                        <button is="emby-button" type="button" id="npnpExportActivity">
+                            <span class="material-icons" aria-hidden="true">download</span>
+                            <span data-i18n="admin.activity.export">Export CSV</span>
+                        </button>
                     </div>
                 </div>
                 <div id="npnpActivityTable" class="npnp-table-wrap"></div>

@@ -11,7 +11,12 @@
         sortDir: 1,
         userFilter: '',
         stateFilter: '',
+        methodFilter: '',
         activityFilter: '',
+        activityFrom: '',
+        activityTo: '',
+        selected: {},
+        stats: null,
         diagnostics: null
     };
 
@@ -147,8 +152,42 @@
             type: 'GET', url: api().getUrl('NoPayNoPlay/Users'), dataType: 'json'
         }).then(function (users) {
             state.users = users || [];
+            // Drop selection entries pointing to users that no longer exist.
+            var keep = {};
+            state.users.forEach(function (u) { if (state.selected[u.UserId]) keep[u.UserId] = true; });
+            state.selected = keep;
             renderUsers(page);
+            return loadStats(page);
         });
+    }
+
+    function loadStats(page) {
+        return api().ajax({
+            type: 'GET', url: api().getUrl('NoPayNoPlay/Stats'), dataType: 'json'
+        }).then(function (s) {
+            state.stats = s;
+            renderStats(page);
+        }).catch(function () { /* best-effort */ });
+    }
+
+    function renderStats(page) {
+        var el = page.querySelector('#npnpStats');
+        if (!el || !state.stats) return;
+        var s = state.stats;
+        var c = s.currency || 'EUR';
+        var cards = [
+            ['admin.stats.thisMonth', 'Revenue this month', s.revenueThisMonth],
+            ['admin.stats.last12Months', 'Last 12 months', s.revenueLast12Months],
+            ['admin.stats.allTime', 'All time', s.revenueAllTime],
+            ['admin.stats.transactions', 'Transactions', s.transactionCount, true]
+        ];
+        el.innerHTML = cards.map(function (card) {
+            var val = card[3] ? String(card[2] || 0) : (Number(card[2] || 0).toFixed(2) + ' ' + escapeHtml(c));
+            return '<div class="npnp-stat-card">'
+                + '<span class="npnp-stat-num">' + escapeHtml(val) + '</span>'
+                + '<span class="npnp-stat-lbl">' + escapeHtml(t(card[0], card[1])) + '</span>'
+                + '</div>';
+        }).join('');
     }
 
     function loadActivity(page) {
@@ -267,18 +306,66 @@
                 var tx = (u.Transactions || [])[0];
                 return tx ? new Date(tx.Date).getTime() : 0;
             }
+            case 'LastMethod': {
+                var txm = (u.Transactions || [])[0];
+                return txm ? (txm.Method || '').toLowerCase() : '';
+            }
             default: return '';
+        }
+    }
+
+    function lastMethodOf(u) {
+        var tx = (u.Transactions || [])[0];
+        return tx ? (tx.Method || '') : '';
+    }
+
+    // Rebuild the "filter by method" dropdown from the methods actually present
+    // in the latest transaction of each user. Preserves the current selection
+    // when possible.
+    function refreshMethodFilter(page) {
+        var sel = page.querySelector('#npnpMethodFilter');
+        if (!sel) return;
+        var seen = {};
+        state.users.forEach(function (u) {
+            var m = lastMethodOf(u);
+            if (m) seen[m] = true;
+        });
+        var methods = Object.keys(seen).sort(function (a, b) {
+            return a.toLowerCase().localeCompare(b.toLowerCase());
+        });
+        var current = state.methodFilter;
+        var html = '<option value="">' + escapeHtml(t('admin.users.filter.allMethods', 'All methods')) + '</option>';
+        html += '<option value="__none__">' + escapeHtml(t('admin.users.filter.noMethod', 'No payment yet')) + '</option>';
+        methods.forEach(function (m) {
+            html += '<option value="' + escapeHtml(m) + '">' + escapeHtml(m) + '</option>';
+        });
+        sel.innerHTML = html;
+        // Restore selection if still valid; otherwise fall back to "all".
+        if (current === '__none__' || current === '' || methods.indexOf(current) >= 0) {
+            sel.value = current;
+        } else {
+            sel.value = '';
+            state.methodFilter = '';
         }
     }
 
     function filterUsers() {
         var q = state.userFilter.toLowerCase();
         var sf = state.stateFilter;
+        var mf = state.methodFilter;
         return state.users.filter(function (u) {
             if (q && (u.Username || '').toLowerCase().indexOf(q) < 0) return false;
             if (sf) {
                 var s = u.IsExempt ? 'Exempt' : u.State;
                 if (s !== sf) return false;
+            }
+            if (mf) {
+                var m = lastMethodOf(u);
+                if (mf === '__none__') {
+                    if (m) return false;
+                } else if (m !== mf) {
+                    return false;
+                }
             }
             return true;
         }).sort(function (a, b) {
@@ -326,6 +413,7 @@
 
     function renderUsers(page) {
         renderSummary(page);
+        refreshMethodFilter(page);
         var rows = filterUsers();
         var container = page.querySelector('#npnpUsersTable');
 
@@ -339,11 +427,13 @@
 
         var html = '<table class="npnp-table">'
             + '<thead><tr>'
+            + '<th class="npnp-row-check"><input type="checkbox" id="npnpSelectAll" /></th>'
             + '<th data-sort="Username">' + escapeHtml(t('admin.users.col.user', 'User')) + arrowFor('Username') + '</th>'
             + '<th data-sort="State">' + escapeHtml(t('admin.users.col.state', 'State')) + arrowFor('State') + '</th>'
             + '<th data-sort="ExpiryDate">' + escapeHtml(t('admin.users.col.expiry', 'Expiry')) + arrowFor('ExpiryDate') + '</th>'
             + '<th data-sort="DaysLeft">' + escapeHtml(t('admin.users.col.daysLeft', 'Days left')) + arrowFor('DaysLeft') + '</th>'
             + '<th data-sort="LastPayment">' + escapeHtml(t('admin.users.col.lastPayment', 'Last payment')) + arrowFor('LastPayment') + '</th>'
+            + '<th data-sort="LastMethod">' + escapeHtml(t('admin.users.col.lastMethod', 'Last method')) + arrowFor('LastMethod') + '</th>'
             + '<th>' + escapeHtml(t('admin.users.col.actions', 'Actions')) + '</th>'
             + '</tr></thead><tbody>';
 
@@ -352,16 +442,20 @@
             var label = stateLabel(u.State, u.IsExempt);
             var lastTx = (u.Transactions || [])[0];
             var lastLabel = lastTx ? formatDate(lastTx.Date) : t('admin.users.never', 'Never');
+            var lastMethod = lastTx && lastTx.Method ? lastTx.Method : '—';
             var actExempt = u.IsExempt
                 ? t('admin.users.action.unexempt', 'Remove exemption')
                 : t('admin.users.action.exempt', 'Mark exempt');
+            var checked = state.selected[u.UserId] ? ' checked' : '';
 
             html += '<tr data-userid="' + escapeHtml(u.UserId) + '">'
+                + '<td class="npnp-row-check"><input type="checkbox" class="npnp-rowcheck"' + checked + ' /></td>'
                 + '<td>' + escapeHtml(u.Username) + '</td>'
                 + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span></td>'
                 + '<td>' + escapeHtml(formatDate(u.ExpiryDate)) + '</td>'
                 + '<td>' + escapeHtml(String(u.DaysLeft)) + '</td>'
                 + '<td>' + escapeHtml(lastLabel) + '</td>'
+                + '<td>' + escapeHtml(lastMethod) + '</td>'
                 + '<td><div class="npnp-actions">'
                 + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span></button>'
                 + '<button is="emby-button" type="button" class="npnp-history" title="' + escapeHtml(t('admin.users.action.history', 'History')) + '"><span class="material-icons" aria-hidden="true">history</span></button>'
@@ -373,6 +467,32 @@
 
         html += '</tbody></table>';
         container.innerHTML = html;
+        renderBulkBar(page);
+
+        var selectAll = container.querySelector('#npnpSelectAll');
+        if (selectAll) {
+            var visibleIds = rows.map(function (r) { return r.UserId; });
+            var allChecked = visibleIds.length > 0 && visibleIds.every(function (id) { return state.selected[id]; });
+            selectAll.checked = allChecked;
+            selectAll.addEventListener('change', function () {
+                visibleIds.forEach(function (id) {
+                    if (selectAll.checked) state.selected[id] = true;
+                    else delete state.selected[id];
+                });
+                renderUsers(page);
+            });
+        }
+        container.querySelectorAll('tr[data-userid]').forEach(function (tr) {
+            var userId = tr.getAttribute('data-userid');
+            var rc = tr.querySelector('.npnp-rowcheck');
+            if (rc) rc.addEventListener('change', function () {
+                if (rc.checked) state.selected[userId] = true;
+                else delete state.selected[userId];
+                renderBulkBar(page);
+                var sa = page.querySelector('#npnpSelectAll');
+                if (sa) sa.checked = rows.every(function (r) { return state.selected[r.UserId]; });
+            });
+        });
 
         container.querySelectorAll('th[data-sort]').forEach(function (th) {
             th.addEventListener('click', function () {
@@ -416,7 +536,12 @@
 
     function renderActivity(page) {
         var q = state.activityFilter.toLowerCase();
+        var fromTs = state.activityFrom ? new Date(state.activityFrom + 'T00:00:00').getTime() : null;
+        var toTs = state.activityTo ? new Date(state.activityTo + 'T23:59:59').getTime() : null;
         var rows = state.activity.filter(function (r) {
+            var d = new Date(r.Date).getTime();
+            if (fromTs !== null && d < fromTs) return false;
+            if (toTs !== null && d > toTs) return false;
             if (!q) return true;
             return (r.Username || '').toLowerCase().indexOf(q) >= 0
                 || (r.Method || '').toLowerCase().indexOf(q) >= 0
@@ -496,12 +621,17 @@
             body = '<div class="npnp-empty">' + escapeHtml(t('admin.users.history.empty', 'No payment recorded yet.')) + '</div>';
         } else {
             var rows = tx.map(function (e) {
-                return '<tr>'
+                var id = e.Id || '';
+                return '<tr data-tx="' + escapeHtml(id) + '">'
                     + '<td>' + escapeHtml(formatDateTime(e.Date)) + '</td>'
                     + '<td>' + escapeHtml(Number(e.Amount || 0).toFixed(2)) + '</td>'
                     + '<td>' + escapeHtml(e.Method || '') + '</td>'
                     + '<td>' + escapeHtml(String(e.MonthsAdded || 0)) + '</td>'
                     + '<td>' + escapeHtml(e.AdminNote || '') + '</td>'
+                    + '<td><div class="npnp-actions">'
+                    + (id ? '<button is="emby-button" type="button" class="npnp-tx-edit" title="' + escapeHtml(t('admin.users.tx.edit', 'Edit')) + '"><span class="material-icons" aria-hidden="true">edit</span></button>' : '')
+                    + (id ? '<button is="emby-button" type="button" class="npnp-tx-del npnp-danger" title="' + escapeHtml(t('admin.users.tx.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button>' : '')
+                    + '</div></td>'
                     + '</tr>';
             }).join('');
             body = '<table class="npnp-table">'
@@ -511,11 +641,88 @@
                 + '<th>' + escapeHtml(t('admin.activity.col.method', 'Method')) + '</th>'
                 + '<th>' + escapeHtml(t('admin.activity.col.months', 'Months')) + '</th>'
                 + '<th>' + escapeHtml(t('admin.activity.col.note', 'Note')) + '</th>'
+                + '<th>' + escapeHtml(t('admin.users.col.actions', 'Actions')) + '</th>'
                 + '</tr></thead><tbody>' + rows + '</tbody></table>';
         }
         var title = format(t('admin.users.history.title', 'Payment history — {username}'), { username: user.Username });
-        buildModal(page, escapeHtml(title), body, '');
+        var modal = buildModal(page, escapeHtml(title), body, '');
+
+        modal.querySelectorAll('tr[data-tx]').forEach(function (tr) {
+            var txId = tr.getAttribute('data-tx');
+            var entry = (user.Transactions || []).find(function (e) { return e.Id === txId; });
+            var editBtn = tr.querySelector('.npnp-tx-edit');
+            var delBtn = tr.querySelector('.npnp-tx-del');
+            if (editBtn) editBtn.addEventListener('click', function () { openEditTxModal(page, user, entry); });
+            if (delBtn) delBtn.addEventListener('click', function () {
+                openConfirmModal(page,
+                    t('admin.users.tx.delete', 'Delete'),
+                    t('admin.users.tx.confirm.delete', 'Delete this transaction? The expiry date will be recomputed.'),
+                    function () {
+                        api().ajax({
+                            type: 'DELETE',
+                            url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Transactions/' + txId)
+                        }).then(function () {
+                            closeModal(page);
+                            return loadUsers(page).then(function () { return loadActivity(page); });
+                        });
+                    });
+            });
+        });
     }
+
+    function openEditTxModal(page, user, entry) {
+        if (!entry) return;
+        var d = new Date(entry.Date);
+        var iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        var body = ''
+            + '<form id="npnpEditTxForm">'
+            + '<div class="inputContainer"><label for="npnpEditTxDate">' + escapeHtml(t('admin.payment.date', 'Date')) + '</label>'
+            + '<input is="emby-input" id="npnpEditTxDate" type="date" value="' + escapeHtml(iso) + '" /></div>'
+            + '<div class="inputContainer"><label for="npnpEditTxAmount">' + escapeHtml(t('admin.payment.amount', 'Amount')) + '</label>'
+            + '<input is="emby-input" id="npnpEditTxAmount" type="number" step="0.01" min="0" value="' + escapeHtml(String(entry.Amount || 0)) + '" /></div>'
+            + '<div class="inputContainer"><label for="npnpEditTxMonths">' + escapeHtml(t('admin.payment.months', 'Months')) + '</label>'
+            + '<input is="emby-input" id="npnpEditTxMonths" type="number" min="1" max="60" value="' + escapeHtml(String(entry.MonthsAdded || 1)) + '" /></div>'
+            + '<div class="inputContainer"><label for="npnpEditTxMethod">' + escapeHtml(t('admin.payment.method', 'Method')) + '</label>'
+            + '<input is="emby-input" id="npnpEditTxMethod" type="text" value="' + escapeHtml(entry.Method || '') + '" /></div>'
+            + '<div class="inputContainer"><label for="npnpEditTxNote">' + escapeHtml(t('admin.payment.note', 'Note')) + '</label>'
+            + '<input is="emby-input" id="npnpEditTxNote" type="text" value="' + escapeHtml(entry.AdminNote || '') + '" /></div>'
+            + '</form>';
+        var modal = buildModal(page,
+            escapeHtml(t('admin.users.tx.edit', 'Edit transaction')),
+            body,
+            '<button is="emby-button" type="button" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
+            + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
+        modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
+        modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
+            var dv = modal.querySelector('#npnpEditTxDate').value;
+            var payload = {
+                Amount: parseFloat(modal.querySelector('#npnpEditTxAmount').value || '0'),
+                MonthsAdded: parseInt(modal.querySelector('#npnpEditTxMonths').value || '1', 10),
+                Method: modal.querySelector('#npnpEditTxMethod').value || '',
+                Note: modal.querySelector('#npnpEditTxNote').value || '',
+                Date: dv ? (dv + 'T12:00:00Z') : null
+            };
+            api().ajax({
+                type: 'POST',
+                url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Transactions/' + entry.Id),
+                data: JSON.stringify(payload),
+                contentType: 'application/json',
+                headers: { 'X-HTTP-Method-Override': 'PATCH' }
+            }).catch(function () {
+                // Some Jellyfin proxies strip PATCH; fall back to direct PATCH.
+                return api().ajax({
+                    type: 'PATCH',
+                    url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Transactions/' + entry.Id),
+                    data: JSON.stringify(payload),
+                    contentType: 'application/json'
+                });
+            }).then(function () {
+                closeModal(page);
+                return loadUsers(page).then(function () { return loadActivity(page); });
+            });
+        });
+    }
+
 
     function openPaymentModal(page, user) {
         var methods = [
@@ -630,9 +837,149 @@
             state.stateFilter = e.target.value || '';
             renderUsers(page);
         });
+        var methodSel = page.querySelector('#npnpMethodFilter');
+        if (methodSel) {
+            methodSel.addEventListener('change', function (e) {
+                state.methodFilter = e.target.value || '';
+                renderUsers(page);
+            });
+        }
         page.querySelector('#npnpActivitySearch').addEventListener('input', function (e) {
             state.activityFilter = e.target.value || '';
             renderActivity(page);
+        });
+        var fromEl = page.querySelector('#npnpActivityFrom');
+        if (fromEl) fromEl.addEventListener('change', function (e) {
+            state.activityFrom = e.target.value || '';
+            renderActivity(page);
+        });
+        var toEl = page.querySelector('#npnpActivityTo');
+        if (toEl) toEl.addEventListener('change', function (e) {
+            state.activityTo = e.target.value || '';
+            renderActivity(page);
+        });
+
+        var expU = page.querySelector('#npnpExportUsers');
+        if (expU) expU.addEventListener('click', function () { downloadCsv('NoPayNoPlay/Users/Export.csv', 'nopaynoplay-users.csv'); });
+        var expA = page.querySelector('#npnpExportActivity');
+        if (expA) expA.addEventListener('click', function () { downloadCsv('NoPayNoPlay/Activity/Export.csv', 'nopaynoplay-activity.csv'); });
+
+        bindBulkBar(page);
+    }
+
+    function downloadCsv(apiPath, filename) {
+        // ApiClient.ajax with dataType=text bypasses JSON parsing and forwards the
+        // current authentication headers; we then materialise a Blob for download.
+        api().ajax({ type: 'GET', url: api().getUrl(apiPath), dataType: 'text' })
+            .then(function (text) {
+                var blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+            })
+            .catch(function () { Dashboard.alert(t('admin.export.error', 'Export failed.')); });
+    }
+
+    function selectedIds() {
+        return Object.keys(state.selected);
+    }
+
+    function renderBulkBar(page) {
+        var bar = page.querySelector('#npnpBulkBar');
+        if (!bar) return;
+        var ids = selectedIds();
+        if (!ids.length) {
+            bar.hidden = true;
+            return;
+        }
+        bar.hidden = false;
+        var tpl = t('admin.users.bulk.count', '{n} selected');
+        bar.querySelector('.npnp-bulk-count').textContent = tpl.replace('{n}', String(ids.length));
+    }
+
+    function bindBulkBar(page) {
+        var bar = page.querySelector('#npnpBulkBar');
+        if (!bar) return;
+        bar.querySelector('#npnpBulkClear').addEventListener('click', function () {
+            state.selected = {};
+            renderUsers(page);
+        });
+        bar.querySelector('#npnpBulkPay').addEventListener('click', function () {
+            var ids = selectedIds();
+            if (!ids.length) return;
+            openBulkPaymentModal(page, ids);
+        });
+        bar.querySelector('#npnpBulkExempt').addEventListener('click', function () {
+            var ids = selectedIds();
+            if (!ids.length) return;
+            // Use majority current state as toggle target: if any selected user is
+            // not exempt, mark them all exempt; otherwise remove exemption.
+            var anyNotExempt = ids.some(function (id) {
+                var u = state.users.find(function (x) { return x.UserId === id; });
+                return u && !u.IsExempt;
+            });
+            api().ajax({
+                type: 'POST', url: api().getUrl('NoPayNoPlay/Users/BulkExempt'),
+                data: JSON.stringify({ UserIds: ids, IsExempt: anyNotExempt }),
+                contentType: 'application/json'
+            }).then(function () { state.selected = {}; return loadUsers(page); });
+        });
+        bar.querySelector('#npnpBulkReset').addEventListener('click', function () {
+            var ids = selectedIds();
+            if (!ids.length) return;
+            openConfirmModal(page,
+                t('admin.users.action.reset', 'Reset trial'),
+                t('admin.users.bulk.confirm.reset', 'Reset {n} member(s) back to a fresh trial?').replace('{n}', String(ids.length)),
+                function () {
+                    api().ajax({
+                        type: 'POST', url: api().getUrl('NoPayNoPlay/Users/BulkReset'),
+                        data: JSON.stringify({ UserIds: ids }),
+                        contentType: 'application/json'
+                    }).then(function () { state.selected = {}; return loadUsers(page); });
+                });
+        });
+    }
+
+    function openBulkPaymentModal(page, ids) {
+        var defaultAmount = Number(state.settings.MonthlyPrice || 10).toFixed(2);
+        var currency = state.settings.Currency || 'EUR';
+        var body = ''
+            + '<form id="npnpBulkPayForm">'
+            + '<p>' + escapeHtml(t('admin.users.bulk.pay.intro', 'Recording the same payment for {n} member(s).').replace('{n}', String(ids.length))) + '</p>'
+            + '<div class="inputContainer"><label for="npnpBulkAmount">' + escapeHtml(t('admin.payment.amount', 'Amount')) + ' (' + escapeHtml(currency) + ')</label>'
+            + '<input is="emby-input" id="npnpBulkAmount" type="number" step="0.01" min="0" value="' + escapeHtml(defaultAmount) + '" /></div>'
+            + '<div class="inputContainer"><label for="npnpBulkMonths">' + escapeHtml(t('admin.payment.months', 'Months')) + '</label>'
+            + '<input is="emby-input" id="npnpBulkMonths" type="number" min="1" max="60" value="1" /></div>'
+            + '<div class="inputContainer"><label for="npnpBulkMethod">' + escapeHtml(t('admin.payment.method', 'Method')) + '</label>'
+            + '<select is="emby-select" id="npnpBulkMethod">'
+            + '<option value="PayPal">PayPal</option><option value="Lydia">Lydia</option><option value="Bank">Bank</option><option value="Cash">Cash</option><option value="Other">Other</option>'
+            + '</select></div>'
+            + '</form>';
+        var modal = buildModal(page,
+            escapeHtml(t('admin.users.bulk.pay', 'Record payment')),
+            body,
+            '<button is="emby-button" type="button" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
+            + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
+        modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
+        modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
+            var payload = {
+                UserIds: ids,
+                Amount: parseFloat(modal.querySelector('#npnpBulkAmount').value || '0'),
+                MonthsAdded: parseInt(modal.querySelector('#npnpBulkMonths').value || '1', 10),
+                Method: modal.querySelector('#npnpBulkMethod').value || 'Other',
+                Note: ''
+            };
+            api().ajax({
+                type: 'POST', url: api().getUrl('NoPayNoPlay/Users/BulkPay'),
+                data: JSON.stringify(payload), contentType: 'application/json'
+            }).then(function () {
+                closeModal(page);
+                state.selected = {};
+                return Promise.all([loadUsers(page), loadActivity(page)]);
+            });
         });
     }
 

@@ -33,6 +33,7 @@ public class SubscriptionService
             UserSubscription? sub = Config.Subscriptions.FirstOrDefault(s => s.UserId == userId);
             if (sub != null)
             {
+                MigrateTransactionIds(sub);
                 return sub;
             }
 
@@ -53,6 +54,28 @@ public class SubscriptionService
                 userId,
                 sub.ExpiryDate);
             return sub;
+        }
+    }
+
+    /// <summary>
+    /// Backfills missing transaction IDs (older configs predate the <see cref="TransactionEntry.Id"/>
+    /// field). Idempotent: only writes when at least one entry was patched.
+    /// </summary>
+    private static void MigrateTransactionIds(UserSubscription sub)
+    {
+        bool changed = false;
+        foreach (var t in sub.Transactions)
+        {
+            if (t.Id == Guid.Empty)
+            {
+                t.Id = Guid.NewGuid();
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            Plugin.Instance!.SaveConfiguration();
         }
     }
 
@@ -131,8 +154,13 @@ public class SubscriptionService
                 DateTime d = recordedDate.Value.Kind == DateTimeKind.Utc
                     ? recordedDate.Value
                     : recordedDate.Value.ToUniversalTime();
-                // Never allow a transaction to be dated in the future.
-                txDate = d > now ? now : d;
+                // Never allow a transaction to be dated in the future, nor more than
+                // 24 months in the past — admins occasionally pick a year by mistake
+                // in the date picker; clamping prevents nonsensical history.
+                DateTime earliest = now.AddMonths(-24);
+                if (d > now) d = now;
+                if (d < earliest) d = earliest;
+                txDate = d;
                 // Treat anything older than ~1 day as a historical backfill so that
                 // late-of-day "today" entries still use the regular extend-from-current
                 // path (no surprise truncation due to clock drift).
@@ -204,6 +232,95 @@ public class SubscriptionService
         lock (_lock)
         {
             Plugin.Instance!.SaveConfiguration();
+        }
+    }
+
+    /// <summary>
+    /// Recomputes a user's expiry from scratch by replaying every transaction in
+    /// chronological order on top of <see cref="UserSubscription.SubscriptionDate"/>
+    /// + the configured trial. Used by edit/delete to keep the expiry coherent
+    /// with the persisted history.
+    /// </summary>
+    public DateTime RecomputeExpiry(UserSubscription sub)
+    {
+        DateTime now = DateTime.UtcNow;
+        int anchor = sub.SubscriptionDate.Day;
+        DateTime expiry = sub.SubscriptionDate.AddDays(Math.Max(0, Config.TrialDays));
+
+        var ordered = sub.Transactions.OrderBy(t => t.Date).ToList();
+        foreach (var t in ordered)
+        {
+            int months = Math.Max(1, t.MonthsAdded);
+            bool isBackfill = (now - t.Date).TotalDays > 1.0;
+            if (isBackfill)
+            {
+                DateTime candidate = ComputeNextExpiry(t.Date, months, anchor);
+                if (candidate > expiry) expiry = candidate;
+            }
+            else
+            {
+                DateTime baseDate = expiry < now ? now : expiry;
+                expiry = ComputeNextExpiry(baseDate, months, anchor);
+            }
+        }
+
+        sub.ExpiryDate = expiry;
+        return expiry;
+    }
+
+    /// <summary>Updates an existing transaction in place and recomputes the expiry.</summary>
+    /// <returns>True when the transaction was found and updated.</returns>
+    public bool UpdateTransaction(
+        Guid userId,
+        Guid txId,
+        decimal? amount,
+        string? method,
+        int? monthsAdded,
+        string? note,
+        DateTime? date)
+    {
+        lock (_lock)
+        {
+            UserSubscription? sub = Config.Subscriptions.FirstOrDefault(s => s.UserId == userId);
+            if (sub == null) return false;
+            MigrateTransactionIds(sub);
+            var tx = sub.Transactions.FirstOrDefault(t => t.Id == txId);
+            if (tx == null) return false;
+
+            if (amount.HasValue) tx.Amount = Math.Max(0m, amount.Value);
+            if (method != null) tx.Method = method;
+            if (monthsAdded.HasValue) tx.MonthsAdded = Math.Clamp(monthsAdded.Value, 1, 60);
+            if (note != null) tx.AdminNote = note;
+            if (date.HasValue)
+            {
+                DateTime now = DateTime.UtcNow;
+                DateTime d = date.Value.Kind == DateTimeKind.Utc ? date.Value : date.Value.ToUniversalTime();
+                DateTime earliest = now.AddMonths(-24);
+                if (d > now) d = now;
+                if (d < earliest) d = earliest;
+                tx.Date = d;
+            }
+
+            RecomputeExpiry(sub);
+            Plugin.Instance!.SaveConfiguration();
+            return true;
+        }
+    }
+
+    /// <summary>Deletes a transaction and recomputes the expiry.</summary>
+    /// <returns>True when the transaction was found and removed.</returns>
+    public bool DeleteTransaction(Guid userId, Guid txId)
+    {
+        lock (_lock)
+        {
+            UserSubscription? sub = Config.Subscriptions.FirstOrDefault(s => s.UserId == userId);
+            if (sub == null) return false;
+            MigrateTransactionIds(sub);
+            int removed = sub.Transactions.RemoveAll(t => t.Id == txId);
+            if (removed == 0) return false;
+            RecomputeExpiry(sub);
+            Plugin.Instance!.SaveConfiguration();
+            return true;
         }
     }
 }

@@ -9,9 +9,9 @@
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
-    <Version>1.0.1.5</Version>
-    <FileVersion>1.0.1.5</FileVersion>
-    <AssemblyVersion>1.0.1.5</AssemblyVersion>
+    <Version>1.0.2.0</Version>
+    <FileVersion>1.0.2.0</FileVersion>
+    <AssemblyVersion>1.0.2.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>

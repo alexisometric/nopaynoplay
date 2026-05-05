@@ -7,6 +7,14 @@ namespace Jellyfin.Plugin.NoPayNoPlay.Configuration;
 /// </summary>
 public class TransactionEntry
 {
+    /// <summary>
+    /// Stable identifier used by edit/delete endpoints. Defaults to a freshly-allocated
+    /// Guid so brand-new entries always carry an id; entries deserialized from older
+    /// configurations may have <see cref="Guid.Empty"/> until <c>SubscriptionService</c>
+    /// migrates them on first access.
+    /// </summary>
+    public Guid Id { get; set; } = Guid.NewGuid();
+
     /// <summary>Validation date.</summary>
     public DateTime Date { get; set; } = DateTime.UtcNow;
 
