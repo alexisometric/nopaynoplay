@@ -13,6 +13,7 @@ using MediaBrowser.Controller.Library;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.NoPayNoPlay.Api;
 
@@ -159,6 +160,53 @@ public class NoPayNoPlayController : ControllerBase
         {
             fileTransformationRegistered = PluginEntryPoint.FileTransformationRegistered,
             trackedUsers = Cfg.Subscriptions.Count
+        });
+    }
+
+    /// <summary>Returns detailed diagnostics about the File Transformation hookup (admin).</summary>
+    [HttpGet("Diagnostics")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> GetDiagnostics()
+    {
+        var d = PluginEntryPoint.LastDiagnostics;
+        return Ok(new
+        {
+            registered = d.Registered,
+            timestamp = d.Timestamp,
+            foundAssembly = d.FoundAssembly,
+            matchingAssemblies = d.MatchingAssemblies,
+            callbackAssembly = d.CallbackAssemblyFullName,
+            callbackClass = d.CallbackClass,
+            callbackMethod = d.CallbackMethod,
+            needsTransformationAck = d.NeedsTransformationAck,
+            notes = d.Notes
+        });
+    }
+
+    /// <summary>Re-attempts File Transformation registration immediately (admin).</summary>
+    [HttpPost("RetryRegistration")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public ActionResult<object> RetryRegistration([FromServices] ILogger<PluginEntryPoint> logger)
+    {
+        bool ok = PluginEntryPoint.ForceRetry(logger);
+        var d = PluginEntryPoint.LastDiagnostics;
+        return Ok(new
+        {
+            ok,
+            diagnostics = new
+            {
+                registered = d.Registered,
+                timestamp = d.Timestamp,
+                foundAssembly = d.FoundAssembly,
+                matchingAssemblies = d.MatchingAssemblies,
+                callbackAssembly = d.CallbackAssemblyFullName,
+                callbackClass = d.CallbackClass,
+                callbackMethod = d.CallbackMethod,
+                needsTransformationAck = d.NeedsTransformationAck,
+                notes = d.Notes
+            }
         });
     }
 

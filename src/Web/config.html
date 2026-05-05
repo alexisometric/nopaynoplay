@@ -76,6 +76,7 @@
                 <button type="button" class="npnp-tab-btn" data-tab="members" data-i18n="admin.tabs.members">Members</button>
                 <button type="button" class="npnp-tab-btn" data-tab="activity" data-i18n="admin.tabs.activity">Activity</button>
                 <button type="button" class="npnp-tab-btn" data-tab="test" data-i18n="admin.tabs.test">Test mode</button>
+                <button type="button" class="npnp-tab-btn" data-tab="diagnostics" data-i18n="admin.tabs.diagnostics">Diagnostics</button>
             </div>
 
             <!-- SETTINGS -->
@@ -206,6 +207,29 @@
                     </div>
                     <div class="inputContainer" style="margin-top:12px;">
                         <input is="emby-input" id="npnpTestUrl" type="text" readonly />
+                    </div>
+                </div>
+            </section>
+
+            <!-- DIAGNOSTICS -->
+            <section id="npnpTab-diagnostics" class="npnp-tab-panel">
+                <div class="npnp-section">
+                    <h3 data-i18n="admin.diag.title">File Transformation diagnostics</h3>
+                    <p data-i18n="admin.diag.help" style="opacity:.8;">
+                        This panel shows whether the user-side UI script is being injected into Jellyfin's index.html via the File Transformation plugin.
+                    </p>
+                    <div id="npnpDiagBadge" class="npnp-status warn" style="display:none;"></div>
+                    <div id="npnpDiagBody" class="npnp-table-wrap"></div>
+                    <div class="npnp-toolbar" style="margin-top:12px;">
+                        <button is="emby-button" type="button" id="npnpDiagRetry" class="raised">
+                            <span data-i18n="admin.diag.retry">Retry registration</span>
+                        </button>
+                        <button is="emby-button" type="button" id="npnpDiagRefresh">
+                            <span data-i18n="admin.diag.refresh">Refresh</span>
+                        </button>
+                        <button is="emby-button" type="button" id="npnpDiagCopy">
+                            <span data-i18n="admin.diag.copy">Copy raw JSON</span>
+                        </button>
                     </div>
                 </div>
             </section>

@@ -11,7 +11,8 @@
         sortDir: 1,
         userFilter: '',
         stateFilter: '',
-        activityFilter: ''
+        activityFilter: '',
+        diagnostics: null
     };
 
     var STATE_COLORS = {
@@ -176,6 +177,69 @@
             }
             el.style.display = '';
         }).catch(function () { /* ignore */ });
+    }
+
+    function loadDiagnostics(page) {
+        return api().ajax({
+            type: 'GET', url: api().getUrl('NoPayNoPlay/Diagnostics'), dataType: 'json'
+        }).then(function (d) {
+            state.diagnostics = d || null;
+            renderDiagnostics(page);
+        }).catch(function () {
+            state.diagnostics = null;
+            renderDiagnostics(page);
+        });
+    }
+
+    function renderDiagnostics(page) {
+        var badge = page.querySelector('#npnpDiagBadge');
+        var body = page.querySelector('#npnpDiagBody');
+        if (!badge || !body) return;
+        var d = state.diagnostics;
+        if (!d) {
+            badge.style.display = '';
+            badge.className = 'npnp-status warn';
+            badge.innerHTML = '<span class="material-icons" aria-hidden="true">warning</span><span>'
+                + escapeHtml(t('admin.diag.none', 'No diagnostics available yet.')) + '</span>';
+            body.innerHTML = '';
+            return;
+        }
+        var ok = !!d.registered;
+        badge.style.display = '';
+        badge.className = 'npnp-status ' + (ok ? 'ok' : 'warn');
+        badge.innerHTML = '<span class="material-icons" aria-hidden="true">' + (ok ? 'check_circle' : 'warning') + '</span>'
+            + '<span>' + escapeHtml(ok
+                ? t('admin.diag.ok', 'index.html transformation is registered.')
+                : t('admin.diag.ko', 'index.html transformation is NOT registered — user UI will not appear.')) + '</span>';
+
+        function row(labelKey, fallback, value) {
+            return '<tr><th style="width:220px;">' + escapeHtml(t(labelKey, fallback)) + '</th>'
+                + '<td><code style="word-break:break-all;">' + escapeHtml(value || '—') + '</code></td></tr>';
+        }
+        var ack = d.needsTransformationAck;
+        var ackTxt = ack === true ? t('admin.diag.ack.yes', 'Yes')
+            : ack === false ? t('admin.diag.ack.no', 'No')
+                : t('admin.diag.ack.unknown', 'Unknown');
+        var matchList = (d.matchingAssemblies && d.matchingAssemblies.length)
+            ? d.matchingAssemblies.map(function (a) { return escapeHtml(a); }).join('<br>')
+            : '<em style="opacity:.6;">' + escapeHtml(t('admin.diag.matching.empty', 'No assembly matched ".FileTransformation".')) + '</em>';
+        var notesList = (d.notes && d.notes.length)
+            ? '<ul style="margin:0; padding-left:18px;">' + d.notes.map(function (n) {
+                return '<li>' + escapeHtml(n) + '</li>';
+            }).join('') + '</ul>'
+            : '<em style="opacity:.6;">' + escapeHtml(t('admin.diag.notes.empty', 'No notes.')) + '</em>';
+
+        body.innerHTML = '<table class="npnp-table">'
+            + row('admin.diag.timestamp', 'Last attempt', d.timestamp ? formatDateTime(d.timestamp) : '')
+            + row('admin.diag.registered', 'Registered', ok ? t('admin.diag.ack.yes', 'Yes') : t('admin.diag.ack.no', 'No'))
+            + row('admin.diag.foundAssembly', 'Found FT assembly', d.foundAssembly)
+            + row('admin.diag.callbackAssembly', 'Our callback assembly', d.callbackAssembly)
+            + row('admin.diag.callbackClass', 'Callback class', d.callbackClass)
+            + row('admin.diag.callbackMethod', 'Callback method', d.callbackMethod)
+            + row('admin.diag.ack', 'FT acknowledged pattern', ackTxt)
+            + '<tr><th>' + escapeHtml(t('admin.diag.matching', 'Matching assemblies')) + '</th><td>' + matchList + '</td></tr>'
+            + '<tr><th>' + escapeHtml(t('admin.diag.notes', 'Notes')) + '</th><td>' + notesList + '</td></tr>'
+            + '</table>';
     }
 
     function formatDate(iso) {
@@ -519,6 +583,7 @@
                     p.classList.toggle('active', p.id === 'npnpTab-' + tab);
                 });
                 if (tab === 'activity') loadActivity(page);
+                if (tab === 'diagnostics') loadDiagnostics(page);
             });
         });
     }
@@ -558,6 +623,38 @@
         });
     }
 
+    function bindDiagnostics(page) {
+        var retryBtn = page.querySelector('#npnpDiagRetry');
+        var refreshBtn = page.querySelector('#npnpDiagRefresh');
+        var copyBtn = page.querySelector('#npnpDiagCopy');
+        if (retryBtn) {
+            retryBtn.addEventListener('click', function () {
+                Dashboard.showLoadingMsg();
+                api().ajax({
+                    type: 'POST', url: api().getUrl('NoPayNoPlay/RetryRegistration'), dataType: 'json'
+                }).then(function (resp) {
+                    state.diagnostics = resp && resp.diagnostics ? resp.diagnostics : null;
+                    renderDiagnostics(page);
+                    flash(page, resp && resp.ok
+                        ? t('admin.diag.retry.ok', 'Registration succeeded.')
+                        : t('admin.diag.retry.ko', 'Registration failed — see notes below.'),
+                        !(resp && resp.ok));
+                    return loadStatus(page);
+                }).finally(function () { Dashboard.hideLoadingMsg(); });
+            });
+        }
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', function () { loadDiagnostics(page); });
+        }
+        if (copyBtn) {
+            copyBtn.addEventListener('click', function () {
+                var json = JSON.stringify(state.diagnostics || {}, null, 2);
+                if (navigator.clipboard) navigator.clipboard.writeText(json);
+                flash(page, t('admin.diag.copied', 'Diagnostics copied to clipboard.'));
+            });
+        }
+    }
+
     document.querySelectorAll('#NoPayNoPlayConfigPage').forEach(function (page) {
         page.addEventListener('pageshow', function () {
             Dashboard.showLoadingMsg();
@@ -570,6 +667,7 @@
         bindTabs(page);
         bindFilters(page);
         bindTestMode(page);
+        bindDiagnostics(page);
 
         page.querySelector('#npnpSettingsForm').addEventListener('submit', function (e) {
             e.preventDefault();
