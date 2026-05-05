@@ -131,7 +131,12 @@ public class PluginEntryPoint : IHostedService
             var payload = new Newtonsoft.Json.Linq.JObject
             {
                 ["id"] = Plugin.Instance!.Id.ToString(),
-                ["fileNamePattern"] = "index\\.html",
+                // NOTE: must match the literal key other FT consumers use ("index.html"),
+                // not an escaped regex. WebFileTransformationService.RunTransformation
+                // first does ContainsKey(path) and only falls back to regex matching when
+                // no exact key matches; using "index\.html" would silently shadow our
+                // pipeline behind any plugin that registered the unescaped key.
+                ["fileNamePattern"] = "index.html",
                 ["callbackAssembly"] = diag.CallbackAssemblyFullName,
                 ["callbackClass"] = diag.CallbackClass,
                 ["callbackMethod"] = diag.CallbackMethod
