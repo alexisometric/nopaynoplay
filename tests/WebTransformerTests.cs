@@ -14,9 +14,8 @@ public class WebTransformerTests
             ["contents"] = "<html><body><div>x</div></body></html>"
         };
 
-        WebTransformer.Transform(payload);
+        string result = WebTransformer.Transform(payload);
 
-        string result = payload["contents"]!.ToString();
         Assert.Contains("/NoPayNoPlay/Web/client.js", result);
         Assert.True(result.IndexOf("client.js") < result.IndexOf("</body>"));
     }
@@ -29,10 +28,9 @@ public class WebTransformerTests
             ["contents"] = "<html><body></body></html>"
         };
 
-        WebTransformer.Transform(payload);
-        string once = payload["contents"]!.ToString();
-        WebTransformer.Transform(payload);
-        string twice = payload["contents"]!.ToString();
+        string once = WebTransformer.Transform(payload);
+        payload["contents"] = once;
+        string twice = WebTransformer.Transform(payload);
 
         Assert.Equal(once, twice);
     }
@@ -41,7 +39,15 @@ public class WebTransformerTests
     public void Transform_HandlesEmptyContents()
     {
         var payload = new JObject { ["contents"] = string.Empty };
-        WebTransformer.Transform(payload);
-        Assert.Equal(string.Empty, payload["contents"]!.ToString());
+        string result = WebTransformer.Transform(payload);
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public void Transform_AppendsWhenNoBodyTag()
+    {
+        var payload = new JObject { ["contents"] = "<html></html>" };
+        string result = WebTransformer.Transform(payload);
+        Assert.EndsWith("/NoPayNoPlay/Web/client.js\"></script>", result);
     }
 }

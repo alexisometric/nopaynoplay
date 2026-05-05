@@ -27,18 +27,26 @@ public class PluginEntryPoint : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        // Try immediately, then retry once after a short delay in case the
+        // Try immediately, then retry with a back-off in case the
         // File Transformation plugin assembly hasn't been loaded yet.
         if (!TryRegisterFileTransformation())
         {
             _ = Task.Run(async () =>
             {
-                try
+                int[] delaysSec = { 3, 8, 20, 45 };
+                foreach (int delay in delaysSec)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken).ConfigureAwait(false);
-                    TryRegisterFileTransformation();
+                    try
+                    {
+                        await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (TaskCanceledException) { return; }
+
+                    if (TryRegisterFileTransformation())
+                    {
+                        return;
+                    }
                 }
-                catch (TaskCanceledException) { /* shutdown */ }
             }, cancellationToken);
         }
 
