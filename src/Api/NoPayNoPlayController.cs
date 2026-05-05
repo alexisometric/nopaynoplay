@@ -31,6 +31,14 @@ public class PaymentDto
 
     [StringLength(500)]
     public string Note { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional date the payment actually occurred. When provided, this is the date stored in
+    /// the transaction history (useful for backfilling past payments). The expiry is still
+    /// extended by <see cref="MonthsAdded"/>; only the recorded date changes.
+    /// Future dates are clamped to "now".
+    /// </summary>
+    public DateTime? Date { get; set; }
 }
 
 /// <summary>Payload to toggle the exemption flag.</summary>
@@ -77,6 +85,13 @@ public class MeDto
 
     /// <summary>Personal payment history (most recent first).</summary>
     public List<TransactionEntry> Transactions { get; set; } = new();
+
+    /// <summary>
+    /// True when the response is rendered for an administrator. Administrators have
+    /// no real subscription, but the client uses sample values so the modal is
+    /// browsable for previewing the user-facing UI.
+    /// </summary>
+    public bool IsAdminPreview { get; set; }
 }
 
 /// <summary>NoPayNoPlay public REST API.</summary>
@@ -290,7 +305,8 @@ public class NoPayNoPlayController : ControllerBase
             Math.Max(0m, body.Amount),
             body.Method ?? string.Empty,
             Math.Clamp(body.MonthsAdded, 1, 60),
-            body.Note ?? string.Empty);
+            body.Note ?? string.Empty,
+            body.Date);
 
         SubscriptionState state = _service.EvaluateState(sub);
         await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
@@ -438,17 +454,61 @@ public class NoPayNoPlayController : ControllerBase
         SubscriptionState state = _service.EvaluateState(sub);
         string culture = ResolveCulture();
 
-        // Administrators see no payment UI: they are exempt by default.
+        // Administrators are always exempt from enforcement, but to let them preview
+        // the user-facing modal we return sample data flagged with IsAdminPreview.
         var user = _userManager.GetUserById(userId.Value);
-        if (user is not null && user.HasPermission(PermissionKind.IsAdministrator))
+        bool isAdmin = user is not null && user.HasPermission(PermissionKind.IsAdministrator);
+        if (isAdmin)
         {
             state = SubscriptionState.Exempt;
         }
 
+        DateTime expiry = sub.ExpiryDate;
+        int daysLeft = (int)Math.Ceiling((expiry - DateTime.UtcNow).TotalDays);
+        List<TransactionEntry> transactions = sub.Transactions
+            .OrderByDescending(t => t.Date)
+            .ToList();
+
+        if (isAdmin)
+        {
+            // Sample data: subscription "about to expire" + a couple of past payments.
+            DateTime now = DateTime.UtcNow;
+            expiry = now.AddDays(3);
+            daysLeft = 3;
+            decimal samplePrice = Cfg.MonthlyPrice > 0 ? Cfg.MonthlyPrice : 10m;
+            transactions = new List<TransactionEntry>
+            {
+                new TransactionEntry
+                {
+                    Date = now.AddMonths(-1),
+                    Amount = samplePrice,
+                    MonthsAdded = 1,
+                    Method = "PayPal",
+                    AdminNote = string.Empty
+                },
+                new TransactionEntry
+                {
+                    Date = now.AddMonths(-2),
+                    Amount = samplePrice,
+                    MonthsAdded = 1,
+                    Method = "Bank",
+                    AdminNote = string.Empty
+                },
+                new TransactionEntry
+                {
+                    Date = now.AddMonths(-3),
+                    Amount = samplePrice,
+                    MonthsAdded = 1,
+                    Method = "Cash",
+                    AdminNote = string.Empty
+                }
+            };
+        }
+
         return Ok(new MeDto
         {
-            ExpiryDate = sub.ExpiryDate,
-            DaysLeft = (int)Math.Ceiling((sub.ExpiryDate - DateTime.UtcNow).TotalDays),
+            ExpiryDate = expiry,
+            DaysLeft = daysLeft,
             State = state.ToString(),
             Price = Cfg.MonthlyPrice,
             Currency = Cfg.Currency,
@@ -460,9 +520,8 @@ public class NoPayNoPlayController : ControllerBase
             GraceDays = Cfg.GraceDays,
             Lang = culture,
             Strings = _localizer.GetBundle(culture),
-            Transactions = sub.Transactions
-                .OrderByDescending(t => t.Date)
-                .ToList()
+            Transactions = transactions,
+            IsAdminPreview = isAdmin
         });
     }
 

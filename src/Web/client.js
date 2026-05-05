@@ -91,6 +91,16 @@
         return clone;
     }
 
+    // Re-skin admin preview data so the modal is meaningful (a real subscription
+    // about to expire) instead of showing the admin's own "Exempt" status.
+    function applyAdminPreviewSkin(data) {
+        if (!data || !data.isAdminPreview) return data;
+        var clone = Object.assign({}, data);
+        clone.state = 'WarningSoon';
+        clone.__previewMode = true;
+        return clone;
+    }
+
     function t(data, key, fallback) {
         if (data && data.strings && Object.prototype.hasOwnProperty.call(data.strings, key)) {
             return data.strings[key];
@@ -185,10 +195,10 @@
                 + '</div>';
         }
         var rows = tx.map(function (e) {
-            var date = e.Date || e.date;
-            var amount = (e.Amount != null ? e.Amount : e.amount) || 0;
-            var months = (e.MonthsAdded != null ? e.MonthsAdded : e.monthsAdded) || 0;
-            var method = e.Method || e.method || '';
+            var date = e.date || e.Date;
+            var amount = (e.amount != null ? e.amount : e.Amount) || 0;
+            var months = (e.monthsAdded != null ? e.monthsAdded : e.MonthsAdded) || 0;
+            var method = e.method || e.Method || '';
             return '<tr>'
                 + '<td>' + escapeHtml(formatDate(date, data.lang)) + '</td>'
                 + '<td>' + escapeHtml(Number(amount).toFixed(2)) + ' ' + escapeHtml(data.currency || 'EUR') + '</td>'
@@ -205,9 +215,12 @@
             + '</tr></thead><tbody>' + rows + '</tbody></table>';
     }
 
-    function openModal(data) {
+    function openModal(rawData) {
         ensureStyles();
         closeModal();
+        // Admin preview: render a sample-data view of the modal so admins can
+        // inspect what regular users see.
+        var data = applyAdminPreviewSkin(rawData);
 
         var actions = [];
         if (data.paypalMeUrl) {
@@ -231,15 +244,22 @@
         var stateLabel = t(data, 'state.' + lcfirst(data.state), data.state);
         var modalTitle = t(data, 'user.modal.title', 'My subscription');
         var historyTitle = t(data, 'user.modal.history', 'Payment history');
+        var previewBanner = data.__previewMode
+            ? '<div class="row" style="background:rgba(0,164,220,.18);border:1px solid #00a4dc;'
+                + 'padding:8px 12px;border-radius:4px;margin:0 0 12px;font-size:13px;">'
+                + escapeHtml(t(data, 'user.modal.previewBadge', 'Admin preview — sample data'))
+                + '</div>'
+            : '';
 
         var html = ''
             + '<div class="npnp-modal-backdrop" id="npnp-modal-backdrop">'
             + '  <div class="npnp-modal" role="dialog" aria-modal="true" aria-label="' + escapeHtml(modalTitle) + '">'
             + '    <button class="close" type="button" aria-label="' + escapeHtml(t(data, 'user.modal.close', 'Close')) + '">&times;</button>'
             + '    <h2>' + escapeHtml(modalTitle) + '</h2>'
+            + previewBanner
             + '    <div class="row">' + escapeHtml(t(data, 'user.modal.state', 'Status:')) + ' <strong style="color:' + (STATE_COLORS[data.state] || '#fff') + '">' + escapeHtml(stateLabel) + '</strong></div>'
             + '    <div class="row">' + escapeHtml(t(data, 'user.modal.nextDue', 'Next due date:')) + ' <strong>' + formatDate(data.expiryDate, data.lang) + '</strong></div>'
-            + '    <div class="row">' + escapeHtml(t(data, 'user.modal.amount', 'Amount:')) + ' <strong>' + Number(data.price).toFixed(2) + ' ' + escapeHtml(data.currency || 'EUR') + '</strong></div>'
+            + '    <div class="row">' + escapeHtml(t(data, 'user.modal.amount', 'Amount:')) + ' <strong>' + Number(data.price || 0).toFixed(2) + ' ' + escapeHtml(data.currency || 'EUR') + '</strong></div>'
             + '    <div class="actions">' + actions.join('') + '</div>'
             + ibanBlock
             + note

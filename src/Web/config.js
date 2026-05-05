@@ -531,6 +531,11 @@
 
         var defaultAmount = Number(state.settings.MonthlyPrice || 10).toFixed(2);
         var currency = state.settings.Currency || 'EUR';
+        // Today as YYYY-MM-DD for the <input type="date"> default.
+        var today = new Date();
+        var todayIso = today.getFullYear() + '-'
+            + String(today.getMonth() + 1).padStart(2, '0') + '-'
+            + String(today.getDate()).padStart(2, '0');
 
         var body = ''
             + '<form id="npnpPayForm">'
@@ -542,6 +547,9 @@
             + '<select is="emby-select" id="npnpPayMethod">' + optionsHtml + '</select></div>'
             + '<div class="inputContainer"><label for="npnpPayMonths">' + escapeHtml(t('admin.payment.months', 'Months to add')) + '</label>'
             + '<input is="emby-input" id="npnpPayMonths" type="number" min="1" max="60" value="1" required /></div>'
+            + '<div class="inputContainer"><label for="npnpPayDate">' + escapeHtml(t('admin.payment.date', 'Payment date')) + '</label>'
+            + '<input is="emby-input" id="npnpPayDate" type="date" max="' + escapeHtml(todayIso) + '" value="' + escapeHtml(todayIso) + '" />'
+            + '<div class="fieldDescription" style="opacity:.7;font-size:12px;margin-top:4px;">' + escapeHtml(t('admin.payment.date.help', 'Leave empty for today. Use a past date to backfill payments already received.')) + '</div></div>'
             + '<div class="inputContainer"><label for="npnpPayNote">' + escapeHtml(t('admin.payment.note', 'Note (optional)')) + '</label>'
             + '<textarea is="emby-textarea" id="npnpPayNote" rows="2"></textarea></div>'
             + '</form>';
@@ -553,12 +561,17 @@
         var modal = buildModal(page, escapeHtml(t('admin.payment.title', 'Record a payment')), body, footer);
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
         modal.querySelector('[data-npnp-save]').addEventListener('click', function () {
+            var dateVal = (modal.querySelector('#npnpPayDate').value || '').trim();
             var payload = {
                 Amount: parseFloat(modal.querySelector('#npnpPayAmount').value || '0'),
                 Method: modal.querySelector('#npnpPayMethod').value || 'Other',
                 MonthsAdded: parseInt(modal.querySelector('#npnpPayMonths').value || '1', 10),
                 Note: modal.querySelector('#npnpPayNote').value || ''
             };
+            if (dateVal) {
+                // Send midday UTC to avoid timezone-related off-by-one when the server clamps to today.
+                payload.Date = dateVal + 'T12:00:00Z';
+            }
             api().ajax({
                 type: 'POST',
                 url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Pay'),

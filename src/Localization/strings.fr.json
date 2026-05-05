@@ -36,6 +36,7 @@
   "user.modal.history.method": "Méthode",
   "user.modal.history.months": "Mois",
   "user.modal.testBadge": "Mode test",
+  "user.modal.previewBadge": "Aperçu administrateur — données d'exemple",
   "user.banner.warningSoon": "Ton abonnement expire le {date} (dans {days} jour(s)).",
   "user.banner.inGrace": "Abonnement expiré depuis le {date} — période de grâce en cours.",
   "user.banner.blocked": "Lecture désactivée : abonnement expiré le {date}.",
@@ -97,6 +98,8 @@
   "admin.payment.method.other": "Autre",
   "admin.payment.months": "Mois à ajouter",
   "admin.payment.note": "Note (optionnel)",
+  "admin.payment.date": "Date du paiement",
+  "admin.payment.date.help": "Laissez vide pour aujourd'hui. Renseignez une date passée pour enregistrer un paiement déjà reçu.",
   "admin.payment.cancel": "Annuler",
   "admin.payment.save": "Enregistrer",
 

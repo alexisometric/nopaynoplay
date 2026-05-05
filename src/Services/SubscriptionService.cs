@@ -100,18 +100,66 @@ public class SubscriptionService
     /// <summary>
     /// Records a payment and extends the expiry date.
     /// </summary>
-    public UserSubscription ApplyPayment(Guid userId, decimal amount, string method, int monthsAdded, string note)
+    /// <param name="userId">User the payment is recorded for.</param>
+    /// <param name="amount">Amount paid (informational, stored in the transaction).</param>
+    /// <param name="method">Payment method label (PayPal, Bank, etc.).</param>
+    /// <param name="monthsAdded">Number of months covered by the payment (clamped to ≥ 1).</param>
+    /// <param name="note">Free-form admin note attached to the transaction.</param>
+    /// <param name="recordedDate">
+    /// Optional historical date for the transaction (used to backfill past payments).
+    /// When null or "today/future", the expiry is extended from the current state
+    /// (existing behaviour). When the date is clearly in the past (backfill mode),
+    /// the new expiry becomes <c>max(currentExpiry, paymentDate + monthsAdded)</c>:
+    /// historical entries that would land in the past do NOT push the expiry forward,
+    /// only the most recent backfilled payment whose period reaches today actually
+    /// extends remaining access. This matches admin expectations when recording months
+    /// already paid in the past.
+    /// </param>
+    public UserSubscription ApplyPayment(Guid userId, decimal amount, string method, int monthsAdded, string note, DateTime? recordedDate = null)
     {
         lock (_lock)
         {
             UserSubscription sub = EnsureUserTracked(userId);
             int anchor = sub.SubscriptionDate.Day;
-            // If the expiry is in the past, restart from now; otherwise extend the current expiry.
-            DateTime baseDate = sub.ExpiryDate < DateTime.UtcNow ? DateTime.UtcNow : sub.ExpiryDate;
-            sub.ExpiryDate = ComputeNextExpiry(baseDate, Math.Max(1, monthsAdded), anchor);
+            int months = Math.Max(1, monthsAdded);
+            DateTime now = DateTime.UtcNow;
+
+            DateTime txDate = now;
+            bool isBackfill = false;
+            if (recordedDate.HasValue)
+            {
+                DateTime d = recordedDate.Value.Kind == DateTimeKind.Utc
+                    ? recordedDate.Value
+                    : recordedDate.Value.ToUniversalTime();
+                // Never allow a transaction to be dated in the future.
+                txDate = d > now ? now : d;
+                // Treat anything older than ~1 day as a historical backfill so that
+                // late-of-day "today" entries still use the regular extend-from-current
+                // path (no surprise truncation due to clock drift).
+                isBackfill = (now - txDate).TotalDays > 1.0;
+            }
+
+            if (isBackfill)
+            {
+                DateTime candidate = ComputeNextExpiry(txDate, months, anchor);
+                if (candidate > sub.ExpiryDate)
+                {
+                    sub.ExpiryDate = candidate;
+                }
+                // else: historical entry whose covered window is already in the past
+                //       — keep the current expiry untouched.
+            }
+            else
+            {
+                // Regular "current payment": extend from current expiry, or from now
+                // if the subscription has already lapsed.
+                DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
+                sub.ExpiryDate = ComputeNextExpiry(baseDate, months, anchor);
+            }
+
             sub.Transactions.Add(new TransactionEntry
             {
-                Date = DateTime.UtcNow,
+                Date = txDate,
                 Amount = amount,
                 MonthsAdded = monthsAdded,
                 Method = method ?? string.Empty,

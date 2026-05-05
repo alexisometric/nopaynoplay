@@ -16,8 +16,16 @@ namespace Jellyfin.Plugin.NoPayNoPlay.Web;
 /// </remarks>
 public static class WebTransformer
 {
-    private const string ScriptTag =
-        "<script defer src=\"/NoPayNoPlay/Web/client.js\"></script>";
+    /// <summary>
+    /// Returns the &lt;script&gt; tag to inject. The src URL embeds the plugin
+    /// version as a cache-buster so updating the plugin invalidates browser
+    /// caches without requiring a hard refresh from end users.
+    /// </summary>
+    private static string BuildScriptTag()
+    {
+        string version = typeof(WebTransformer).Assembly.GetName().Version?.ToString() ?? "0";
+        return "<script defer src=\"/NoPayNoPlay/Web/client.js?v=" + version + "\"></script>";
+    }
 
     /// <summary>Static method matching the File Transformation callback contract.</summary>
     /// <param name="payload">JSON object provided by File Transformation, holding the original file contents.</param>
@@ -30,14 +38,19 @@ public static class WebTransformer
             return contents;
         }
 
-        if (contents.Contains(ScriptTag, System.StringComparison.OrdinalIgnoreCase))
-        {
-            return contents;
-        }
+        // Strip any previously injected NoPayNoPlay script tag (older version,
+        // cached content, …) so we can re-emit a tag with the current version
+        // suffix. This keeps the cache-buster effective across updates.
+        contents = System.Text.RegularExpressions.Regex.Replace(
+            contents,
+            "<script[^>]*src=\"/NoPayNoPlay/Web/client\\.js[^\"]*\"[^>]*></script>\\s*",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+        string scriptTag = BuildScriptTag();
         int idx = contents.LastIndexOf("</body>", System.StringComparison.OrdinalIgnoreCase);
         return idx >= 0
-            ? contents.Insert(idx, ScriptTag + "\n")
-            : contents + ScriptTag;
+            ? contents.Insert(idx, scriptTag + "\n")
+            : contents + scriptTag;
     }
 }

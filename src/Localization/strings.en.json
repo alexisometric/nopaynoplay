@@ -36,6 +36,7 @@
   "user.modal.history.method": "Method",
   "user.modal.history.months": "Months",
   "user.modal.testBadge": "Test mode",
+  "user.modal.previewBadge": "Admin preview — sample data",
   "user.banner.warningSoon": "Your subscription expires on {date} (in {days} day(s)).",
   "user.banner.inGrace": "Subscription expired on {date} — grace period in progress.",
   "user.banner.blocked": "Playback disabled: subscription expired on {date}.",
@@ -97,6 +98,8 @@
   "admin.payment.method.other": "Other",
   "admin.payment.months": "Months to add",
   "admin.payment.note": "Note (optional)",
+  "admin.payment.date": "Payment date",
+  "admin.payment.date.help": "Leave empty for today. Use a past date to backfill payments already received.",
   "admin.payment.cancel": "Cancel",
   "admin.payment.save": "Save",
 
