@@ -33,6 +33,26 @@
         return null;
     }
 
+    // Jellyfin's default JSON serializer keeps PascalCase. Normalize the top-level
+    // payload (and the Transactions array) to camelCase so the rest of the code can
+    // assume `data.price`, `data.strings`, etc. without guessing both casings.
+    function lcfirstKey(k) {
+        return k && k.length ? k.charAt(0).toLowerCase() + k.slice(1) : k;
+    }
+    function normalizeKeys(obj) {
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+        var out = {};
+        Object.keys(obj).forEach(function (k) { out[lcfirstKey(k)] = obj[k]; });
+        return out;
+    }
+    function normalizeMe(raw) {
+        var data = normalizeKeys(raw);
+        if (data && Array.isArray(data.transactions)) {
+            data.transactions = data.transactions.map(normalizeKeys);
+        }
+        return data;
+    }
+
     function getTestStateOverride() {
         try {
             var qs = new URLSearchParams(window.location.search);
@@ -96,9 +116,15 @@
     function ensureStyles() {
         if (document.getElementById('npnp-styles')) return;
         var css = ''
-            + '#npnp-banner{position:sticky;top:0;left:0;right:0;z-index:9999;'
+            + '#npnp-banner{position:fixed;left:0;right:0;z-index:998;'
+            + 'top:var(--npnp-header-h,0px);'
             + 'padding:10px 16px;font:600 14px/1.4 system-ui,sans-serif;color:#fff;'
-            + 'display:flex;align-items:center;justify-content:space-between;gap:12px;}'
+            + 'display:flex;align-items:center;justify-content:space-between;gap:12px;'
+            + 'box-shadow:0 2px 6px rgba(0,0,0,.25);}'
+            + '@media (max-width:600px){#npnp-banner{font-size:13px;padding:8px 12px;flex-wrap:wrap;}'
+            + '#npnp-banner > span{flex:1 1 100%;}}'
+            + 'body.npnp-has-banner .mainAnimatedPages,body.npnp-has-banner .skinBody,'
+            + 'body.npnp-has-banner .pageContainer{padding-top:var(--npnp-banner-pad,0px) !important;}'
             + '#npnp-banner button{background:rgba(255,255,255,.2);color:#fff;border:1px solid #fff;'
             + 'padding:6px 12px;border-radius:4px;cursor:pointer;font-weight:600;}'
             + '#npnp-banner button:hover{background:rgba(255,255,255,.35);} '
@@ -250,6 +276,8 @@
         var needBanner = data.state === 'WarningSoon' || data.state === 'InGrace' || data.state === 'Blocked';
         if (!needBanner) {
             if (existing) existing.parentNode.removeChild(existing);
+            document.body.classList.remove('npnp-has-banner');
+            document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
             return;
         }
 
@@ -277,41 +305,69 @@
         banner.innerHTML = '<span>' + testBadge + escapeHtml(msg) + '</span>'
             + '<button type="button">' + escapeHtml(t(data, 'user.modal.payNow', 'Pay now')) + '</button>';
         banner.querySelector('button').addEventListener('click', function () { openModal(data); });
-        document.body.insertBefore(banner, document.body.firstChild);
+        document.body.appendChild(banner);
+        document.body.classList.add('npnp-has-banner');
+        positionBanner();
+    }
+
+    // Push the banner just below Jellyfin's fixed header and reserve space for it
+    // in the page content so it never overlaps the user's view (mobile included).
+    function positionBanner() {
+        var banner = document.getElementById('npnp-banner');
+        if (!banner) return;
+        var header = document.querySelector('.skinHeader');
+        var headerH = header ? header.getBoundingClientRect().height : 0;
+        document.documentElement.style.setProperty('--npnp-header-h', headerH + 'px');
+        requestAnimationFrame(function () {
+            var bannerH = banner.getBoundingClientRect().height;
+            document.documentElement.style.setProperty('--npnp-banner-pad', (headerH + bannerH) + 'px');
+        });
     }
 
     function ensureHeaderButton(data) {
-        var headers = document.querySelectorAll('.headerRight, .skinHeader .headerRight');
-        if (!headers.length) return false;
-        var anyAdded = false;
+        if (document.querySelector('.npnp-header-btn')) return true;
         var label = t(data, 'user.modal.headerButton', 'My subscription');
-        headers.forEach(function (header) {
-            if (header.querySelector('.npnp-header-btn')) return;
-            var btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'npnp-header-btn paper-icon-button-light';
-            btn.title = label;
-            btn.setAttribute('aria-label', label);
-            btn.innerHTML = '<span class="material-icons" aria-hidden="true">monetization_on</span>';
-            btn.addEventListener('click', function () { openModal(lastData || data); });
-            var search = header.querySelector('.headerSearchButton, [is="emby-button"][title="Search"]');
-            if (search) header.insertBefore(btn, search);
-            else header.insertBefore(btn, header.firstChild);
-            anyAdded = true;
-        });
-        return anyAdded;
+
+        // Most reliable anchor across Jellyfin versions: the search button.
+        var search = document.querySelector(
+            '.skinHeader .headerSearchButton, .skinHeader [is="emby-button"][title="Search"], '
+            + '.skinHeader button[title*="earch"]');
+        var container = null;
+        var anchor = null;
+        if (search && search.parentNode) {
+            container = search.parentNode;
+            anchor = search;
+        } else {
+            container = document.querySelector('.headerRight, .skinHeader .headerRight, .skinHeader-content, .skinHeader');
+            if (!container) return false;
+        }
+
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'npnp-header-btn paper-icon-button-light';
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+        btn.innerHTML = '<span class="material-icons" aria-hidden="true">monetization_on</span>';
+        btn.addEventListener('click', function () { openModal(lastData || data); });
+
+        if (anchor) container.insertBefore(btn, anchor);
+        else container.appendChild(btn);
+        return true;
     }
 
     var lastData = null;
 
     function refresh() {
         fetchMe().then(function (raw) {
-            var data = applyTestOverride(raw);
+            var normalized = normalizeMe(raw);
+            var data = applyTestOverride(normalized);
             lastData = data;
             if (data.state === 'Exempt' && !data.__testMode) {
                 var b = document.getElementById('npnp-banner');
                 if (b) b.parentNode.removeChild(b);
-                ensureHeaderButton(data); // exempt still gets a button to view history.
+                document.body.classList.remove('npnp-has-banner');
+                document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
+                ensureHeaderButton(data);
                 return;
             }
             ensureHeaderButton(data);
@@ -324,6 +380,7 @@
     function tick() {
         if (lastData) {
             ensureHeaderButton(lastData);
+            if (document.getElementById('npnp-banner')) positionBanner();
         }
     }
 
@@ -332,6 +389,16 @@
         setInterval(tick, 2000);
         setInterval(refresh, 5 * 60 * 1000);
         document.addEventListener('viewshow', refresh);
+        window.addEventListener('resize', positionBanner);
+        try {
+            var mo = new MutationObserver(function () {
+                if (lastData) {
+                    ensureHeaderButton(lastData);
+                    if (document.getElementById('npnp-banner')) positionBanner();
+                }
+            });
+            mo.observe(document.body, { childList: true, subtree: true });
+        } catch (_) {}
     }
 
     if (document.readyState === 'loading') {
