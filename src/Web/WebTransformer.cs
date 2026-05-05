@@ -1,3 +1,4 @@
+using System;
 using Newtonsoft.Json.Linq;
 
 namespace Jellyfin.Plugin.NoPayNoPlay.Web;
@@ -38,6 +39,18 @@ public static class WebTransformer
             return contents;
         }
 
+        // Defence-in-depth: File Transformation falls back to regex matching when no
+        // exact-key match is found, and our literal pattern "index.html" matches any
+        // file whose name contains "index<ANY>html" — including JS chunks like
+        // "itemDetails-index-html.<hash>.chunk.js". Those chunks may carry inline HTML
+        // templates with a "</body>" substring, so blindly inserting our <script> tag
+        // would corrupt the JS source and break the web client.
+        // Only act on payloads that *look* like a standalone HTML document.
+        if (!LooksLikeHtmlDocument(contents))
+        {
+            return contents;
+        }
+
         // Strip any previously injected NoPayNoPlay script tag (older version,
         // cached content, …) so we can re-emit a tag with the current version
         // suffix. This keeps the cache-buster effective across updates.
@@ -52,5 +65,31 @@ public static class WebTransformer
         return idx >= 0
             ? contents.Insert(idx, scriptTag + "\n")
             : contents + scriptTag;
+    }
+
+    /// <summary>
+    /// Heuristic: returns true only when the payload's first non-whitespace bytes
+    /// start with an HTML preamble (<c>&lt;!doctype html&gt;</c> or <c>&lt;html</c>).
+    /// JS chunks emitted by Webpack always start with tokens such as
+    /// <c>(self.webpackChunkjellyfin_web=…</c> or <c>"use strict";</c>, so they fail
+    /// this check even when they happen to contain a <c>&lt;/body&gt;</c> substring
+    /// inside an inline HTML template.
+    /// </summary>
+    private static bool LooksLikeHtmlDocument(string contents)
+    {
+        int i = 0;
+        while (i < contents.Length && char.IsWhiteSpace(contents[i]))
+        {
+            i++;
+        }
+        if (i >= contents.Length || contents[i] != '<')
+        {
+            return false;
+        }
+
+        // Compare the next few characters case-insensitively against expected HTML preambles.
+        ReadOnlySpan<char> head = contents.AsSpan(i, System.Math.Min(contents.Length - i, 16));
+        return head.StartsWith("<!doctype html", System.StringComparison.OrdinalIgnoreCase)
+            || head.StartsWith("<html", System.StringComparison.OrdinalIgnoreCase);
     }
 }

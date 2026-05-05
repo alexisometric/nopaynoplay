@@ -64,4 +64,37 @@ public class WebTransformerEdgeCaseTests
         Assert.True(scriptIdx >= 0);
         Assert.True(scriptIdx < lastBody);
     }
+
+    // Regression: File Transformation falls back to regex matching when no exact
+    // key match is found, and our literal pattern "index.html" matches files like
+    // "itemDetails-index-html.<hash>.chunk.js". Those are JS chunks emitted by
+    // Webpack that may contain inline HTML templates with "</body>". Inserting
+    // our <script> tag into them would break the web client with a SyntaxError.
+    [Fact]
+    public void Transform_DoesNotTouchWebpackChunkContainingBodyClose()
+    {
+        const string js = "(self.webpackChunkjellyfin_web=self.webpackChunkjellyfin_web||[]).push("
+                          + "[[76331],{12345:e=>{e.exports='<div></body></div>'}}]);";
+        var payload = new JObject { ["contents"] = js };
+        string result = WebTransformer.Transform(payload);
+        Assert.Equal(js, result);
+        Assert.DoesNotContain("/NoPayNoPlay/Web/client.js", result);
+    }
+
+    [Fact]
+    public void Transform_DoesNotTouchPlainScript()
+    {
+        const string js = "\"use strict\";console.log('</body>');";
+        var payload = new JObject { ["contents"] = js };
+        string result = WebTransformer.Transform(payload);
+        Assert.Equal(js, result);
+    }
+
+    [Fact]
+    public void Transform_AcceptsDoctypePreamble()
+    {
+        var payload = new JObject { ["contents"] = "<!DOCTYPE html>\n<html><body></body></html>" };
+        string result = WebTransformer.Transform(payload);
+        Assert.Contains("/NoPayNoPlay/Web/client.js", result);
+    }
 }
