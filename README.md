@@ -29,7 +29,6 @@ You self-host Jellyfin for your family / friends / housemates and you'd like the
 - 🚫 **disables playback** (but never the account) on expiry,
 - ✅ you validate payments manually when the money lands on PayPal / Lydia,
 - 🙋 users can declare **“I just paid”** — admins get a pending badge with one-click confirm/reject,
-- 📱 **QR code** generated server-side for the active payment link (no external service),
 - 🎁 **promo / referral codes** to grant free months,
 - 🆓 free 7-day trial on every new account,
 - 🛡️ manual exemption for family / VIP guests.
@@ -58,17 +57,17 @@ The plugin is **English-first** with a built-in i18n system.
 | "Record payment" button + transaction log (edit / delete) | Clickable PayPal.me / Lydia links with amount preview |
 | **Pending claim** badge with one-click confirm / reject | **“I just paid”** button (rate-limited to once / 30 min) |
 | **Promo / referral codes** (max uses, expiry, free months) | Promo redemption directly from the modal |
-| Activity tab + CSV export + bulk actions | **Server-side QR code** for the active payment link |
-| "Exempt" / "Reset trial" / monthly stats | In-app toasts for feedback (success / cooldown / error) |
+| Activity tab + CSV export + bulk actions | In-app toasts for feedback (success / cooldown / error) |
+| "Exempt" / "Reset trial" / monthly stats | Account never deleted, only playback disabled |
 | Scheduled task every 12 h | Fine-grained Jellyfin bell notifications: J-3 / J-1 / J0 / grace expired |
-| Auto config backup (retention 10) | Account never deleted, only playback disabled |
-| Configurable price, currency, grace period, trial, warning days | Anniversary day preserved across renewals |
+| Auto config backup (retention 10) | Anniversary day preserved across renewals |
+| Configurable price, currency, grace period, trial, warning days | Integer prices displayed without trailing `.00` |
 | **Subscription tiers** with highlighted “best deal” | Tier picker in the modal (1 / 3 / 6 / 12 months…) |
 | **Member tags** with per-tag price overrides | Donation invitation in the modal (paying *and* exempt users) |
 | **Audit log** (last 500 admin actions) | Reinforced compatibility banner if File Transformation plugin is missing |
 | **12-month inline revenue chart** on the Members tab | Inline **SVG bar chart** rendered without external libraries |
 | Public `/Public/Health` probe + hardened rate-limit on code redemption | Hash deeplink `#!/npnp` to open the modal directly |
-| 8-language i18n (en/fr/es/de/it/pt/ru/zh) + Jellyfin language follow | Integer prices displayed without trailing `.00` |
+| 8-language i18n (en/fr/es/de/it/pt/ru/zh) + Jellyfin language follow | Full English / French / Spanish / German / Italian / Portuguese / Russian / Chinese support |
 
 > ℹ️ Administrators are **always** automatically exempt.
 
@@ -121,7 +120,7 @@ flowchart LR
 - **No external database.** Everything is serialized in the Jellyfin plugin XML configuration.
 - **Reversible.** Before blocking a user, their `UserPolicy` is snapshotted. Removing the block restores it as-is.
 - **Anti-spam.** Notifications are deduped per (state, milestone) so a user gets at most one J-3, J-1, J0 and grace-expired notice per cycle.
-- **No outbound calls.** QR codes are rendered server-side via [QRCoder](https://github.com/codebude/QRCoder) (MIT, pure managed) — no external image API.
+- **No outbound calls.** All assets are served by the plugin itself — nothing reaches third-party services.
 
 ---
 
@@ -135,7 +134,6 @@ All routes live under `/NoPayNoPlay/`. Admin routes require `RequiresElevation`.
 | `POST`   | `/NoPayNoPlay/Me/MarkPaid` | user | Declares a payment is incoming (rate-limited 30 min) |
 | `POST`   | `/NoPayNoPlay/Me/RedeemCode` | user | Redeems a promo / referral code |
 | `GET`    | `/NoPayNoPlay/Strings` | public | Active language + translation bundle |
-| `GET`    | `/NoPayNoPlay/Qr?text=...` | public | Server-rendered SVG QR code (max 350 chars, no outbound call) |
 | `GET`    | `/NoPayNoPlay/Users` | admin | Enriched subscription list |
 | `POST`   | `/NoPayNoPlay/Users/{id}/Pay` | admin | Records a payment, extends expiry |
 | `POST`   | `/NoPayNoPlay/Users/{id}/ConfirmPending` | admin | Confirms a user's pending claim and records the payment |

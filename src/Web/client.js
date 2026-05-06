@@ -139,6 +139,13 @@
 
     function applyAdminPreviewSkin(data) {
         if (!data || !data.isAdminPreview) return data;
+        // If a test override is already active, keep that state — we don't
+        // want the admin-preview skin to clobber it.
+        if (data.__testMode) {
+            var c = Object.assign({}, data);
+            c.__previewMode = true;
+            return c;
+        }
         var clone = Object.assign({}, data);
         clone.state = 'WarningSoon';
         clone.__previewMode = true;
@@ -270,10 +277,6 @@
             + '.npnp-promo-row input{flex:1;background:#0d0d0d;border:1px solid #333;color:#fff;'
             + 'padding:8px 10px;border-radius:6px;font:600 13px ui-monospace,monospace;'
             + 'text-transform:uppercase;letter-spacing:1px;}'
-            + '.npnp-qr-wrap{display:flex;align-items:center;gap:14px;background:#fff;color:#222;'
-            + 'padding:12px;border-radius:10px;margin-top:10px;}'
-            + '.npnp-qr-wrap svg{width:120px;height:120px;flex-shrink:0;}'
-            + '.npnp-qr-wrap .npnp-qr-info{font-size:12px;color:#444;}'
             // Tier cards
             + '.npnp-tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:6px 0 4px;}'
             + '.npnp-tier{background:#1f1f1f;border:1px solid #333;border-radius:10px;padding:12px;text-align:center;'
@@ -458,8 +461,9 @@
     function paymentCardHtml(data, key, url, methodLabel) {
         if (!url) return '';
         var amount = formatPrice(data.price) + ' ' + (data.currency || 'EUR');
-        return '<a class="npnp-pay-card" href="' + escapeHtml(url)
-            + '" target="_blank" rel="noopener" data-method="' + escapeHtml(key) + '">'
+        return '<a class="npnp-pay-card" href="' + escapeHtml(buildPaymentUrl(key, url, Number(data.price || 0), data.currency || 'EUR'))
+            + '" target="_blank" rel="noopener" data-method="' + escapeHtml(key) + '"'
+            + ' data-base-url="' + escapeHtml(url) + '">'
             + '<span class="npnp-pay-title">'
             + '<span class="material-icons" aria-hidden="true">open_in_new</span>'
             + escapeHtml(methodLabel) + '</span>'
@@ -467,45 +471,33 @@
             + '</a>';
     }
 
-    function buildQrUrl(text) {
-        var api = getApiClient();
-        if (!api || !text) return '';
-        return api.getUrl('NoPayNoPlay/Qr', { text: text });
-    }
-
-    // Fetch the QR SVG through the authenticated ApiClient and inline it into
-    // the slot. Falls back to a clickable text link when generation fails.
-    function loadQrInto(slot, text, data) {
-        var api = getApiClient();
-        if (!api || !text || !slot) return;
-        api.ajax({
-            type: 'GET',
-            url: api.getUrl('NoPayNoPlay/Qr', { text: text }),
-            dataType: 'text',
-            headers: { Accept: 'image/svg+xml,text/plain,*/*' }
-        }).then(function (svg) {
-            if (typeof svg !== 'string' || svg.indexOf('<svg') === -1) {
-                throw new Error('not-svg');
+    // Build a payment URL pre-filled with the chosen amount.
+    //  - PayPal.me: replace or append /<amount><CURRENCY> at the end of the
+    //    handle path, e.g. https://paypal.me/jdoe/12EUR.
+    //  - Lydia: append amount=<value> as a query parameter (used as a hint;
+    //    Lydia's pot pages don't always honour it but adding it is harmless).
+    function buildPaymentUrl(method, baseUrl, amount, currency) {
+        if (!baseUrl) return '';
+        var amt = Math.max(0, Number(amount || 0));
+        if (amt <= 0) return baseUrl;
+        var cur = String(currency || 'EUR').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'EUR';
+        var nice = (Math.round(amt * 100) / 100).toString();
+        try {
+            if (method === 'paypal') {
+                var m = baseUrl.match(/^(https?:\/\/(?:www\.)?paypal\.me\/[^\/?#\s]+)(?:\/[^?#\s]*)?(\?[^#]*)?(#.*)?$/i);
+                if (m) {
+                    return m[1] + '/' + nice + cur + (m[2] || '') + (m[3] || '');
+                }
             }
-            // Force the SVG to fill the 120x120 slot regardless of QRCoder defaults.
-            var sized = svg.replace(/<svg\b([^>]*)>/i, function (m, attrs) {
-                var stripped = attrs
-                    .replace(/\swidth="[^"]*"/i, '')
-                    .replace(/\sheight="[^"]*"/i, '');
-                return '<svg' + stripped + ' width="120" height="120">';
-            });
-            slot.innerHTML = sized;
-            slot.style.color = '';
-            slot.style.fontSize = '';
-        }).catch(function () {
-            slot.style.fontSize = '11px';
-            slot.style.color = '#888';
-            slot.style.padding = '6px';
-            slot.style.textAlign = 'center';
-            slot.style.wordBreak = 'break-all';
-            slot.textContent = t(data, 'user.modal.qr.fallback',
-                'QR unavailable — copy the link above.');
-        });
+            if (method === 'lydia') {
+                var sep = baseUrl.indexOf('?') === -1 ? '?' : '&';
+                if (/[?&]amount=/i.test(baseUrl)) {
+                    return baseUrl.replace(/([?&]amount=)[^&#]*/i, '$1' + encodeURIComponent(nice));
+                }
+                return baseUrl + sep + 'amount=' + encodeURIComponent(nice);
+            }
+        } catch (_) { /* fall through */ }
+        return baseUrl;
     }
 
     function openModal(rawData) {
@@ -544,25 +536,6 @@
                 + '</div>';
         }
 
-        // QR for the first available payment URL. We fetch the SVG via the
-        // authenticated ApiClient (rather than an <img> tag, which doesn't carry
-        // Jellyfin's auth headers and used to fail silently for some users) and
-        // inject it inline once the modal is in the DOM.
-        var primaryUrl = data.paypalMeUrl || data.lydiaUrl || '';
-        var qrSection = '';
-        if (primaryUrl) {
-            qrSection = '<div class="npnp-qr-wrap">'
-                + '<div id="npnp-qr-slot" style="width:120px;height:120px;flex-shrink:0;'
-                + 'display:flex;align-items:center;justify-content:center;'
-                + 'font-size:11px;color:#888;">…</div>'
-                + '<div class="npnp-qr-info">'
-                + '<div style="font-weight:700;color:#222;margin-bottom:4px;">'
-                + escapeHtml(t(data, 'user.modal.qr.title', 'Or scan this QR code'))
-                + '</div>'
-                + '<div>' + escapeHtml(t(data, 'user.modal.qr.scan', 'Scan with your phone'))
-                + '</div></div></div>';
-        }
-
         var note = data.customNote
             ? '<div class="npnp-note-row">'
                 + '<span class="npnp-note-text">' + escapeHtml(data.customNote) + '</span>'
@@ -594,7 +567,7 @@
         }
 
         var iPaidBtn = '';
-        if (!data.__previewMode && !isExempt) {
+        if (!isExempt) {
             iPaidBtn = '<button type="button" class="npnp-mini-btn primary" id="npnp-i-paid"'
                 + (data.hasPendingPaymentClaim ? ' disabled' : '')
                 + '>'
@@ -603,7 +576,7 @@
                 + '</button>';
         }
 
-        var promoSection = (data.__previewMode || isExempt) ? '' : ''
+        var promoSection = isExempt ? '' : ''
             + '<h3>' + escapeHtml(t(data, 'user.modal.section.promo', 'Promo / referral code')) + '</h3>'
             + '<div class="npnp-promo-row">'
             + '<input type="text" id="npnp-promo-input" maxlength="32" placeholder="'
@@ -652,7 +625,6 @@
             +        (isExempt ? '' : renderTiers(data))
             +        paySection
             +        donateNote
-            +        (isExempt ? '' : qrSection)
             +        (iPaidBtn ? '<div style="margin-top:14px;">' + iPaidBtn + '</div>' : '')
             +        note
             +        contactRow
@@ -671,14 +643,6 @@
             if (e.target === backdrop) closeModal();
         });
         backdrop.querySelector('.close').addEventListener('click', closeModal);
-
-        // Asynchronously fetch the QR SVG and inline it. This works regardless
-        // of whether <img> tags can carry Jellyfin auth, and lets us show a
-        // useful fallback (the URL itself) if generation fails.
-        var qrSlot = document.getElementById('npnp-qr-slot');
-        if (qrSlot && primaryUrl) {
-            loadQrInto(qrSlot, primaryUrl, data);
-        }
 
         // Tier selection: pick the highlight tier by default and let the user
         // choose another. The selection is reflected when claiming "I paid".
@@ -706,9 +670,33 @@
                     el.classList.add('selected');
                     selectedTierMonths = Math.max(1, Number(el.getAttribute('data-tier-months') || 1));
                     selectedTierAmount = Number(el.getAttribute('data-tier-price') || selectedTierAmount);
+                    updatePaymentCards(selectedTierAmount, data.currency || 'EUR');
                 });
             }
         );
+
+        // Refresh PayPal / Lydia hrefs and visible amount when the user
+        // picks a different tier (or on initial highlight selection).
+        function updatePaymentCards(amount, currency) {
+            var pretty = formatPrice(amount) + ' ' + currency;
+            Array.prototype.forEach.call(
+                document.querySelectorAll('.npnp-pay-card'),
+                function (card) {
+                    var method = card.getAttribute('data-method');
+                    var base = card.getAttribute('data-base-url');
+                    if (base) {
+                        card.href = buildPaymentUrl(method, base, amount, currency);
+                    }
+                    var amt = card.querySelector('.npnp-pay-amount');
+                    if (amt) amt.textContent = pretty;
+                }
+            );
+        }
+        // Apply the highlight tier amount immediately so the cards open with
+        // the correct value even before the user clicks a tier.
+        if (defaultTier) {
+            updatePaymentCards(selectedTierAmount, data.currency || 'EUR');
+        }
 
         // Copy IBAN / custom note button.
         var copyBtn = document.getElementById('npnp-copy-note');
@@ -749,9 +737,10 @@
                     'Tell the admin you have just paid?'))) return;
                 iPaid.disabled = true;
 
-                // In test mode, simulate the round-trip locally so the admin
-                // can verify the UX without touching real data.
-                if (data.__testMode) {
+                // In test mode (or admin preview), simulate the round-trip
+                // locally so the admin can verify the UX without touching
+                // real data.
+                if (data.__testMode || data.__previewMode) {
                     var sess = readTestSession();
                     sess.pendingClaim = new Date().toISOString();
                     writeTestSession(sess);
@@ -788,9 +777,9 @@
                 if (!code) return;
                 redeem.disabled = true;
 
-                // Test-mode simulation: "INVALID" rejects, anything else accepts
-                // and pretends 1 month was added.
-                if (data.__testMode) {
+                // Test-mode (or admin preview) simulation: "INVALID" rejects,
+                // anything else accepts and pretends 1 month was added.
+                if (data.__testMode || data.__previewMode) {
                     if (code.toUpperCase() === 'INVALID') {
                         toast(t(data, 'user.modal.promo.invalid',
                             'Invalid or already-used code.'), 'error',

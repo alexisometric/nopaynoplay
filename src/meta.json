@@ -9,5 +9,5 @@
   "imageUrl": "https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/images/logo.png",
   "targetAbi": "10.11.8.0",
   "framework": "net9.0",
-  "version": "1.2.0.0"
+  "version": "1.2.1.0"
 }

@@ -1092,18 +1092,6 @@ public class NoPayNoPlayController : ControllerBase
         return Ok(new { ok = true, monthsAdded = months, expiryDate = sub.ExpiryDate });
     }
 
-    /// <summary>Returns an SVG QR code for a short payment URL or text.</summary>
-    [HttpGet("Qr")]
-    [AllowAnonymous]
-    [Produces("image/svg+xml")]
-    public IActionResult GetQr([FromQuery] string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return BadRequest();
-        if (text.Length > 350) text = text.Substring(0, 350);
-        string svg = Services.QrSvgGenerator.Generate(text);
-        return Content(svg, "image/svg+xml; charset=utf-8");
-    }
-
     private static string SanitizePromoCode(string? value)
     {
         if (string.IsNullOrWhiteSpace(value)) return string.Empty;
