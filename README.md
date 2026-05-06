@@ -44,7 +44,7 @@ The plugin is **English-first** with a built-in i18n system.
 
 - Translation bundles are embedded JSON resources (`src/Localization/strings.{lang}.json`).
 - The active language is resolved from (in order): admin override (`UiCultureOverride` setting) → `?lang=` query → `Accept-Language` header → **Jellyfin server UI culture** → `en` fallback.
-- Bundled languages: **English** (`en`), **French** (`fr`).
+- Bundled languages: **English** (`en`), **French** (`fr`), **Spanish** (`es`), **German** (`de`), **Italian** (`it`), **Portuguese** (`pt`), **Russian** (`ru`), **Chinese** (`zh`).
 - Adding a new language is just dropping a new `strings.{code}.json` next to the others and listing it as an `EmbeddedResource` in the csproj.
 
 ---
@@ -63,7 +63,12 @@ The plugin is **English-first** with a built-in i18n system.
 | Scheduled task every 12 h | Fine-grained Jellyfin bell notifications: J-3 / J-1 / J0 / grace expired |
 | Auto config backup (retention 10) | Account never deleted, only playback disabled |
 | Configurable price, currency, grace period, trial, warning days | Anniversary day preserved across renewals |
-| Full English / French i18n + Jellyfin language follow | Integer prices displayed without trailing `.00` |
+| **Subscription tiers** with highlighted “best deal” | Tier picker in the modal (1 / 3 / 6 / 12 months…) |
+| **Member tags** with per-tag price overrides | Donation invitation in the modal (paying *and* exempt users) |
+| **Audit log** (last 500 admin actions) | Reinforced compatibility banner if File Transformation plugin is missing |
+| **12-month inline revenue chart** on the Members tab | Inline **SVG bar chart** rendered without external libraries |
+| Public `/Public/Health` probe + hardened rate-limit on code redemption | Hash deeplink `#!/npnp` to open the modal directly |
+| 8-language i18n (en/fr/es/de/it/pt/ru/zh) + Jellyfin language follow | Integer prices displayed without trailing `.00` |
 
 > ℹ️ Administrators are **always** automatically exempt.
 

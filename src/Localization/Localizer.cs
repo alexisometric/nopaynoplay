@@ -84,6 +84,32 @@ public sealed class Localizer
         return template;
     }
 
+    /// <summary>
+    /// Resolves a plural form. Looks up <c>{key}.one</c> when <paramref name="count"/> is 1
+    /// and <c>{key}.other</c> otherwise. Falls back to <paramref name="key"/> alone if
+    /// the plural variants are missing. Substitutes <c>{n}</c> with the count.
+    /// </summary>
+    public string GetPlural(string key, long count, string? culture = null)
+    {
+        string suffix = count == 1 ? ".one" : ".other";
+        var bundle = GetBundle(culture);
+        string template;
+        if (bundle.TryGetValue(key + suffix, out var v) && !string.IsNullOrEmpty(v))
+        {
+            template = v;
+        }
+        else if (_defaultBundle.TryGetValue(key + suffix, out var f) && !string.IsNullOrEmpty(f))
+        {
+            template = f;
+        }
+        else
+        {
+            template = Get(key, culture);
+        }
+
+        return template.Replace("{n}", count.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
     /// <summary>Picks the best culture for an HTTP request.</summary>
     public string ResolveCulture(HttpContext? httpContext)
     {

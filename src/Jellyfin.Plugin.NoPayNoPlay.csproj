@@ -9,9 +9,9 @@
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
-    <Version>1.1.0.0</Version>
-    <FileVersion>1.1.0.0</FileVersion>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <Version>1.2.0.0</Version>
+    <FileVersion>1.2.0.0</FileVersion>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -27,6 +27,12 @@
     <EmbeddedResource Include="Web\config.js" />
     <EmbeddedResource Include="Localization\strings.en.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.en.json" />
     <EmbeddedResource Include="Localization\strings.fr.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.fr.json" />
+    <EmbeddedResource Include="Localization\strings.es.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.es.json" />
+    <EmbeddedResource Include="Localization\strings.de.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.de.json" />
+    <EmbeddedResource Include="Localization\strings.it.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.it.json" />
+    <EmbeddedResource Include="Localization\strings.pt.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.pt.json" />
+    <EmbeddedResource Include="Localization\strings.ru.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.ru.json" />
+    <EmbeddedResource Include="Localization\strings.zh.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.zh.json" />
   </ItemGroup>
 
 </Project>

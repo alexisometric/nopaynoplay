@@ -78,6 +78,19 @@
         });
     }
 
+    // Persist simulated test-mode actions across the auto-refresh that happens
+    // every few minutes (and after simulated successes). Stored only for the
+    // current tab/session and only honoured while ?npnpTest=… is in the URL.
+    function readTestSession() {
+        try {
+            var raw = sessionStorage.getItem('npnpTestSession');
+            return raw ? JSON.parse(raw) : {};
+        } catch (_) { return {}; }
+    }
+    function writeTestSession(obj) {
+        try { sessionStorage.setItem('npnpTestSession', JSON.stringify(obj || {})); } catch (_) {}
+    }
+
     function applyTestOverride(data) {
         var forced = getTestStateOverride();
         if (!forced) return data;
@@ -94,6 +107,32 @@
         } else if (forced === 'Blocked') {
             clone.daysLeft = -10;
             clone.expiryDate = new Date(now.getTime() - 10 * 86400000).toISOString();
+        } else if (forced === 'Ok') {
+            clone.daysLeft = 18;
+            clone.expiryDate = new Date(now.getTime() + 18 * 86400000).toISOString();
+        }
+
+        // Provide sample payment URLs so the QR / payment cards render even
+        // when the admin has not configured PayPal / Lydia yet.
+        if (!clone.paypalMeUrl && !clone.lydiaUrl) {
+            clone.paypalMeUrl = 'https://paypal.me/example/'
+                + (Number(clone.price) || 5).toFixed(0)
+                + (clone.currency || 'EUR');
+            clone.lydiaUrl = 'https://lydia-app.com/pots/example';
+        }
+        if (!clone.price || Number(clone.price) <= 0) {
+            clone.price = 5;
+            clone.currency = clone.currency || 'EUR';
+        }
+
+        // Replay simulated actions persisted earlier in this tab.
+        var sess = readTestSession();
+        if (sess.pendingClaim) {
+            clone.hasPendingPaymentClaim = true;
+            clone.pendingPaymentClaimAt = sess.pendingClaim;
+        }
+        if (Array.isArray(sess.transactions) && sess.transactions.length) {
+            clone.transactions = sess.transactions.concat(clone.transactions || []);
         }
         return clone;
     }
@@ -111,6 +150,16 @@
             return data.strings[key];
         }
         return fallback;
+    }
+
+    // Plural helper. Picks `${key}.one` for n===1, otherwise `${key}.other`.
+    // Falls back to `${key}` when no plural form is registered. Substitutes
+    // {n} with the count.
+    function tp(data, key, n, fallback) {
+        var suffix = (Number(n) === 1) ? '.one' : '.other';
+        var v = t(data, key + suffix, null);
+        if (v === null) v = t(data, key, fallback);
+        return String(v).replace(/\{n\}/g, String(n));
     }
 
     function format(template, tokens) {
@@ -225,6 +274,37 @@
             + 'padding:12px;border-radius:10px;margin-top:10px;}'
             + '.npnp-qr-wrap svg{width:120px;height:120px;flex-shrink:0;}'
             + '.npnp-qr-wrap .npnp-qr-info{font-size:12px;color:#444;}'
+            // Tier cards
+            + '.npnp-tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:6px 0 4px;}'
+            + '.npnp-tier{background:#1f1f1f;border:1px solid #333;border-radius:10px;padding:12px;text-align:center;'
+            + 'cursor:pointer;transition:transform .12s,border-color .12s,background .12s;position:relative;}'
+            + '.npnp-tier:hover{border-color:#00a4dc;transform:translateY(-1px);}'
+            + '.npnp-tier .npnp-tier-months{font-size:13px;opacity:.75;text-transform:uppercase;letter-spacing:.5px;}'
+            + '.npnp-tier .npnp-tier-price{font-size:22px;font-weight:800;margin:4px 0 2px;}'
+            + '.npnp-tier .npnp-tier-permonth{font-size:11px;opacity:.6;}'
+            + '.npnp-tier .npnp-tier-label{font-size:12px;opacity:.85;margin-top:6px;}'
+            + '.npnp-tier.highlight{background:linear-gradient(135deg,#00a4dc22,#1f1f1f);'
+            + 'border-color:#00a4dc;box-shadow:0 0 0 1px #00a4dc inset,0 6px 18px rgba(0,164,220,.15);}'
+            + '.npnp-tier.highlight .npnp-tier-badge{position:absolute;top:-9px;right:8px;background:#00a4dc;color:#fff;'
+            + 'padding:2px 8px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}'
+            + '.npnp-tier.selected{outline:2px solid #00a4dc;}'
+            + '.npnp-note-row{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:13px;opacity:.85;}'
+            + '.npnp-note-row .npnp-note-text{flex:1;white-space:pre-wrap;word-break:break-word;}'
+            + '.npnp-contact-row{margin-top:10px;font-size:13px;}'
+            + '.npnp-contact-row a{color:#00a4dc;text-decoration:none;}'
+            + '.npnp-contact-row a:hover{text-decoration:underline;}'
+            // Exempt banner
+            + '.npnp-exempt-banner{display:flex;align-items:center;gap:12px;'
+            + 'background:linear-gradient(135deg,#2ecc7133,#1f1f1f);border:1px solid #2ecc7166;'
+            + 'border-radius:10px;padding:12px 14px;margin:0 0 12px;}'
+            + '.npnp-exempt-banner .material-icons{color:#2ecc71;font-size:28px;}'
+            + '.npnp-exempt-title{font-weight:700;font-size:15px;}'
+            + '.npnp-exempt-sub{font-size:13px;opacity:.85;margin-top:2px;}'
+            // Donation note
+            + '.npnp-donate-note{display:flex;align-items:center;gap:8px;'
+            + 'background:rgba(231,76,60,.10);border:1px solid rgba(231,76,60,.35);'
+            + 'border-radius:8px;padding:10px 12px;margin-top:10px;font-size:13px;line-height:1.4;}'
+            + '.npnp-donate-note .material-icons{color:#e74c3c;font-size:18px;flex-shrink:0;}'
             // Toast
             + '.npnp-toast-stack{position:fixed;right:18px;bottom:18px;z-index:10001;'
             + 'display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none;}'
@@ -323,14 +403,16 @@
         });
 
         if (data.state === 'Ok' || data.state === 'WarningSoon') {
-            main = format(t(data, 'user.modal.summary.daysLeft', '{days} day(s) left'), {
-                days: Math.max(0, Number(data.daysLeft || 0))
-            });
+            main = tp(data, 'user.modal.summary.daysLeft',
+                Math.max(0, Number(data.daysLeft || 0)),
+                format(t(data, 'user.modal.summary.daysLeft', '{days} day(s) left'),
+                    { days: Math.max(0, Number(data.daysLeft || 0)) }));
             sub = dueOn;
         } else if (data.state === 'InGrace' || data.state === 'Blocked') {
-            main = format(t(data, 'user.modal.summary.expiredAgo', 'Expired {days} day(s) ago'), {
-                days: Math.max(0, -Number(data.daysLeft || 0))
-            });
+            main = tp(data, 'user.modal.summary.expiredAgo',
+                Math.max(0, -Number(data.daysLeft || 0)),
+                format(t(data, 'user.modal.summary.expiredAgo', 'Expired {days} day(s) ago'),
+                    { days: Math.max(0, -Number(data.daysLeft || 0)) }));
             sub = dueOn;
         } else {
             main = stateLabel;
@@ -344,6 +426,33 @@
             + '<div class="npnp-summary-main">' + escapeHtml(main) + '</div>'
             + '<div class="npnp-summary-sub">' + escapeHtml(sub) + '</div>'
             + '</div>';
+    }
+
+    function renderTiers(data) {
+        var tiers = Array.isArray(data.tiers) ? data.tiers : [];
+        if (!tiers.length) return '';
+        var currency = data.currency || 'EUR';
+        var badgeLabel = t(data, 'user.modal.tier.popular', 'Best deal');
+        var perMonth = t(data, 'user.modal.tier.perMonth', '{price} / month');
+        var monthsLabel = t(data, 'user.modal.tier.months', '{n} month(s)');
+        var html = tiers.map(function (raw) {
+            var t1 = normalizeKeys(raw);
+            var months = Math.max(1, Number(t1.months || 1));
+            var price = Number(t1.price || 0);
+            var pm = months > 0 ? (price / months) : 0;
+            return '<button type="button" class="npnp-tier' + (t1.highlight ? ' highlight' : '')
+                + '" data-tier-id="' + escapeHtml(t1.id || '') + '"'
+                + ' data-tier-months="' + months + '"'
+                + ' data-tier-price="' + price + '">'
+                + (t1.highlight ? '<span class="npnp-tier-badge">' + escapeHtml(badgeLabel) + '</span>' : '')
+                + '<div class="npnp-tier-months">' + escapeHtml(format(monthsLabel, { n: months })) + '</div>'
+                + '<div class="npnp-tier-price">' + escapeHtml(formatPrice(price)) + ' ' + escapeHtml(currency) + '</div>'
+                + '<div class="npnp-tier-permonth">' + escapeHtml(format(perMonth, { price: formatPrice(pm) + ' ' + currency })) + '</div>'
+                + (t1.label ? '<div class="npnp-tier-label">' + escapeHtml(t1.label) + '</div>' : '')
+                + '</button>';
+        }).join('');
+        return '<h3>' + escapeHtml(t(data, 'user.modal.section.tiers', 'Choose a plan'))
+            + '</h3><div class="npnp-tiers">' + html + '</div>';
     }
 
     function paymentCardHtml(data, key, url, methodLabel) {
@@ -364,10 +473,46 @@
         return api.getUrl('NoPayNoPlay/Qr', { text: text });
     }
 
+    // Fetch the QR SVG through the authenticated ApiClient and inline it into
+    // the slot. Falls back to a clickable text link when generation fails.
+    function loadQrInto(slot, text, data) {
+        var api = getApiClient();
+        if (!api || !text || !slot) return;
+        api.ajax({
+            type: 'GET',
+            url: api.getUrl('NoPayNoPlay/Qr', { text: text }),
+            dataType: 'text',
+            headers: { Accept: 'image/svg+xml,text/plain,*/*' }
+        }).then(function (svg) {
+            if (typeof svg !== 'string' || svg.indexOf('<svg') === -1) {
+                throw new Error('not-svg');
+            }
+            // Force the SVG to fill the 120x120 slot regardless of QRCoder defaults.
+            var sized = svg.replace(/<svg\b([^>]*)>/i, function (m, attrs) {
+                var stripped = attrs
+                    .replace(/\swidth="[^"]*"/i, '')
+                    .replace(/\sheight="[^"]*"/i, '');
+                return '<svg' + stripped + ' width="120" height="120">';
+            });
+            slot.innerHTML = sized;
+            slot.style.color = '';
+            slot.style.fontSize = '';
+        }).catch(function () {
+            slot.style.fontSize = '11px';
+            slot.style.color = '#888';
+            slot.style.padding = '6px';
+            slot.style.textAlign = 'center';
+            slot.style.wordBreak = 'break-all';
+            slot.textContent = t(data, 'user.modal.qr.fallback',
+                'QR unavailable — copy the link above.');
+        });
+    }
+
     function openModal(rawData) {
         ensureStyles();
         closeModal();
         var data = applyAdminPreviewSkin(rawData);
+        var isExempt = data.state === 'Exempt';
 
         var paypalLabel = t(data, 'user.modal.method.paypal', 'Pay with PayPal');
         var lydiaLabel = t(data, 'user.modal.method.lydia', 'Pay with Lydia');
@@ -375,32 +520,68 @@
             paymentCardHtml(data, 'paypal', data.paypalMeUrl, paypalLabel),
             paymentCardHtml(data, 'lydia', data.lydiaUrl, lydiaLabel)
         ].filter(Boolean).join('');
+        var paySectionHeader = isExempt
+            ? t(data, 'user.modal.section.donate', 'Support the server')
+            : t(data, 'user.modal.section.payment', 'How to pay');
         var paySection = cards
-            ? '<h3>' + escapeHtml(t(data, 'user.modal.section.payment', 'How to pay')) + '</h3>'
+            ? '<h3>' + escapeHtml(paySectionHeader) + '</h3>'
                 + '<div class="npnp-pay-grid">' + cards + '</div>'
             : '';
 
-        // QR for the first available payment URL.
+        // Donation note: shown to every user with at least one configured payment
+        // URL, encouraging voluntary contributions to keep the server running.
+        var donateNote = '';
+        if (cards) {
+            var donateKey = isExempt
+                ? 'user.modal.donate.exempt'
+                : 'user.modal.donate.note';
+            var donateFallback = isExempt
+                ? 'Your access is free — if you want to help cover server costs and maintenance, any donation is welcome.'
+                : 'Beyond your subscription, donations are welcome to help cover server costs and continued improvements.';
+            donateNote = '<div class="npnp-donate-note">'
+                + '<span class="material-icons" aria-hidden="true">favorite</span> '
+                + escapeHtml(t(data, donateKey, donateFallback))
+                + '</div>';
+        }
+
+        // QR for the first available payment URL. We fetch the SVG via the
+        // authenticated ApiClient (rather than an <img> tag, which doesn't carry
+        // Jellyfin's auth headers and used to fail silently for some users) and
+        // inject it inline once the modal is in the DOM.
         var primaryUrl = data.paypalMeUrl || data.lydiaUrl || '';
         var qrSection = '';
         if (primaryUrl) {
-            var qrUrl = buildQrUrl(primaryUrl);
-            if (qrUrl) {
-                qrSection = '<div class="npnp-qr-wrap">'
-                    + '<img src="' + escapeHtml(qrUrl) + '" alt="QR" width="120" height="120" />'
-                    + '<div class="npnp-qr-info">'
-                    + '<div style="font-weight:700;color:#222;margin-bottom:4px;">'
-                    + escapeHtml(t(data, 'user.modal.qr.title', 'Or scan this QR code'))
-                    + '</div>'
-                    + '<div>' + escapeHtml(t(data, 'user.modal.qr.scan', 'Scan with your phone'))
-                    + '</div></div></div>';
-            }
+            qrSection = '<div class="npnp-qr-wrap">'
+                + '<div id="npnp-qr-slot" style="width:120px;height:120px;flex-shrink:0;'
+                + 'display:flex;align-items:center;justify-content:center;'
+                + 'font-size:11px;color:#888;">…</div>'
+                + '<div class="npnp-qr-info">'
+                + '<div style="font-weight:700;color:#222;margin-bottom:4px;">'
+                + escapeHtml(t(data, 'user.modal.qr.title', 'Or scan this QR code'))
+                + '</div>'
+                + '<div>' + escapeHtml(t(data, 'user.modal.qr.scan', 'Scan with your phone'))
+                + '</div></div></div>';
         }
 
         var note = data.customNote
-            ? '<div class="row" style="opacity:.8;margin-top:12px;font-size:13px;">'
-                + escapeHtml(data.customNote) + '</div>'
+            ? '<div class="npnp-note-row">'
+                + '<span class="npnp-note-text">' + escapeHtml(data.customNote) + '</span>'
+                + '<button type="button" class="npnp-mini-btn" id="npnp-copy-note" title="'
+                + escapeHtml(t(data, 'user.modal.copyNote', 'Copy')) + '">'
+                + '<span class="material-icons" aria-hidden="true" style="font-size:14px;vertical-align:middle;">content_copy</span> '
+                + escapeHtml(t(data, 'user.modal.copyNote', 'Copy'))
+                + '</button>'
+                + '</div>'
             : '';
+
+        var contactRow = '';
+        if (data.contactEmail) {
+            var subj = encodeURIComponent('[NoPayNoPlay] ' + (data.state || ''));
+            contactRow = '<div class="npnp-contact-row">'
+                + escapeHtml(t(data, 'user.modal.contact', 'Need help?')) + ' '
+                + '<a href="mailto:' + escapeHtml(data.contactEmail) + '?subject=' + subj + '">'
+                + escapeHtml(data.contactEmail) + '</a></div>';
+        }
 
         var pendingBlock = '';
         if (data.hasPendingPaymentClaim && data.pendingPaymentClaimAt) {
@@ -413,7 +594,7 @@
         }
 
         var iPaidBtn = '';
-        if (!data.__previewMode) {
+        if (!data.__previewMode && !isExempt) {
             iPaidBtn = '<button type="button" class="npnp-mini-btn primary" id="npnp-i-paid"'
                 + (data.hasPendingPaymentClaim ? ' disabled' : '')
                 + '>'
@@ -422,7 +603,7 @@
                 + '</button>';
         }
 
-        var promoSection = data.__previewMode ? '' : ''
+        var promoSection = (data.__previewMode || isExempt) ? '' : ''
             + '<h3>' + escapeHtml(t(data, 'user.modal.section.promo', 'Promo / referral code')) + '</h3>'
             + '<div class="npnp-promo-row">'
             + '<input type="text" id="npnp-promo-input" maxlength="32" placeholder="'
@@ -440,6 +621,21 @@
                 + '</div>'
             : '';
 
+        var exemptBanner = isExempt && !data.__previewMode
+            ? '<div class="npnp-exempt-banner">'
+                + '<span class="material-icons" aria-hidden="true">verified</span>'
+                + '<div>'
+                + '<div class="npnp-exempt-title">'
+                + escapeHtml(t(data, 'user.modal.exempt.title', 'Free access for you'))
+                + '</div>'
+                + '<div class="npnp-exempt-sub">'
+                + escapeHtml(t(data, 'user.modal.exempt.sub',
+                    'No subscription is required — enjoy the server.'))
+                + '</div>'
+                + '</div>'
+                + '</div>'
+            : '';
+
         var html = ''
             + '<div class="npnp-modal-backdrop" id="npnp-modal-backdrop">'
             + '  <div class="npnp-modal" role="dialog" aria-modal="true" aria-label="' + escapeHtml(modalTitle) + '">'
@@ -450,15 +646,18 @@
             + '    </div>'
             + '    <div class="npnp-modal-body">'
             +        previewBanner
+            +        exemptBanner
             +        renderSummary(data)
             +        pendingBlock
+            +        (isExempt ? '' : renderTiers(data))
             +        paySection
-            +        qrSection
+            +        donateNote
+            +        (isExempt ? '' : qrSection)
             +        (iPaidBtn ? '<div style="margin-top:14px;">' + iPaidBtn + '</div>' : '')
             +        note
+            +        contactRow
             +        promoSection
-            + '      <h3>' + escapeHtml(historyTitle) + '</h3>'
-            +        renderHistory(data)
+            +        (isExempt ? '' : ('<h3>' + escapeHtml(historyTitle) + '</h3>' + renderHistory(data)))
             + '    </div>'
             + '  </div>'
             + '</div>';
@@ -473,12 +672,98 @@
         });
         backdrop.querySelector('.close').addEventListener('click', closeModal);
 
+        // Asynchronously fetch the QR SVG and inline it. This works regardless
+        // of whether <img> tags can carry Jellyfin auth, and lets us show a
+        // useful fallback (the URL itself) if generation fails.
+        var qrSlot = document.getElementById('npnp-qr-slot');
+        if (qrSlot && primaryUrl) {
+            loadQrInto(qrSlot, primaryUrl, data);
+        }
+
+        // Tier selection: pick the highlight tier by default and let the user
+        // choose another. The selection is reflected when claiming "I paid".
+        var selectedTierMonths = 1;
+        var selectedTierAmount = Number(data.price || 0);
+        var defaultTier = (data.tiers || []).find(function (t1) {
+            var n = normalizeKeys(t1);
+            return n.highlight;
+        }) || (data.tiers || [])[0];
+        if (defaultTier) {
+            var d = normalizeKeys(defaultTier);
+            selectedTierMonths = Math.max(1, Number(d.months || 1));
+            selectedTierAmount = Number(d.price || selectedTierAmount);
+        }
+        Array.prototype.forEach.call(
+            document.querySelectorAll('.npnp-tier'),
+            function (el) {
+                if (defaultTier && el.getAttribute('data-tier-id') === normalizeKeys(defaultTier).id) {
+                    el.classList.add('selected');
+                }
+                el.addEventListener('click', function () {
+                    Array.prototype.forEach.call(
+                        document.querySelectorAll('.npnp-tier'),
+                        function (e2) { e2.classList.remove('selected'); });
+                    el.classList.add('selected');
+                    selectedTierMonths = Math.max(1, Number(el.getAttribute('data-tier-months') || 1));
+                    selectedTierAmount = Number(el.getAttribute('data-tier-price') || selectedTierAmount);
+                });
+            }
+        );
+
+        // Copy IBAN / custom note button.
+        var copyBtn = document.getElementById('npnp-copy-note');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', function () {
+                var text = data.customNote || '';
+                var done = function () {
+                    toast(t(data, 'user.modal.copyNote.done', 'Copied to clipboard.'),
+                        'success', t(data, 'user.toast.dismiss', 'Dismiss'));
+                };
+                var fallback = function () {
+                    try {
+                        var ta = document.createElement('textarea');
+                        ta.value = text;
+                        ta.style.position = 'fixed';
+                        ta.style.opacity = '0';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(ta);
+                        done();
+                    } catch (_) {
+                        toast(t(data, 'user.modal.copyNote.fail', 'Copy failed.'),
+                            'error', t(data, 'user.toast.dismiss', 'Dismiss'));
+                    }
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(done).catch(fallback);
+                } else {
+                    fallback();
+                }
+            });
+        }
         var iPaid = document.getElementById('npnp-i-paid');
         if (iPaid) {
             iPaid.addEventListener('click', function () {
                 if (!confirm(t(data, 'user.modal.markPaid.confirm',
                     'Tell the admin you have just paid?'))) return;
                 iPaid.disabled = true;
+
+                // In test mode, simulate the round-trip locally so the admin
+                // can verify the UX without touching real data.
+                if (data.__testMode) {
+                    var sess = readTestSession();
+                    sess.pendingClaim = new Date().toISOString();
+                    writeTestSession(sess);
+                    toast(t(data, 'user.modal.markPaid.success',
+                        'Thanks! Admin has been notified.') + ' '
+                        + t(data, 'user.modal.testBadge', 'Test mode'),
+                        'success', t(data, 'user.toast.dismiss', 'Dismiss'));
+                    closeModal();
+                    refresh();
+                    return;
+                }
+
                 postJson('Me/MarkPaid', { method: '' }).then(function () {
                     toast(t(data, 'user.modal.markPaid.success',
                         'Thanks! Admin has been notified.'), 'success',
@@ -502,6 +787,26 @@
                 var code = (input.value || '').trim();
                 if (!code) return;
                 redeem.disabled = true;
+
+                // Test-mode simulation: "INVALID" rejects, anything else accepts
+                // and pretends 1 month was added.
+                if (data.__testMode) {
+                    if (code.toUpperCase() === 'INVALID') {
+                        toast(t(data, 'user.modal.promo.invalid',
+                            'Invalid or already-used code.'), 'error',
+                            t(data, 'user.toast.dismiss', 'Dismiss'));
+                        redeem.disabled = false;
+                        return;
+                    }
+                    toast(format(t(data, 'user.modal.promo.success',
+                        'Code applied: {months} month(s) added.'),
+                        { months: 1 }) + ' '
+                        + t(data, 'user.modal.testBadge', 'Test mode'),
+                        'success', t(data, 'user.toast.dismiss', 'Dismiss'));
+                    closeModal();
+                    return;
+                }
+
                 postJson('Me/RedeemCode', { code: code }).then(function (res) {
                     var r = normalizeKeys(res || {});
                     if (r.ok) {
@@ -648,11 +953,46 @@
 
     var lastData = null;
 
+    // Render a Jellyfin-style activity-log preview toast that mirrors the
+    // notification the EnforcementTask would post for the simulated state.
+    // Fires once per tab so the admin actually sees what the bell
+    // would announce.
+    function showTestNotificationPreview(data) {
+        if (!data || !data.__testMode) return;
+        if (window.__npnpTestNotifShown) return;
+        window.__npnpTestNotifShown = true;
+
+        var titleByState = {
+            Ok: t(data, 'user.modal.testBadge', 'Test mode') + ' — '
+                + t(data, 'state.ok', 'Up to date'),
+            WarningSoon: t(data, 'notif.warningSoon.title',
+                'NoPayNoPlay: subscription expiring soon'),
+            InGrace: t(data, 'notif.inGrace.title',
+                'NoPayNoPlay: grace period'),
+            Blocked: t(data, 'notif.blocked.title',
+                'NoPayNoPlay: playback blocked'),
+            Exempt: t(data, 'user.modal.testBadge', 'Test mode') + ' — '
+                + t(data, 'state.exempt', 'Free access')
+        };
+        var kindByState = {
+            Ok: 'success',
+            WarningSoon: 'warn',
+            InGrace: 'warn',
+            Blocked: 'error',
+            Exempt: 'success'
+        };
+        var msg = titleByState[data.state]
+            || (t(data, 'user.modal.testBadge', 'Test mode') + ': ' + data.state);
+        toast(msg, kindByState[data.state] || 'warn',
+            t(data, 'user.toast.dismiss', 'Dismiss'));
+    }
+
     function refresh() {
         return fetchMe().then(function (raw) {
             var normalized = normalizeMe(raw);
             var data = applyTestOverride(normalized);
             lastData = data;
+            showTestNotificationPreview(data);
             if (data.state === 'Exempt' && !data.__testMode) {
                 var b = document.getElementById('npnp-banner');
                 if (b) b.parentNode.removeChild(b);
@@ -679,6 +1019,26 @@
         setInterval(refresh, 5 * 60 * 1000);
         document.addEventListener('viewshow', refresh);
         window.addEventListener('resize', positionBanner);
+
+        // Hash deep-link: opening Jellyfin with #!/npnp (or #npnp) auto-opens
+        // the modal once data is loaded. Useful for bookmarks and emails.
+        function checkHashOpen() {
+            var h = (window.location.hash || '').toLowerCase();
+            if (h === '#!/npnp' || h === '#npnp') {
+                if (lastData) {
+                    openModal(lastData);
+                } else {
+                    refresh().then(function () {
+                        if (lastData) openModal(lastData);
+                    });
+                }
+                // Clear the hash so reopening the page doesn't reopen the modal.
+                try { history.replaceState(null, '', window.location.pathname + window.location.search); }
+                catch (_) {}
+            }
+        }
+        window.addEventListener('hashchange', checkHashOpen);
+        checkHashOpen();
         try {
             var mo = new MutationObserver(function () {
                 if (lastData) {

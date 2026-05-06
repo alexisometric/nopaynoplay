@@ -28,6 +28,10 @@
             border-radius:6px; padding:12px 16px; min-width:160px; }
         .npnp-stats-row .npnp-stat-card .npnp-stat-num { font-size:1.4em; font-weight:600; display:block; }
         .npnp-stats-row .npnp-stat-card .npnp-stat-lbl { opacity:.7; font-size:.85em; }
+        .npnp-revenue-chart { margin:0 0 16px; padding:10px 12px; background:rgba(255,255,255,.03);
+            border:1px solid rgba(255,255,255,.08); border-radius:8px; }
+        .npnp-revenue-chart:empty { display:none; }
+        .npnp-chart-title { font-size:13px; font-weight:600; margin-bottom:6px; opacity:.85; }
         .npnp-bulk-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 12px;
             background:rgba(0,164,220,.12); border:1px solid #00a4dc; border-radius:6px; margin-bottom:8px; }
         .npnp-bulk-bar[hidden] { display:none; }
@@ -55,6 +59,8 @@
             display:flex; gap:10px; align-items:center; }
         .npnp-status.ok { background:rgba(46,204,113,.12); color:#2ecc71; }
         .npnp-status.warn { background:rgba(243,156,18,.12); color:#f39c12; }
+        .npnp-status-strong { background:rgba(231,76,60,.18) !important; color:#fff !important;
+            border:2px solid #e74c3c; padding:14px 16px !important; }
         .npnp-status .material-icons { font-size:18px; }
 
         .npnp-empty { padding:24px; text-align:center; opacity:.6; font-style:italic; }
@@ -95,6 +101,9 @@
                 <button type="button" class="npnp-tab-btn" data-tab="settings" data-i18n="admin.tabs.settings">Settings</button>
                 <button type="button" class="npnp-tab-btn" data-tab="activity" data-i18n="admin.tabs.activity">Activity</button>
                 <button type="button" class="npnp-tab-btn" data-tab="promo" data-i18n="admin.tabs.promo">Promo codes</button>
+                <button type="button" class="npnp-tab-btn" data-tab="tiers" data-i18n="admin.tabs.tiers">Tiers</button>
+                <button type="button" class="npnp-tab-btn" data-tab="tags" data-i18n="admin.tabs.tags">Tags</button>
+                <button type="button" class="npnp-tab-btn" data-tab="audit" data-i18n="admin.tabs.audit">Audit log</button>
                 <button type="button" class="npnp-tab-btn" data-tab="test" data-i18n="admin.tabs.test">Test mode</button>
                 <button type="button" class="npnp-tab-btn" data-tab="diagnostics" data-i18n="admin.tabs.diagnostics">Diagnostics</button>
             </div>
@@ -144,6 +153,10 @@
                             <label for="npnpNote" data-i18n="admin.settings.note">Custom note (shown in user modal)</label>
                             <textarea is="emby-textarea" class="emby-input" id="npnpNote" rows="2"></textarea>
                         </div>
+                        <div class="inputContainer">
+                            <label for="npnpContactEmail" data-i18n="admin.settings.contactEmail">Contact email (shown in user modal)</label>
+                            <input is="emby-input" id="npnpContactEmail" type="email" maxlength="254" />
+                        </div>
                     </div>
 
                     <div class="npnp-section">
@@ -163,6 +176,7 @@
             <!-- MEMBERS -->
             <section id="npnpTab-members" class="npnp-tab-panel active">
                 <div id="npnpStats" class="npnp-stats-row"></div>
+                <div id="npnpRevenueChart" class="npnp-revenue-chart"></div>
                 <div id="npnpUsersSummary" class="npnp-summary"></div>
                 <div class="npnp-toolbar">
                     <div class="inputContainer">
@@ -274,12 +288,57 @@
                 </div>
             </section>
 
+            <!-- TIERS -->
+            <section id="npnpTab-tiers" class="npnp-tab-panel">
+                <div class="npnp-section">
+                    <h3 data-i18n="admin.tiers.title">Subscription tiers</h3>
+                    <p data-i18n="admin.tiers.help" style="opacity:.8;">Define the bundles users see in their modal.</p>
+                    <div id="npnpTiersTable" class="npnp-table-wrap"></div>
+                    <div class="npnp-toolbar" style="margin-top:12px;">
+                        <button is="emby-button" type="button" id="npnpTiersAdd">
+                            <span class="material-icons" aria-hidden="true">add</span>
+                            <span data-i18n="admin.tiers.add">Add tier</span>
+                        </button>
+                        <button is="emby-button" type="button" id="npnpTiersSave" class="raised">
+                            <span data-i18n="admin.tiers.save">Save tiers</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAGS -->
+            <section id="npnpTab-tags" class="npnp-tab-panel">
+                <div class="npnp-section">
+                    <h3 data-i18n="admin.tags.title">Member tags</h3>
+                    <p data-i18n="admin.tags.help" style="opacity:.8;">Group members and override price per tag.</p>
+                    <div id="npnpTagsTable" class="npnp-table-wrap"></div>
+                    <div class="npnp-toolbar" style="margin-top:12px;">
+                        <button is="emby-button" type="button" id="npnpTagsAdd">
+                            <span class="material-icons" aria-hidden="true">add</span>
+                            <span data-i18n="admin.tags.add">Add tag</span>
+                        </button>
+                        <button is="emby-button" type="button" id="npnpTagsSave" class="raised">
+                            <span data-i18n="admin.tags.save">Save tags</span>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AUDIT LOG -->
+            <section id="npnpTab-audit" class="npnp-tab-panel">
+                <div class="npnp-section">
+                    <h3 data-i18n="admin.audit.title">Audit log</h3>
+                    <p data-i18n="admin.audit.help" style="opacity:.8;">Latest administrative actions.</p>
+                    <div id="npnpAuditTable" class="npnp-table-wrap"></div>
+                </div>
+            </section>
+
             <!-- TEST MODE -->
             <section id="npnpTab-test" class="npnp-tab-panel">
                 <div class="npnp-section">
                     <h3 data-i18n="admin.test.title">Banner test mode</h3>
                     <p data-i18n="admin.test.help" style="opacity:.8;">
-                        Open Jellyfin in another tab with the URL parameter ?npnpTest=STATE to preview banners without changing real data.
+                        Open Jellyfin in another tab with the URL parameter ?npnpTest=STATE to preview banners without changing real data. In test mode the QR code, the "I just paid" button, the promo redeem and the dashboard notification are all simulated locally.
                     </p>
                     <div class="npnp-grid-2">
                         <div class="inputContainer">

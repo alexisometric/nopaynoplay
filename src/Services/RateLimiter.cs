@@ -49,4 +49,53 @@ public class RateLimiter
         TimeSpan elapsed = DateTime.UtcNow - last;
         return elapsed >= window ? TimeSpan.Zero : window - elapsed;
     }
+
+    private readonly ConcurrentDictionary<string, (int Count, DateTime Until)> _failures = new();
+
+    /// <summary>
+    /// Records a failed attempt for <paramref name="key"/> and returns true when
+    /// the threshold has been reached, in which case the key is locked for
+    /// <paramref name="lockout"/>. Used to throttle promo-code brute-force.
+    /// </summary>
+    public bool RegisterFailureAndShouldLock(string key, int threshold, TimeSpan lockout)
+    {
+        DateTime now = DateTime.UtcNow;
+        bool locked = false;
+        _failures.AddOrUpdate(
+            key,
+            _ =>
+            {
+                int initial = 1;
+                bool willLock = initial >= threshold;
+                if (willLock) locked = true;
+                return (initial, willLock ? now + lockout : DateTime.MinValue);
+            },
+            (_, prev) =>
+            {
+                // Fresh counter once the lockout has elapsed (slow brute-force protection).
+                if (prev.Until > DateTime.MinValue && now >= prev.Until)
+                {
+                    return (1, DateTime.MinValue);
+                }
+                int next = prev.Count + 1;
+                if (next >= threshold)
+                {
+                    locked = true;
+                    return (next, prev.Until == DateTime.MinValue ? now + lockout : prev.Until);
+                }
+                return (next, prev.Until);
+            });
+        return locked;
+    }
+
+    /// <summary>True if the key is currently locked because of too many failures.</summary>
+    public bool IsLocked(string key)
+    {
+        if (!_failures.TryGetValue(key, out var entry)) return false;
+        if (entry.Until <= DateTime.MinValue) return false;
+        return DateTime.UtcNow < entry.Until;
+    }
+
+    /// <summary>Clears the failure counter for the key (e.g. after a success).</summary>
+    public void ClearFailures(string key) => _failures.TryRemove(key, out _);
 }

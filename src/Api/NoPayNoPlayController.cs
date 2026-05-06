@@ -68,9 +68,19 @@ public class UserSubscriptionDto
 
     /// <summary>Method declared by the user when self-claiming.</summary>
     public string PendingPaymentMethod { get; set; } = string.Empty;
-}
 
-/// <summary>Response for the current user.</summary>
+    /// <summary>Tag key (family / friends / guests / …); empty when none.</summary>
+    public string Tag { get; set; } = string.Empty;
+
+    /// <summary>Total amount paid by the user across every recorded transaction.</summary>
+    public decimal TotalPaid { get; set; }
+
+    /// <summary>Number of full months the user is currently behind on (0 when up to date).</summary>
+    public int ArrearsMonths { get; set; }
+
+    /// <summary>Effective monthly price applied to this user (after tag overrides).</summary>
+    public decimal EffectiveMonthlyPrice { get; set; }
+}
 public class MeDto
 {
     public DateTime ExpiryDate { get; set; }
@@ -109,9 +119,16 @@ public class MeDto
 
     /// <summary>Method declared by the user when self-claiming.</summary>
     public string PendingPaymentMethod { get; set; } = string.Empty;
-}
 
-/// <summary>Payload to update an existing transaction.</summary>
+    /// <summary>Subscription tiers offered to the user (already filtered for display).</summary>
+    public List<SubscriptionTier> Tiers { get; set; } = new();
+
+    /// <summary>Optional contact email — used to build a mailto link in the modal.</summary>
+    public string ContactEmail { get; set; } = string.Empty;
+
+    /// <summary>True when the API caller is currently authenticated as a Jellyfin administrator.</summary>
+    public bool IsAdmin { get; set; }
+}
 public class TransactionPatchDto
 {
     [Range(0, 100000)]
@@ -178,6 +195,13 @@ public class RedeemCodeDto
     public string Code { get; set; } = string.Empty;
 }
 
+/// <summary>Payload to assign / clear a tag on a user.</summary>
+public class UserTagAssignmentDto
+{
+    [StringLength(32)]
+    public string Tag { get; set; } = string.Empty;
+}
+
 /// <summary>NoPayNoPlay public REST API.</summary>
 [ApiController]
 [Authorize]
@@ -223,6 +247,7 @@ public class NoPayNoPlayController : ControllerBase
     {
         var user = _userManager.GetUserById(sub.UserId);
         SubscriptionState state = _service.EvaluateState(sub);
+        decimal totalPaid = sub.Transactions.Sum(t => t.Amount);
         return new UserSubscriptionDto
         {
             UserId = sub.UserId,
@@ -236,7 +261,11 @@ public class NoPayNoPlayController : ControllerBase
             Transactions = sub.Transactions.OrderByDescending(t => t.Date).ToList(),
             HasPendingPaymentClaim = sub.HasPendingPaymentClaim,
             PendingPaymentClaimAt = sub.PendingPaymentClaimAt,
-            PendingPaymentMethod = sub.PendingPaymentMethod
+            PendingPaymentMethod = sub.PendingPaymentMethod,
+            Tag = sub.Tag ?? string.Empty,
+            TotalPaid = totalPaid,
+            ArrearsMonths = _service.GetArrearsMonths(sub),
+            EffectiveMonthlyPrice = _service.GetEffectiveMonthlyPrice(sub)
         };
     }
 
@@ -402,6 +431,9 @@ public class NoPayNoPlayController : ControllerBase
         SubscriptionState state = _service.EvaluateState(sub);
         await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
         _service.Save();
+        _service.Audit(ResolveActor(), "payment.add", userId,
+            _userManager.GetUserById(userId)?.Username ?? string.Empty,
+            $"amount={body.Amount} months={body.MonthsAdded} method={body.Method}");
 
         return Ok(Project(sub, ResolveCulture()));
     }
@@ -424,6 +456,9 @@ public class NoPayNoPlayController : ControllerBase
         UserSubscription sub = _service.SetExempt(userId, body.IsExempt);
         await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
+        _service.Audit(ResolveActor(), "exempt.toggle", userId,
+            _userManager.GetUserById(userId)?.Username ?? string.Empty,
+            "isExempt=" + body.IsExempt);
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -440,6 +475,8 @@ public class NoPayNoPlayController : ControllerBase
         UserSubscription sub = _service.Reset(userId);
         await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
+        _service.Audit(ResolveActor(), "reset", userId,
+            _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty);
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -466,9 +503,24 @@ public class NoPayNoPlayController : ControllerBase
         Cfg.PaypalMeUrl = SanitizeUrl(body.PaypalMeUrl);
         Cfg.LydiaUrl = SanitizeUrl(body.LydiaUrl);
         Cfg.CustomNote = Truncate(body.CustomNote, 1000);
+        Cfg.ContactEmail = SanitizeEmail(body.ContactEmail);
         Cfg.UiCultureOverride = SanitizeCulture(body.UiCultureOverride);
         Plugin.Instance!.SaveConfiguration();
         return Ok(Cfg);
+    }
+
+    private static string SanitizeEmail(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        string trimmed = Truncate(value.Trim(), 254);
+        // Minimal RFC-5322-ish validation — enough to reject obvious garbage.
+        if (!System.Text.RegularExpressions.Regex.IsMatch(
+                trimmed,
+                @"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"))
+        {
+            return string.Empty;
+        }
+        return trimmed;
     }
 
     private static string SanitizeCurrency(string? value)
@@ -600,7 +652,7 @@ public class NoPayNoPlayController : ControllerBase
             ExpiryDate = expiry,
             DaysLeft = daysLeft,
             State = state.ToString(),
-            Price = Cfg.MonthlyPrice,
+            Price = isAdmin ? Cfg.MonthlyPrice : _service.GetEffectiveMonthlyPrice(sub),
             Currency = Cfg.Currency,
             PaypalMeUrl = Cfg.PaypalMeUrl,
             LydiaUrl = Cfg.LydiaUrl,
@@ -613,7 +665,10 @@ public class NoPayNoPlayController : ControllerBase
             IsAdminPreview = isAdmin,
             HasPendingPaymentClaim = sub.HasPendingPaymentClaim && !isAdmin,
             PendingPaymentClaimAt = isAdmin ? null : sub.PendingPaymentClaimAt,
-            PendingPaymentMethod = isAdmin ? string.Empty : sub.PendingPaymentMethod
+            PendingPaymentMethod = isAdmin ? string.Empty : sub.PendingPaymentMethod,
+            Tiers = Cfg.Tiers.OrderBy(t => t.Months).ToList(),
+            ContactEmail = Cfg.ContactEmail,
+            IsAdmin = isAdmin
         });
     }
 
@@ -742,6 +797,17 @@ public class NoPayNoPlayController : ControllerBase
         decimal total12m = 0m;
         int txAllTime = 0;
 
+        // Build a 12-month series ending with the current month so the admin
+        // page can render an inline bar chart without requesting any third-
+        // party JS dependency.
+        var monthly = new decimal[12];
+        var monthlyLabels = new string[12];
+        for (int i = 0; i < 12; i++)
+        {
+            DateTime m = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-(11 - i));
+            monthlyLabels[i] = m.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         foreach (var sub in Cfg.Subscriptions.Where(s => !adminIds.Contains(s.UserId)))
         {
             foreach (var t in sub.Transactions)
@@ -750,6 +816,14 @@ public class NoPayNoPlayController : ControllerBase
                 totalAllTime += t.Amount;
                 if (t.Date >= startOfMonth) totalThisMonth += t.Amount;
                 if (t.Date >= startOfYearWindow) total12m += t.Amount;
+
+                // Bucket into the right month slot if within the 12-month window.
+                if (t.Date >= startOfYearWindow)
+                {
+                    string label = t.Date.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
+                    int idx = Array.IndexOf(monthlyLabels, label);
+                    if (idx >= 0) monthly[idx] += t.Amount;
+                }
             }
         }
 
@@ -759,7 +833,9 @@ public class NoPayNoPlayController : ControllerBase
             revenueThisMonth = totalThisMonth,
             revenueLast12Months = total12m,
             revenueAllTime = totalAllTime,
-            transactionCount = txAllTime
+            transactionCount = txAllTime,
+            monthlyLabels,
+            monthlyAmounts = monthly
         });
     }
 
@@ -915,6 +991,9 @@ public class NoPayNoPlayController : ControllerBase
             body.Date);
         await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
+        _service.Audit(ResolveActor(), "pending.confirm", userId,
+            _userManager.GetUserById(userId)?.Username ?? string.Empty,
+            $"amount={body.Amount} months={body.MonthsAdded}");
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -926,6 +1005,8 @@ public class NoPayNoPlayController : ControllerBase
         if (_userManager.GetUserById(userId) is null) return NotFound();
         _service.ClearPendingClaim(userId);
         var sub = _service.EnsureUserTracked(userId);
+        _service.Audit(ResolveActor(), "pending.reject", userId,
+            _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty);
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -979,15 +1060,32 @@ public class NoPayNoPlayController : ControllerBase
         if (userId is null || userId == Guid.Empty) return Unauthorized();
         if (body is null || string.IsNullOrWhiteSpace(body.Code)) return BadRequest();
 
+        string lockKey = "redeem-fail:" + userId.Value.ToString("N");
+        if (_rateLimiter.IsLocked(lockKey))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests,
+                new { ok = false, locked = true });
+        }
+
+        // Hard floor between consecutive calls (UX-friendly debounce, prevents
+        // the simplest scripted abuse).
         string key = "redeem:" + userId.Value.ToString("N");
-        if (!_rateLimiter.TryAcquire(key, TimeSpan.FromMinutes(1)))
+        if (!_rateLimiter.TryAcquire(key, TimeSpan.FromSeconds(5)))
         {
             return StatusCode(StatusCodes.Status429TooManyRequests, new { ok = false });
         }
 
         int months = _service.RedeemPromoCode(userId.Value, body.Code);
-        if (months <= 0) return Ok(new { ok = false });
+        if (months <= 0)
+        {
+            // Track failed attempts — 5 failures within a window lock the user out
+            // for 15 minutes to defeat brute-force enumeration of short codes.
+            bool locked = _rateLimiter.RegisterFailureAndShouldLock(
+                lockKey, threshold: 5, lockout: TimeSpan.FromMinutes(15));
+            return Ok(new { ok = false, locked });
+        }
 
+        _rateLimiter.ClearFailures(lockKey);
         var sub = _service.EnsureUserTracked(userId.Value);
         await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
@@ -1030,5 +1128,152 @@ public class NoPayNoPlayController : ControllerBase
         }
 
         return null;
+    }
+
+    private string ResolveActor()
+    {
+        Guid? id = GetCurrentUserId();
+        if (id is null) return "system";
+        return _userManager.GetUserById(id.Value)?.Username ?? "(unknown)";
+    }
+
+    // ---------------------------------------------------------------------
+    // Subscription tiers (admin CRUD + public read).
+    // ---------------------------------------------------------------------
+
+    /// <summary>Lists every configured subscription tier.</summary>
+    [HttpGet("Tiers")]
+    public ActionResult<IEnumerable<SubscriptionTier>> ListTiers() =>
+        Ok(Cfg.Tiers.OrderBy(t => t.Months).ToList());
+
+    /// <summary>Replaces the entire tier list (admin).</summary>
+    [HttpPut("Tiers")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<IEnumerable<SubscriptionTier>> SetTiers([FromBody] List<SubscriptionTier> body)
+    {
+        if (body is null) return BadRequest();
+        var sanitized = body
+            .Where(t => t != null)
+            .Select(t => new SubscriptionTier
+            {
+                Id = t.Id == Guid.Empty ? Guid.NewGuid() : t.Id,
+                Months = Math.Clamp(t.Months, 1, 60),
+                Price = Math.Clamp(t.Price, 0m, 100000m),
+                Label = Truncate(t.Label, 64),
+                Highlight = t.Highlight
+            })
+            .OrderBy(t => t.Months)
+            .Take(20)
+            .ToList();
+        // Enforce single highlighted tier.
+        bool seen = false;
+        foreach (var t in sanitized)
+        {
+            if (t.Highlight && !seen) { seen = true; continue; }
+            t.Highlight = false;
+        }
+        Cfg.Tiers = sanitized;
+        Plugin.Instance!.SaveConfiguration();
+        _service.Audit(ResolveActor(), "tiers.update", null, string.Empty,
+            "tiers=" + sanitized.Count);
+        return Ok(Cfg.Tiers);
+    }
+
+    // ---------------------------------------------------------------------
+    // User tags / groups (admin CRUD + assignment).
+    // ---------------------------------------------------------------------
+
+    /// <summary>Lists every user tag.</summary>
+    [HttpGet("Tags")]
+    public ActionResult<IEnumerable<UserTag>> ListTags() => Ok(Cfg.Tags);
+
+    /// <summary>Replaces the entire tag list (admin).</summary>
+    [HttpPut("Tags")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<IEnumerable<UserTag>> SetTags([FromBody] List<UserTag> body)
+    {
+        if (body is null) return BadRequest();
+        var sanitized = body
+            .Where(t => t != null)
+            .Select(t =>
+            {
+                string key = (t.Key ?? string.Empty).Trim().ToLowerInvariant();
+                if (!System.Text.RegularExpressions.Regex.IsMatch(key, "^[a-z0-9_-]{1,32}$"))
+                {
+                    key = string.Empty;
+                }
+                return new UserTag
+                {
+                    Id = t.Id == Guid.Empty ? Guid.NewGuid() : t.Id,
+                    Key = key,
+                    Label = Truncate(t.Label, 64),
+                    MonthlyPriceOverride = Math.Clamp(t.MonthlyPriceOverride, 0m, 100000m),
+                    Color = SanitizeColor(t.Color)
+                };
+            })
+            .Where(t => !string.IsNullOrEmpty(t.Key))
+            .GroupBy(t => t.Key)
+            .Select(g => g.First())
+            .Take(50)
+            .ToList();
+        Cfg.Tags = sanitized;
+        Plugin.Instance!.SaveConfiguration();
+        _service.Audit(ResolveActor(), "tags.update", null, string.Empty,
+            "tags=" + sanitized.Count);
+        return Ok(Cfg.Tags);
+    }
+
+    private static string SanitizeColor(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        string trimmed = value.Trim();
+        return System.Text.RegularExpressions.Regex.IsMatch(trimmed, "^#[0-9a-fA-F]{3,8}$")
+            ? trimmed
+            : string.Empty;
+    }
+
+    /// <summary>Assigns a tag to a member (admin). Empty value clears it.</summary>
+    [HttpPost("Users/{userId:guid}/Tag")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<UserSubscriptionDto> SetUserTag(Guid userId, [FromBody] UserTagAssignmentDto body)
+    {
+        if (body is null) return BadRequest();
+        if (_userManager.GetUserById(userId) is null) return NotFound();
+        var sub = _service.SetTag(userId, body.Tag ?? string.Empty);
+        _service.Audit(ResolveActor(), "tag.assign", userId,
+            _userManager.GetUserById(userId)?.Username ?? string.Empty,
+            "tag=" + (body.Tag ?? string.Empty));
+        return Ok(Project(sub, ResolveCulture()));
+    }
+
+    // ---------------------------------------------------------------------
+    // Audit log (admin read).
+    // ---------------------------------------------------------------------
+
+    /// <summary>Returns the latest audit entries (admin).</summary>
+    [HttpGet("AuditLog")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<IEnumerable<AuditLogEntry>> GetAuditLog([FromQuery] int limit = 200)
+    {
+        int n = Math.Clamp(limit, 1, 500);
+        var rows = Cfg.AuditLog
+            .OrderByDescending(e => e.Timestamp)
+            .Take(n)
+            .ToList();
+        return Ok(rows);
+    }
+
+    // ---------------------------------------------------------------------
+    // Public health probe (no auth) for monitoring tools (uptime-kuma\u2026).
+    // Returns minimal info: status only, no user counts or version.
+    // ---------------------------------------------------------------------
+
+    /// <summary>Anonymous health probe — returns 200 "ok" if the plugin is alive.</summary>
+    [HttpGet("Public/Health")]
+    [AllowAnonymous]
+    [Produces("text/plain")]
+    public ContentResult PublicHealth()
+    {
+        return Content("ok", "text/plain; charset=utf-8");
     }
 }

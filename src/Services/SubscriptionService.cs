@@ -418,4 +418,94 @@ public class SubscriptionService
             return months;
         }
     }
+
+    /// <summary>
+    /// Returns the effective monthly price for a user, taking the optional tag
+    /// override into account. Falls back to the global price when the user has
+    /// no tag or the tag does not override the price.
+    /// </summary>
+    public decimal GetEffectiveMonthlyPrice(UserSubscription sub)
+    {
+        if (sub != null && !string.IsNullOrEmpty(sub.Tag))
+        {
+            var tag = Config.Tags.FirstOrDefault(t =>
+                string.Equals(t.Key, sub.Tag, StringComparison.OrdinalIgnoreCase));
+            if (tag != null && tag.MonthlyPriceOverride > 0m)
+            {
+                return tag.MonthlyPriceOverride;
+            }
+        }
+        return Config.MonthlyPrice;
+    }
+
+    /// <summary>
+    /// Returns how many full months of subscription the user is currently behind on,
+    /// computed from the gap between today and their last covered period
+    /// (subscription anchor + cumulated paid months). Returns 0 when up to date.
+    /// </summary>
+    public int GetArrearsMonths(UserSubscription sub)
+    {
+        if (sub == null || sub.IsExempt) return 0;
+        DateTime now = DateTime.UtcNow;
+        if (sub.ExpiryDate >= now) return 0;
+        TimeSpan late = now - sub.ExpiryDate;
+        // Use ~30.44 average days/month so a 31-day overdue still counts as 1.
+        int months = (int)Math.Floor(late.TotalDays / 30.4375);
+        return Math.Max(0, months);
+    }
+
+    /// <summary>Sets the tag on a user subscription. Empty string clears it.</summary>
+    public UserSubscription SetTag(Guid userId, string tagKey)
+    {
+        lock (_lock)
+        {
+            UserSubscription sub = EnsureUserTracked(userId);
+            string normalized = (tagKey ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalized.Length > 32) normalized = normalized.Substring(0, 32);
+            // Reject unknown tags silently (resets to empty).
+            if (!string.IsNullOrEmpty(normalized)
+                && !Config.Tags.Any(t => string.Equals(t.Key, normalized, StringComparison.OrdinalIgnoreCase)))
+            {
+                normalized = string.Empty;
+            }
+            sub.Tag = normalized;
+            Plugin.Instance!.SaveConfiguration();
+            return sub;
+        }
+    }
+
+    /// <summary>
+    /// Appends an entry to the in-memory audit log, evicting the oldest entries
+    /// once the configured cap is reached.
+    /// </summary>
+    public void Audit(string actor, string action, Guid? targetUserId, string targetUsername, string details)
+    {
+        lock (_lock)
+        {
+            if (string.IsNullOrEmpty(action)) return;
+            string trimmedDetails = details ?? string.Empty;
+            if (trimmedDetails.Length > 500) trimmedDetails = trimmedDetails.Substring(0, 500);
+            string trimmedActor = (actor ?? string.Empty);
+            if (trimmedActor.Length > 64) trimmedActor = trimmedActor.Substring(0, 64);
+            string trimmedUsername = (targetUsername ?? string.Empty);
+            if (trimmedUsername.Length > 128) trimmedUsername = trimmedUsername.Substring(0, 128);
+
+            Config.AuditLog.Add(new AuditLogEntry
+            {
+                Timestamp = DateTime.UtcNow,
+                Actor = trimmedActor,
+                Action = action,
+                TargetUserId = targetUserId,
+                TargetUsername = trimmedUsername,
+                Details = trimmedDetails
+            });
+
+            int cap = Math.Max(50, Config.AuditLogMaxEntries);
+            if (Config.AuditLog.Count > cap)
+            {
+                Config.AuditLog.RemoveRange(0, Config.AuditLog.Count - cap);
+            }
+            Plugin.Instance!.SaveConfiguration();
+        }
+    }
 }

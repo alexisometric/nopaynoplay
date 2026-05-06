@@ -18,7 +18,10 @@
         selected: {},
         stats: null,
         diagnostics: null,
-        promoCodes: []
+        promoCodes: [],
+        tiers: [],
+        tags: [],
+        audit: []
     };
 
     var STATE_COLORS = {
@@ -127,6 +130,8 @@
             page.querySelector('#npnpPaypal').value = cfg.PaypalMeUrl || '';
             page.querySelector('#npnpLydia').value = cfg.LydiaUrl || '';
             page.querySelector('#npnpNote').value = cfg.CustomNote || '';
+            var ce = page.querySelector('#npnpContactEmail');
+            if (ce) ce.value = cfg.ContactEmail || '';
             fillCultureSelect(page);
             var ui = page.querySelector('#npnpUiCulture');
             if (ui) ui.value = cfg.UiCultureOverride || '';
@@ -143,6 +148,7 @@
             PaypalMeUrl: page.querySelector('#npnpPaypal').value,
             LydiaUrl: page.querySelector('#npnpLydia').value,
             CustomNote: page.querySelector('#npnpNote').value,
+            ContactEmail: (page.querySelector('#npnpContactEmail') ? page.querySelector('#npnpContactEmail').value : '') || '',
             UiCultureOverride: (page.querySelector('#npnpUiCulture') ? page.querySelector('#npnpUiCulture').value : '') || ''
         };
         return api().ajax({
@@ -194,6 +200,45 @@
                 + '<span class="npnp-stat-lbl">' + escapeHtml(t(card[0], card[1])) + '</span>'
                 + '</div>';
         }).join('');
+
+        // Inline 12-month revenue chart, drawn as a tiny SVG. No external libs.
+        var chart = page.querySelector('#npnpRevenueChart');
+        if (chart && Array.isArray(s.monthlyAmounts) && s.monthlyAmounts.length) {
+            var labels = s.monthlyLabels || [];
+            var amounts = s.monthlyAmounts.map(function (n) { return Number(n || 0); });
+            var max = Math.max.apply(null, amounts.concat([1]));
+            var w = 480, h = 140, padL = 30, padB = 26, padT = 12, padR = 10;
+            var innerW = w - padL - padR;
+            var innerH = h - padT - padB;
+            var barW = innerW / amounts.length * 0.7;
+            var step = innerW / amounts.length;
+            var bars = amounts.map(function (v, i) {
+                var bh = max > 0 ? (v / max) * innerH : 0;
+                var x = padL + i * step + (step - barW) / 2;
+                var y = padT + innerH - bh;
+                var lbl = (labels[i] || '').slice(5); // show MM only
+                var title = (labels[i] || '') + ' \u2192 ' + formatPrice(v) + ' ' + c;
+                return '<g><title>' + escapeHtml(title) + '</title>'
+                    + '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1)
+                    + '" width="' + barW.toFixed(1) + '" height="' + bh.toFixed(1)
+                    + '" rx="2" fill="#00a4dc" opacity="' + (v > 0 ? 0.85 : 0.25) + '"></rect>'
+                    + '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 8)
+                    + '" text-anchor="middle" font-size="10" fill="currentColor" opacity=".7">'
+                    + escapeHtml(lbl) + '</text>'
+                    + '</g>';
+            }).join('');
+            var yMaxLabel = '<text x="4" y="' + (padT + 4) + '" font-size="10" fill="currentColor" opacity=".6">'
+                + escapeHtml(formatPrice(max) + ' ' + c) + '</text>';
+            var axis = '<line x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (w - padR)
+                + '" y2="' + (padT + innerH) + '" stroke="currentColor" stroke-opacity=".25"></line>';
+            chart.innerHTML = '<div class="npnp-chart-title">'
+                + escapeHtml(t('admin.stats.chart.title', 'Revenue \u2014 last 12 months'))
+                + '</div>'
+                + '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="xMidYMid meet" '
+                + 'role="img" aria-label="' + escapeHtml(t('admin.stats.chart.title', 'Revenue \u2014 last 12 months')) + '" '
+                + 'style="width:100%;height:auto;max-width:560px;display:block;">'
+                + axis + bars + yMaxLabel + '</svg>';
+        }
     }
 
     function loadActivity(page) {
@@ -216,9 +261,33 @@
                 el.innerHTML = '<span class="material-icons" aria-hidden="true">check_circle</span>'
                     + '<span>' + escapeHtml(t('admin.status.ftOk', 'File Transformation OK.')) + '</span>';
             } else {
-                el.className = 'npnp-status warn';
-                el.innerHTML = '<span class="material-icons" aria-hidden="true">warning</span>'
-                    + '<span>' + escapeHtml(t('admin.status.ftMissing', 'File Transformation plugin not detected.')) + '</span>';
+                el.className = 'npnp-status warn npnp-status-strong';
+                el.innerHTML = '<div style="display:flex;align-items:flex-start;gap:10px;flex:1;">'
+                    + '<span class="material-icons" aria-hidden="true" style="color:#e74c3c;font-size:28px;">error</span>'
+                    + '<div style="flex:1;">'
+                    + '<div style="font-weight:700;font-size:15px;margin-bottom:4px;">'
+                    + escapeHtml(t('admin.status.ftMissing.title', 'File Transformation plugin missing'))
+                    + '</div>'
+                    + '<div style="font-size:13px;line-height:1.5;opacity:.95;">'
+                    + escapeHtml(t('admin.status.ftMissing', 'File Transformation plugin not detected.'))
+                    + '</div>'
+                    + '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">'
+                    + '<a href="https://github.com/IAmParadox27/jellyfin-plugin-file-transformation" '
+                    + 'target="_blank" rel="noopener" class="emby-button raised">'
+                    + escapeHtml(t('admin.status.ftMissing.docs', 'Install instructions'))
+                    + '</a>'
+                    + '<button is="emby-button" type="button" id="npnpStatusRetry" class="emby-button">'
+                    + escapeHtml(t('admin.diag.retry', 'Retry registration'))
+                    + '</button>'
+                    + '</div>'
+                    + '</div></div>';
+                var btn = el.querySelector('#npnpStatusRetry');
+                if (btn) {
+                    btn.addEventListener('click', function () {
+                        api().ajax({ type: 'POST', url: api().getUrl('NoPayNoPlay/Diagnostics/Retry') })
+                            .then(function () { return loadStatus(page); });
+                    });
+                }
             }
             el.style.display = '';
         }).catch(function () { /* ignore */ });
@@ -316,6 +385,8 @@
                 var txm = (u.Transactions || [])[0];
                 return txm ? (txm.Method || '').toLowerCase() : '';
             }
+            case 'TotalPaid': return Number(u.TotalPaid || 0);
+            case 'Tag': return (u.Tag || '').toLowerCase();
             default: return '';
         }
     }
@@ -440,6 +511,8 @@
             + '<th data-sort="DaysLeft">' + escapeHtml(t('admin.users.col.daysLeft', 'Days left')) + arrowFor('DaysLeft') + '</th>'
             + '<th data-sort="LastPayment">' + escapeHtml(t('admin.users.col.lastPayment', 'Last payment')) + arrowFor('LastPayment') + '</th>'
             + '<th data-sort="LastMethod">' + escapeHtml(t('admin.users.col.lastMethod', 'Last method')) + arrowFor('LastMethod') + '</th>'
+            + '<th data-sort="TotalPaid">' + escapeHtml(t('admin.users.col.totalPaid', 'Total paid')) + arrowFor('TotalPaid') + '</th>'
+            + '<th data-sort="Tag">' + escapeHtml(t('admin.users.col.tag', 'Tag')) + arrowFor('Tag') + '</th>'
             + '<th>' + escapeHtml(t('admin.users.col.actions', 'Actions')) + '</th>'
             + '</tr></thead><tbody>';
 
@@ -462,6 +535,25 @@
                     + '">' + escapeHtml(t('admin.users.pending.badge', 'Pending claim')) + '</span>'
                 : '';
 
+            var arrearsBadge = (u.ArrearsMonths && u.ArrearsMonths > 0)
+                ? '<span class="npnp-state-pill" style="background:#e74c3c;margin-left:6px;">'
+                    + escapeHtml(format(t('admin.users.arrears.badge', '{n}m late'), { n: u.ArrearsMonths }))
+                    + '</span>'
+                : '';
+
+            var totalPaidStr = formatPrice(u.TotalPaid || 0) + ' ' + ((state.settings && state.settings.Currency) || 'EUR');
+
+            var tagsList = (state.tags || []);
+            var currentTag = u.Tag || '';
+            var tagOpts = '<option value="">' + escapeHtml(t('admin.users.tag.none', '—')) + '</option>'
+                + tagsList.map(function (tg) {
+                    return '<option value="' + escapeHtml(tg.Key) + '"'
+                        + (tg.Key === currentTag ? ' selected' : '') + '>'
+                        + escapeHtml(tg.Label || tg.Key) + '</option>';
+                }).join('');
+            var tagCell = '<select class="npnp-tag-select" data-userid="' + escapeHtml(u.UserId) + '">'
+                + tagOpts + '</select>';
+
             var pendingActions = u.HasPendingPaymentClaim
                 ? '<button is="emby-button" type="button" class="raised npnp-confirm-pending" title="'
                     + escapeHtml(t('admin.users.pending.confirm', 'Confirm payment'))
@@ -474,11 +566,13 @@
             html += '<tr data-userid="' + escapeHtml(u.UserId) + '">'
                 + '<td class="npnp-row-check"><input type="checkbox" class="npnp-rowcheck"' + checked + ' /></td>'
                 + '<td>' + escapeHtml(u.Username) + '</td>'
-                + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + '</td>'
+                + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + arrearsBadge + '</td>'
                 + '<td>' + escapeHtml(formatDate(u.ExpiryDate)) + '</td>'
                 + '<td>' + escapeHtml(String(u.DaysLeft)) + '</td>'
                 + '<td>' + escapeHtml(lastLabel) + '</td>'
                 + '<td>' + escapeHtml(lastMethod) + '</td>'
+                + '<td>' + escapeHtml(totalPaidStr) + '</td>'
+                + '<td>' + tagCell + '</td>'
                 + '<td><div class="npnp-actions">'
                 + pendingActions
                 + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span></button>'
@@ -534,6 +628,22 @@
         container.querySelectorAll('tr[data-userid]').forEach(function (tr) {
             var userId = tr.getAttribute('data-userid');
             var user = state.users.find(function (x) { return x.UserId === userId; });
+            var tagSel = tr.querySelector('.npnp-tag-select');
+            if (tagSel) {
+                tagSel.addEventListener('change', function () {
+                    var newTag = tagSel.value || '';
+                    api().ajax({
+                        type: 'POST',
+                        url: api().getUrl('NoPayNoPlay/Users/' + userId + '/Tag'),
+                        data: JSON.stringify({ Tag: newTag }),
+                        contentType: 'application/json'
+                    }).then(function () {
+                        flash(page, t(newTag ? 'admin.users.tag.set' : 'admin.users.tag.cleared',
+                            newTag ? 'Tag updated.' : 'Tag removed.'));
+                        return loadUsers(page);
+                    });
+                });
+            }
             tr.querySelector('.npnp-pay').addEventListener('click', function () { openPaymentModal(page, user); });
             tr.querySelector('.npnp-history').addEventListener('click', function () { openHistoryModal(page, user); });
             tr.querySelector('.npnp-exempt').addEventListener('click', function () {
@@ -959,8 +1069,222 @@
                 if (tab === 'activity') loadActivity(page);
                 if (tab === 'diagnostics') loadDiagnostics(page);
                 if (tab === 'promo') loadPromoCodes(page);
+                if (tab === 'tiers') loadTiers(page);
+                if (tab === 'tags') loadTags(page);
+                if (tab === 'audit') loadAudit(page);
             });
         });
+    }
+
+    /* --- tiers --- */
+
+    function loadTiers(page) {
+        return api().ajax({
+            type: 'GET', url: api().getUrl('NoPayNoPlay/Tiers'), dataType: 'json'
+        }).then(function (rows) {
+            state.tiers = (rows || []).map(function (r) { return Object.assign({}, r); });
+            renderTiers(page);
+        }).catch(function () {});
+    }
+
+    function renderTiers(page) {
+        var container = page.querySelector('#npnpTiersTable');
+        if (!container) return;
+        var rows = state.tiers || [];
+        var head = '<table class="npnp-table"><thead><tr>'
+            + '<th>' + escapeHtml(t('admin.tiers.col.months', 'Months')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tiers.col.price', 'Price')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tiers.col.label', 'Label')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tiers.col.highlight', 'Highlight')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tiers.col.actions', 'Actions')) + '</th>'
+            + '</tr></thead><tbody>';
+        var body = rows.map(function (r, idx) {
+            return '<tr data-idx="' + idx + '">'
+                + '<td><input type="number" min="1" max="60" class="npnp-tier-months" value="' + (r.Months || 1) + '" style="width:80px;" /></td>'
+                + '<td><input type="number" min="0" step="0.01" class="npnp-tier-price" value="' + (r.Price || 0) + '" style="width:100px;" /></td>'
+                + '<td><input type="text" maxlength="64" class="npnp-tier-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td><input type="checkbox" class="npnp-tier-highlight"' + (r.Highlight ? ' checked' : '') + ' /></td>'
+                + '<td><button is="emby-button" type="button" class="npnp-tier-del npnp-danger">'
+                + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
+                + '</tr>';
+        }).join('');
+        container.innerHTML = head + (body || '') + '</tbody></table>';
+
+        container.querySelectorAll('.npnp-tier-del').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = parseInt(btn.closest('tr').getAttribute('data-idx'), 10);
+                state.tiers.splice(idx, 1);
+                renderTiers(page);
+            });
+        });
+    }
+
+    function collectTiers(page) {
+        var trs = page.querySelectorAll('#npnpTiersTable tbody tr');
+        var out = [];
+        Array.prototype.forEach.call(trs, function (tr, idx) {
+            var existing = state.tiers[idx] || {};
+            out.push({
+                Id: existing.Id || '',
+                Months: parseInt(tr.querySelector('.npnp-tier-months').value || '1', 10),
+                Price: parseFloat(tr.querySelector('.npnp-tier-price').value || '0'),
+                Label: tr.querySelector('.npnp-tier-label').value || '',
+                Highlight: tr.querySelector('.npnp-tier-highlight').checked
+            });
+        });
+        return out;
+    }
+
+    function bindTiersTab(page) {
+        var addBtn = page.querySelector('#npnpTiersAdd');
+        if (addBtn) {
+            addBtn.addEventListener('click', function () {
+                state.tiers = collectTiers(page);
+                state.tiers.push({ Id: '', Months: 1, Price: 10, Label: '', Highlight: false });
+                renderTiers(page);
+            });
+        }
+        var saveBtn = page.querySelector('#npnpTiersSave');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                var payload = collectTiers(page);
+                api().ajax({
+                    type: 'PUT',
+                    url: api().getUrl('NoPayNoPlay/Tiers'),
+                    data: JSON.stringify(payload),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                }).then(function (rows) {
+                    state.tiers = rows || [];
+                    renderTiers(page);
+                    flash(page, t('admin.tiers.saved', 'Tiers saved.'));
+                });
+            });
+        }
+    }
+
+    /* --- tags --- */
+
+    function loadTags(page) {
+        return api().ajax({
+            type: 'GET', url: api().getUrl('NoPayNoPlay/Tags'), dataType: 'json'
+        }).then(function (rows) {
+            state.tags = (rows || []).map(function (r) { return Object.assign({}, r); });
+            renderTags(page);
+        }).catch(function () {});
+    }
+
+    function renderTags(page) {
+        var container = page.querySelector('#npnpTagsTable');
+        if (!container) return;
+        var rows = state.tags || [];
+        var head = '<table class="npnp-table"><thead><tr>'
+            + '<th>' + escapeHtml(t('admin.tags.col.key', 'Key')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tags.col.label', 'Label')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tags.col.color', 'Color')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tags.col.priceOverride', 'Price override')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.tags.col.actions', 'Actions')) + '</th>'
+            + '</tr></thead><tbody>';
+        var body = rows.map(function (r, idx) {
+            return '<tr data-idx="' + idx + '">'
+                + '<td><input type="text" maxlength="32" class="npnp-tag-key" value="' + escapeHtml(r.Key || '') + '" /></td>'
+                + '<td><input type="text" maxlength="64" class="npnp-tag-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td><input type="color" class="npnp-tag-color" value="' + escapeHtml(r.Color || '#888888') + '" /></td>'
+                + '<td><input type="number" min="0" step="0.01" class="npnp-tag-price" value="' + (r.MonthlyPriceOverride || 0) + '" style="width:100px;" /></td>'
+                + '<td><button is="emby-button" type="button" class="npnp-tag-del npnp-danger">'
+                + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
+                + '</tr>';
+        }).join('');
+        container.innerHTML = head + (body || '') + '</tbody></table>';
+        container.querySelectorAll('.npnp-tag-del').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var idx = parseInt(btn.closest('tr').getAttribute('data-idx'), 10);
+                state.tags.splice(idx, 1);
+                renderTags(page);
+            });
+        });
+    }
+
+    function collectTags(page) {
+        var trs = page.querySelectorAll('#npnpTagsTable tbody tr');
+        var out = [];
+        Array.prototype.forEach.call(trs, function (tr, idx) {
+            var existing = state.tags[idx] || {};
+            out.push({
+                Id: existing.Id || '',
+                Key: tr.querySelector('.npnp-tag-key').value || '',
+                Label: tr.querySelector('.npnp-tag-label').value || '',
+                Color: tr.querySelector('.npnp-tag-color').value || '',
+                MonthlyPriceOverride: parseFloat(tr.querySelector('.npnp-tag-price').value || '0')
+            });
+        });
+        return out;
+    }
+
+    function bindTagsTab(page) {
+        var addBtn = page.querySelector('#npnpTagsAdd');
+        if (addBtn) {
+            addBtn.addEventListener('click', function () {
+                state.tags = collectTags(page);
+                state.tags.push({ Id: '', Key: '', Label: '', Color: '#888888', MonthlyPriceOverride: 0 });
+                renderTags(page);
+            });
+        }
+        var saveBtn = page.querySelector('#npnpTagsSave');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', function () {
+                var payload = collectTags(page);
+                api().ajax({
+                    type: 'PUT',
+                    url: api().getUrl('NoPayNoPlay/Tags'),
+                    data: JSON.stringify(payload),
+                    contentType: 'application/json',
+                    dataType: 'json'
+                }).then(function (rows) {
+                    state.tags = rows || [];
+                    renderTags(page);
+                    flash(page, t('admin.tags.saved', 'Tags saved.'));
+                });
+            });
+        }
+    }
+
+    /* --- audit log --- */
+
+    function loadAudit(page) {
+        return api().ajax({
+            type: 'GET', url: api().getUrl('NoPayNoPlay/AuditLog'), dataType: 'json'
+        }).then(function (rows) {
+            state.audit = rows || [];
+            renderAudit(page);
+        }).catch(function () {});
+    }
+
+    function renderAudit(page) {
+        var container = page.querySelector('#npnpAuditTable');
+        if (!container) return;
+        var rows = state.audit || [];
+        if (!rows.length) {
+            container.innerHTML = '<div class="npnp-empty">' + escapeHtml(t('admin.audit.empty', 'No audit entry yet.')) + '</div>';
+            return;
+        }
+        var head = '<table class="npnp-table"><thead><tr>'
+            + '<th>' + escapeHtml(t('admin.audit.col.timestamp', 'Timestamp')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.audit.col.actor', 'Actor')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.audit.col.action', 'Action')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.audit.col.target', 'Target')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.audit.col.details', 'Details')) + '</th>'
+            + '</tr></thead><tbody>';
+        var body = rows.map(function (r) {
+            return '<tr>'
+                + '<td>' + escapeHtml(formatDate(r.Timestamp)) + '</td>'
+                + '<td>' + escapeHtml(r.Actor || '') + '</td>'
+                + '<td><code>' + escapeHtml(r.Action || '') + '</code></td>'
+                + '<td>' + escapeHtml(r.TargetUsername || '') + '</td>'
+                + '<td>' + escapeHtml(r.Details || '') + '</td>'
+                + '</tr>';
+        }).join('');
+        container.innerHTML = head + body + '</tbody></table>';
     }
 
     function bindTestMode(page) {
@@ -984,18 +1308,45 @@
     }
 
     function bindFilters(page) {
+        // Restore persisted filters before binding listeners.
+        try {
+            var saved = JSON.parse(localStorage.getItem('npnp.adminFilters') || '{}');
+            if (saved && typeof saved === 'object') {
+                if (typeof saved.userFilter === 'string') state.userFilter = saved.userFilter;
+                if (typeof saved.stateFilter === 'string') state.stateFilter = saved.stateFilter;
+                if (typeof saved.methodFilter === 'string') state.methodFilter = saved.methodFilter;
+                var us = page.querySelector('#npnpUserSearch');
+                var ss = page.querySelector('#npnpStateFilter');
+                if (us) us.value = state.userFilter;
+                if (ss) ss.value = state.stateFilter;
+            }
+        } catch (_) {}
+
+        function persistFilters() {
+            try {
+                localStorage.setItem('npnp.adminFilters', JSON.stringify({
+                    userFilter: state.userFilter || '',
+                    stateFilter: state.stateFilter || '',
+                    methodFilter: state.methodFilter || ''
+                }));
+            } catch (_) {}
+        }
+
         page.querySelector('#npnpUserSearch').addEventListener('input', function (e) {
             state.userFilter = e.target.value || '';
+            persistFilters();
             renderUsers(page);
         });
         page.querySelector('#npnpStateFilter').addEventListener('change', function (e) {
             state.stateFilter = e.target.value || '';
+            persistFilters();
             renderUsers(page);
         });
         var methodSel = page.querySelector('#npnpMethodFilter');
         if (methodSel) {
             methodSel.addEventListener('change', function (e) {
                 state.methodFilter = e.target.value || '';
+                persistFilters();
                 renderUsers(page);
             });
         }
@@ -1175,7 +1526,7 @@
             Dashboard.showLoadingMsg();
             loadStrings()
                 .then(function () { applyStaticI18n(page); })
-                .then(function () { return Promise.all([loadSettings(page), loadUsers(page), loadActivity(page), loadStatus(page)]); })
+                .then(function () { return Promise.all([loadSettings(page), loadTags(page), loadUsers(page), loadActivity(page), loadStatus(page)]); })
                 .finally(function () { Dashboard.hideLoadingMsg(); });
         });
 
@@ -1184,6 +1535,8 @@
         bindTestMode(page);
         bindDiagnostics(page);
         bindPromoForm(page);
+        bindTiersTab(page);
+        bindTagsTab(page);
 
         page.querySelector('#npnpSettingsForm').addEventListener('submit', function (e) {
             e.preventDefault();

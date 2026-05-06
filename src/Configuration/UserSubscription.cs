@@ -85,4 +85,10 @@ public class UserSubscription
 
     /// <summary>Promo codes the user has already redeemed (anti-replay).</summary>
     public List<Guid> RedeemedPromoCodeIds { get; set; } = new();
+
+    /// <summary>
+    /// Optional tag key (matches a <see cref="UserTag.Key"/> on the global config).
+    /// Empty when the user belongs to the default group.
+    /// </summary>
+    public string Tag { get; set; } = string.Empty;
 }
