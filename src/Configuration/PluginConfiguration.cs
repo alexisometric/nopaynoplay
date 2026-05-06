@@ -40,4 +40,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>Gets or sets the per-user subscription records.</summary>
     public List<UserSubscription> Subscriptions { get; set; } = new();
+
+    /// <summary>
+    /// Promo / referral codes that members can redeem from the user modal.
+    /// </summary>
+    public List<PromoCode> PromoCodes { get; set; } = new();
 }

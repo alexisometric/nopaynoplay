@@ -21,6 +21,7 @@ public class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<Localizer>();
         serviceCollection.AddSingleton<SubscriptionService>();
         serviceCollection.AddSingleton<UserPolicyEnforcer>();
+        serviceCollection.AddSingleton<RateLimiter>();
         serviceCollection.AddHostedService<PluginEntryPoint>();
         serviceCollection.AddScoped<IEventConsumer<AuthenticationResultEventArgs>, AuthenticationConsumer>();
     }

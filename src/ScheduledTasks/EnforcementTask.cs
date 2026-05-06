@@ -121,9 +121,28 @@ public class EnforcementTask : IScheduledTask
             return;
         }
 
-        if (sub.LastNotifiedState == state)
+        // Fine-grained per-day reminders so the user gets nudged at J-3, J-1, J0
+        // and again the moment the grace window ends. The dedup key combines the
+        // state and the milestone so each milestone fires at most once.
+        DateTime now = DateTime.UtcNow;
+        double daysUntilExpiry = (sub.ExpiryDate - now).TotalDays;
+        int daysLeft = (int)Math.Ceiling(daysUntilExpiry);
+        int daysOverdue = (int)Math.Floor(-daysUntilExpiry);
+
+        string milestone = state switch
         {
-            // Already notified for this state; skip.
+            SubscriptionState.WarningSoon when daysLeft <= 1 => "warn-d1",
+            SubscriptionState.WarningSoon when daysLeft <= 3 => "warn-d3",
+            SubscriptionState.WarningSoon => "warn-soon",
+            SubscriptionState.InGrace when daysOverdue == 0 => "grace-d0",
+            SubscriptionState.InGrace => "grace-active",
+            SubscriptionState.Blocked => "blocked",
+            _ => state.ToString()
+        };
+
+        string dedupKey = state + ":" + milestone;
+        if (sub.LastNotifiedState == state && sub.LastNotificationKey == dedupKey)
+        {
             return;
         }
 
@@ -146,7 +165,8 @@ public class EnforcementTask : IScheduledTask
         var tokens = new Dictionary<string, string?>
         {
             ["username"] = username,
-            ["date"] = sub.ExpiryDate.ToString("yyyy-MM-dd")
+            ["date"] = sub.ExpiryDate.ToString("yyyy-MM-dd"),
+            ["days"] = Math.Max(0, daysLeft).ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
 
         string title = _localizer.Get(titleKey, culture);
@@ -174,5 +194,6 @@ public class EnforcementTask : IScheduledTask
         }
 
         sub.LastNotifiedState = state;
+        sub.LastNotificationKey = dedupKey;
     }
 }

@@ -169,7 +169,12 @@ public class SubscriptionService
 
             if (isBackfill)
             {
-                DateTime candidate = ComputeNextExpiry(txDate, months, anchor);
+                // Use the payment day itself as anchor: a payment recorded on the
+                // 17th naturally extends to the 17th of next month, not back to the
+                // signup day (which would silently shorten the expiry when signupDay
+                // < paymentDay).
+                int backfillAnchor = txDate.Day;
+                DateTime candidate = ComputeNextExpiry(txDate, months, backfillAnchor);
                 if (candidate > sub.ExpiryDate)
                 {
                     sub.ExpiryDate = candidate;
@@ -194,6 +199,11 @@ public class SubscriptionService
                 AdminNote = note ?? string.Empty
             });
             sub.LastNotifiedState = SubscriptionState.Ok;
+            sub.LastNotificationKey = string.Empty;
+            // Confirming a payment naturally resolves any prior self-service claim.
+            sub.HasPendingPaymentClaim = false;
+            sub.PendingPaymentClaimAt = null;
+            sub.PendingPaymentMethod = string.Empty;
             Plugin.Instance!.SaveConfiguration();
             return sub;
         }
@@ -244,7 +254,7 @@ public class SubscriptionService
     public DateTime RecomputeExpiry(UserSubscription sub)
     {
         DateTime now = DateTime.UtcNow;
-        int anchor = sub.SubscriptionDate.Day;
+        int signupAnchor = sub.SubscriptionDate.Day;
         DateTime expiry = sub.SubscriptionDate.AddDays(Math.Max(0, Config.TrialDays));
 
         var ordered = sub.Transactions.OrderBy(t => t.Date).ToList();
@@ -254,13 +264,17 @@ public class SubscriptionService
             bool isBackfill = (now - t.Date).TotalDays > 1.0;
             if (isBackfill)
             {
-                DateTime candidate = ComputeNextExpiry(t.Date, months, anchor);
+                // Anchor on the transaction's own day for backfilled entries — see
+                // ApplyPayment for the rationale (avoids pulling the result earlier
+                // than t.Date + N months when signupDay < t.Date.Day).
+                int backfillAnchor = t.Date.Day;
+                DateTime candidate = ComputeNextExpiry(t.Date, months, backfillAnchor);
                 if (candidate > expiry) expiry = candidate;
             }
             else
             {
                 DateTime baseDate = expiry < now ? now : expiry;
-                expiry = ComputeNextExpiry(baseDate, months, anchor);
+                expiry = ComputeNextExpiry(baseDate, months, signupAnchor);
             }
         }
 
@@ -321,6 +335,87 @@ public class SubscriptionService
             RecomputeExpiry(sub);
             Plugin.Instance!.SaveConfiguration();
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Records a self-declared payment claim for a user. Does NOT extend the
+    /// expiry — the admin must confirm. Returns true if the claim was accepted,
+    /// false if a recent claim already exists (rate-limit collision).
+    /// </summary>
+    public bool MarkPaymentPending(Guid userId, string method)
+    {
+        lock (_lock)
+        {
+            UserSubscription sub = EnsureUserTracked(userId);
+            sub.HasPendingPaymentClaim = true;
+            sub.PendingPaymentClaimAt = DateTime.UtcNow;
+            sub.PendingPaymentMethod = (method ?? string.Empty).Trim();
+            if (sub.PendingPaymentMethod.Length > 50)
+            {
+                sub.PendingPaymentMethod = sub.PendingPaymentMethod.Substring(0, 50);
+            }
+            Plugin.Instance!.SaveConfiguration();
+            return true;
+        }
+    }
+
+    /// <summary>Clears a pending payment claim (admin reject or post-confirm).</summary>
+    public void ClearPendingClaim(Guid userId)
+    {
+        lock (_lock)
+        {
+            UserSubscription? sub = Config.Subscriptions.FirstOrDefault(s => s.UserId == userId);
+            if (sub == null) return;
+            sub.HasPendingPaymentClaim = false;
+            sub.PendingPaymentClaimAt = null;
+            sub.PendingPaymentMethod = string.Empty;
+            Plugin.Instance!.SaveConfiguration();
+        }
+    }
+
+    /// <summary>
+    /// Redeems a promo code for a user. Returns the granted month count when
+    /// successful, 0 when the code is unknown, expired, exhausted, or already
+    /// used by this user.
+    /// </summary>
+    public int RedeemPromoCode(Guid userId, string code)
+    {
+        lock (_lock)
+        {
+            string normalized = (code ?? string.Empty).Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(normalized)) return 0;
+
+            PromoCode? promo = Config.PromoCodes
+                .FirstOrDefault(p => string.Equals(p.Code, normalized, StringComparison.OrdinalIgnoreCase));
+            if (promo == null) return 0;
+
+            DateTime now = DateTime.UtcNow;
+            if (promo.ExpiresAt.HasValue && promo.ExpiresAt.Value < now) return 0;
+            if (promo.MaxUses > 0 && promo.UsedCount >= promo.MaxUses) return 0;
+
+            UserSubscription sub = EnsureUserTracked(userId);
+            if (sub.RedeemedPromoCodeIds.Contains(promo.Id)) return 0;
+
+            int months = Math.Max(1, promo.MonthsGranted);
+            int anchor = sub.SubscriptionDate.Day;
+            DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
+            sub.ExpiryDate = ComputeNextExpiry(baseDate, months, anchor);
+            sub.RedeemedPromoCodeIds.Add(promo.Id);
+            sub.LastNotifiedState = SubscriptionState.Ok;
+
+            sub.Transactions.Add(new TransactionEntry
+            {
+                Date = now,
+                Amount = 0m,
+                MonthsAdded = months,
+                Method = "Promo:" + promo.Code,
+                AdminNote = "Redeemed promo code"
+            });
+
+            promo.UsedCount++;
+            Plugin.Instance!.SaveConfiguration();
+            return months;
         }
     }
 }

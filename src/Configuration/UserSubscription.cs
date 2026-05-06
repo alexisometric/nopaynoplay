@@ -63,4 +63,26 @@ public class UserSubscription
 
     /// <summary>History of validated payments.</summary>
     public List<TransactionEntry> Transactions { get; set; } = new();
+
+    /// <summary>
+    /// Day-of-year of the last per-day notification (J-3 / J-1 / J0 / grace expired).
+    /// Used to deduplicate fine-grained reminders inside the warning/grace window.
+    /// </summary>
+    public string LastNotificationKey { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when the member has self-declared a payment that is awaiting admin
+    /// confirmation. The admin can confirm (records a real transaction) or
+    /// reject (clears the flag).
+    /// </summary>
+    public bool HasPendingPaymentClaim { get; set; }
+
+    /// <summary>UTC timestamp of the latest pending claim.</summary>
+    public DateTime? PendingPaymentClaimAt { get; set; }
+
+    /// <summary>Method declared by the user when self-claiming a payment.</summary>
+    public string PendingPaymentMethod { get; set; } = string.Empty;
+
+    /// <summary>Promo codes the user has already redeemed (anti-replay).</summary>
+    public List<Guid> RedeemedPromoCodeIds { get; set; } = new();
 }

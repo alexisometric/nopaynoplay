@@ -25,11 +25,14 @@ You self-host Jellyfin for your family / friends / housemates and you'd like the
 **NoPayNoPlay** automates the tedious parts:
 
 - 📅 keeps track of who owes what and when,
-- 🔔 reminds users a few days before expiry via the Jellyfin notification bell,
+- 🔔 reminds users a few days before expiry (J-3 / J-1 / J0) via the Jellyfin notification bell,
 - 🚫 **disables playback** (but never the account) on expiry,
-- ✅ you validate payments manually when the money lands on PayPal / Lydia / your bank account,
+- ✅ you validate payments manually when the money lands on PayPal / Lydia,
+- 🙋 users can declare **“I just paid”** — admins get a pending badge with one-click confirm/reject,
+- 📱 **QR code** generated server-side for the active payment link (no external service),
+- 🎁 **promo / referral codes** to grant free months,
 - 🆓 free 7-day trial on every new account,
-- 🎁 manual exemption for family / VIP guests.
+- 🛡️ manual exemption for family / VIP guests.
 
 It is designed to be **simple, transparent and reversible**: no external database, no outbound calls, everything lives in Jellyfin's standard XML configuration.
 
@@ -50,13 +53,17 @@ The plugin is **English-first** with a built-in i18n system.
 
 | Admin side | User side |
 |---|---|
-| Configuration page integrated into Jellyfin | 💳 button in the header with payment modal |
-| Color-coded dashboard (green / orange / red / grey) | Banner on warning / grace / blocked |
-| "Record payment" button + transaction log | Clickable PayPal.me / Lydia links |
-| "Exempt" / "Reset trial" buttons | One-click IBAN copy |
-| Scheduled task every 12 h | Jellyfin notification bell entries |
+| Configuration page integrated into Jellyfin | 💳 button in the header opens a redesigned modal |
+| Members tab with color-coded dashboard | Banner on warning / grace / blocked, dismissible during the warning window |
+| "Record payment" button + transaction log (edit / delete) | Clickable PayPal.me / Lydia links with amount preview |
+| **Pending claim** badge with one-click confirm / reject | **“I just paid”** button (rate-limited to once / 30 min) |
+| **Promo / referral codes** (max uses, expiry, free months) | Promo redemption directly from the modal |
+| Activity tab + CSV export + bulk actions | **Server-side QR code** for the active payment link |
+| "Exempt" / "Reset trial" / monthly stats | In-app toasts for feedback (success / cooldown / error) |
+| Scheduled task every 12 h | Fine-grained Jellyfin bell notifications: J-3 / J-1 / J0 / grace expired |
 | Auto config backup (retention 10) | Account never deleted, only playback disabled |
-| Configurable price, currency, grace period, trial days | Anniversary day preserved across renewals |
+| Configurable price, currency, grace period, trial, warning days | Anniversary day preserved across renewals |
+| Full English / French i18n + Jellyfin language follow | Integer prices displayed without trailing `.00` |
 
 > ℹ️ Administrators are **always** automatically exempt.
 
@@ -85,9 +92,11 @@ The user-facing UI (header button, banner, modal) is injected through [**File Tr
 
 **Dashboard → Plugins → NoPayNoPlay**:
 
-- monthly price, currency, grace days, trial days, warning days;
-- PayPal.me, Lydia and IBAN links, free-form note;
-- per-user view with quick actions.
+- monthly price, currency, grace days, trial days, warning days,
+- PayPal.me and Lydia links, free-form note,
+- **Members** tab (default) for per-user view + quick actions,
+- **Promo codes** tab to issue referral / promo codes,
+- **Activity** tab with CSV export and bulk operations.
 
 ---
 
@@ -106,7 +115,8 @@ flowchart LR
 
 - **No external database.** Everything is serialized in the Jellyfin plugin XML configuration.
 - **Reversible.** Before blocking a user, their `UserPolicy` is snapshotted. Removing the block restores it as-is.
-- **Anti-spam.** A notification is only sent once per state change.
+- **Anti-spam.** Notifications are deduped per (state, milestone) so a user gets at most one J-3, J-1, J0 and grace-expired notice per cycle.
+- **No outbound calls.** QR codes are rendered server-side via [QRCoder](https://github.com/codebude/QRCoder) (MIT, pure managed) — no external image API.
 
 ---
 
@@ -116,15 +126,23 @@ All routes live under `/NoPayNoPlay/`. Admin routes require `RequiresElevation`.
 
 | Method | URL | Auth | Description |
 |---|---|---|---|
-| `GET`  | `/NoPayNoPlay/Me` | user | Current user state, payment info and translation bundle |
-| `GET`  | `/NoPayNoPlay/Strings` | public | Active language + translation bundle |
-| `GET`  | `/NoPayNoPlay/Users` | admin | Enriched subscription list |
-| `POST` | `/NoPayNoPlay/Users/{id}/Pay` | admin | Records a payment, extends expiry |
-| `POST` | `/NoPayNoPlay/Users/{id}/Exempt` | admin | Toggle exemption |
-| `POST` | `/NoPayNoPlay/Users/{id}/Reset` | admin | Reset to a fresh trial |
-| `GET`  | `/NoPayNoPlay/Settings` | admin | Global settings |
-| `POST` | `/NoPayNoPlay/Settings` | admin | Update settings |
-| `GET`  | `/NoPayNoPlay/Web/client.js` | public | Injected client script |
+| `GET`    | `/NoPayNoPlay/Me` | user | Current user state, payment info and translation bundle |
+| `POST`   | `/NoPayNoPlay/Me/MarkPaid` | user | Declares a payment is incoming (rate-limited 30 min) |
+| `POST`   | `/NoPayNoPlay/Me/RedeemCode` | user | Redeems a promo / referral code |
+| `GET`    | `/NoPayNoPlay/Strings` | public | Active language + translation bundle |
+| `GET`    | `/NoPayNoPlay/Qr?text=...` | public | Server-rendered SVG QR code (max 350 chars, no outbound call) |
+| `GET`    | `/NoPayNoPlay/Users` | admin | Enriched subscription list |
+| `POST`   | `/NoPayNoPlay/Users/{id}/Pay` | admin | Records a payment, extends expiry |
+| `POST`   | `/NoPayNoPlay/Users/{id}/ConfirmPending` | admin | Confirms a user's pending claim and records the payment |
+| `POST`   | `/NoPayNoPlay/Users/{id}/RejectPending` | admin | Rejects a pending claim |
+| `POST`   | `/NoPayNoPlay/Users/{id}/Exempt` | admin | Toggle exemption |
+| `POST`   | `/NoPayNoPlay/Users/{id}/Reset` | admin | Reset to a fresh trial |
+| `GET`    | `/NoPayNoPlay/PromoCodes` | admin | List promo codes |
+| `POST`   | `/NoPayNoPlay/PromoCodes` | admin | Create a promo code |
+| `DELETE` | `/NoPayNoPlay/PromoCodes/{id}` | admin | Delete a promo code |
+| `GET`    | `/NoPayNoPlay/Settings` | admin | Global settings |
+| `POST`   | `/NoPayNoPlay/Settings` | admin | Update settings |
+| `GET`    | `/NoPayNoPlay/Web/client.js` | public | Injected client script |
 
 ---
 
@@ -155,8 +173,8 @@ dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj
 ### Local packaging (Jellyfin zip)
 
 ```bash
-./scripts/build.sh 1.0.0.0
-# -> artifacts/nopaynoplay_1.0.0.0.zip + .md5
+./scripts/build.sh 1.1.0.0
+# -> artifacts/nopaynoplay_1.1.0.0.zip + .md5
 ```
 
 ### Structure

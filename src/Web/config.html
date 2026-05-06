@@ -91,15 +91,16 @@
             <div id="npnpFlash" class="npnp-flash" role="status" aria-live="polite"></div>
 
             <div class="npnp-tabs" role="tablist">
-                <button type="button" class="npnp-tab-btn active" data-tab="settings" data-i18n="admin.tabs.settings">Settings</button>
-                <button type="button" class="npnp-tab-btn" data-tab="members" data-i18n="admin.tabs.members">Members</button>
+                <button type="button" class="npnp-tab-btn active" data-tab="members" data-i18n="admin.tabs.members">Members</button>
+                <button type="button" class="npnp-tab-btn" data-tab="settings" data-i18n="admin.tabs.settings">Settings</button>
                 <button type="button" class="npnp-tab-btn" data-tab="activity" data-i18n="admin.tabs.activity">Activity</button>
+                <button type="button" class="npnp-tab-btn" data-tab="promo" data-i18n="admin.tabs.promo">Promo codes</button>
                 <button type="button" class="npnp-tab-btn" data-tab="test" data-i18n="admin.tabs.test">Test mode</button>
                 <button type="button" class="npnp-tab-btn" data-tab="diagnostics" data-i18n="admin.tabs.diagnostics">Diagnostics</button>
             </div>
 
             <!-- SETTINGS -->
-            <section id="npnpTab-settings" class="npnp-tab-panel active">
+            <section id="npnpTab-settings" class="npnp-tab-panel">
                 <form id="npnpSettingsForm">
                     <div class="npnp-section">
                         <h3 data-i18n="admin.settings.section.subscription">Subscription</h3>
@@ -140,10 +141,6 @@
                             </div>
                         </div>
                         <div class="inputContainer">
-                            <label for="npnpIban" data-i18n="admin.settings.iban">IBAN / bank details</label>
-                            <textarea is="emby-textarea" class="emby-input" id="npnpIban" rows="3"></textarea>
-                        </div>
-                        <div class="inputContainer">
                             <label for="npnpNote" data-i18n="admin.settings.note">Custom note (shown in user modal)</label>
                             <textarea is="emby-textarea" class="emby-input" id="npnpNote" rows="2"></textarea>
                         </div>
@@ -164,7 +161,7 @@
             </section>
 
             <!-- MEMBERS -->
-            <section id="npnpTab-members" class="npnp-tab-panel">
+            <section id="npnpTab-members" class="npnp-tab-panel active">
                 <div id="npnpStats" class="npnp-stats-row"></div>
                 <div id="npnpUsersSummary" class="npnp-summary"></div>
                 <div class="npnp-toolbar">
@@ -240,6 +237,41 @@
                     </div>
                 </div>
                 <div id="npnpActivityTable" class="npnp-table-wrap"></div>
+            </section>
+
+            <!-- PROMO CODES -->
+            <section id="npnpTab-promo" class="npnp-tab-panel">
+                <div class="npnp-section">
+                    <h3 data-i18n="admin.promo.title">Promo &amp; referral codes</h3>
+                    <p data-i18n="admin.promo.help" style="opacity:.8;">
+                        Create reusable codes that grant free months to members. Useful for promotions, gifts, or word-of-mouth referrals.
+                    </p>
+                    <form id="npnpPromoForm" class="npnp-grid-2" style="align-items:end;">
+                        <div class="inputContainer">
+                            <label for="npnpPromoCode" data-i18n="admin.promo.code">Code</label>
+                            <input is="emby-input" id="npnpPromoCode" type="text" maxlength="32" required />
+                        </div>
+                        <div class="inputContainer">
+                            <label for="npnpPromoMonths" data-i18n="admin.promo.months">Free months granted</label>
+                            <input is="emby-input" id="npnpPromoMonths" type="number" min="1" max="60" value="1" />
+                        </div>
+                        <div class="inputContainer">
+                            <label for="npnpPromoMaxUses" data-i18n="admin.promo.maxUses">Max uses (0 = unlimited)</label>
+                            <input is="emby-input" id="npnpPromoMaxUses" type="number" min="0" value="1" />
+                        </div>
+                        <div class="inputContainer">
+                            <label for="npnpPromoExpires" data-i18n="admin.promo.expires">Expires on (optional)</label>
+                            <input is="emby-input" id="npnpPromoExpires" type="date" />
+                        </div>
+                        <div class="inputContainer" style="grid-column:1/-1;">
+                            <button is="emby-button" type="submit" class="raised button-submit">
+                                <span class="material-icons" aria-hidden="true">add</span>
+                                <span data-i18n="admin.promo.add">Add code</span>
+                            </button>
+                        </div>
+                    </form>
+                    <div id="npnpPromoTable" class="npnp-table-wrap" style="margin-top:16px;"></div>
+                </div>
             </section>
 
             <!-- TEST MODE -->

@@ -72,4 +72,29 @@ public class SubscriptionDateEdgeCaseTests
         Assert.Equal(4, next.Month);
         Assert.Equal(30, next.Day);
     }
+
+    /// <summary>
+    /// Regression for the backfill bug: a payment recorded on day 17 must extend
+    /// to day 17 of the next month, regardless of the original signup day. Using
+    /// the signup day (e.g. 12) as anchor would silently shorten the period to
+    /// the 12th — 5 days earlier than expected.
+    /// </summary>
+    [Fact]
+    public void NextExpiry_BackfillUsesPaymentDayNotSignupDay()
+    {
+        // Backfill scenario: payment date = 17 April 2026, anchor must be 17 (the
+        // payment day itself), NOT 12 (the original signup day).
+        var paymentDate = new DateTime(2026, 4, 17, 0, 0, 0, DateTimeKind.Utc);
+        var next = SubscriptionService.ComputeNextExpiry(paymentDate, 1, paymentDate.Day);
+
+        Assert.Equal(2026, next.Year);
+        Assert.Equal(5, next.Month);
+        Assert.Equal(17, next.Day);
+
+        // Sanity: the buggy old behaviour (anchor = signup day 12) would have
+        // landed on May 12 — 5 days too early.
+        var buggy = SubscriptionService.ComputeNextExpiry(paymentDate, 1, 12);
+        Assert.Equal(12, buggy.Day);
+        Assert.True(next > buggy, "Fix must extend further than the buggy variant.");
+    }
 }

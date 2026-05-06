@@ -59,6 +59,15 @@ public class UserSubscriptionDto
     public string State { get; set; } = string.Empty;
     public int DaysLeft { get; set; }
     public List<TransactionEntry> Transactions { get; set; } = new();
+
+    /// <summary>True when the member has self-declared a payment awaiting confirmation.</summary>
+    public bool HasPendingPaymentClaim { get; set; }
+
+    /// <summary>UTC timestamp of the latest pending claim (null when none).</summary>
+    public DateTime? PendingPaymentClaimAt { get; set; }
+
+    /// <summary>Method declared by the user when self-claiming.</summary>
+    public string PendingPaymentMethod { get; set; } = string.Empty;
 }
 
 /// <summary>Response for the current user.</summary>
@@ -71,7 +80,6 @@ public class MeDto
     public string Currency { get; set; } = "EUR";
     public string PaypalMeUrl { get; set; } = string.Empty;
     public string LydiaUrl { get; set; } = string.Empty;
-    public string IbanText { get; set; } = string.Empty;
     public string CustomNote { get; set; } = string.Empty;
     public int WarningDaysBefore { get; set; }
     public int GraceDays { get; set; }
@@ -92,6 +100,15 @@ public class MeDto
     /// browsable for previewing the user-facing UI.
     /// </summary>
     public bool IsAdminPreview { get; set; }
+
+    /// <summary>True when the member has a pending self-declared payment.</summary>
+    public bool HasPendingPaymentClaim { get; set; }
+
+    /// <summary>UTC timestamp of the pending claim (null when none).</summary>
+    public DateTime? PendingPaymentClaimAt { get; set; }
+
+    /// <summary>Method declared by the user when self-claiming.</summary>
+    public string PendingPaymentMethod { get; set; } = string.Empty;
 }
 
 /// <summary>Payload to update an existing transaction.</summary>
@@ -130,6 +147,37 @@ public class BulkExemptDto : BulkUserDto
     public bool IsExempt { get; set; }
 }
 
+/// <summary>Self-service "I paid" claim from the user.</summary>
+public class MarkPaidDto
+{
+    [StringLength(50)]
+    public string Method { get; set; } = string.Empty;
+}
+
+/// <summary>Promo code creation / update payload.</summary>
+public class PromoCodeDto
+{
+    [Required]
+    [StringLength(32)]
+    public string Code { get; set; } = string.Empty;
+
+    [Range(1, 60)]
+    public int MonthsGranted { get; set; } = 1;
+
+    [Range(0, 100000)]
+    public int MaxUses { get; set; }
+
+    public DateTime? ExpiresAt { get; set; }
+}
+
+/// <summary>Payload to redeem a promo code.</summary>
+public class RedeemCodeDto
+{
+    [Required]
+    [StringLength(32)]
+    public string Code { get; set; } = string.Empty;
+}
+
 /// <summary>NoPayNoPlay public REST API.</summary>
 [ApiController]
 [Authorize]
@@ -141,17 +189,20 @@ public class NoPayNoPlayController : ControllerBase
     private readonly SubscriptionService _service;
     private readonly UserPolicyEnforcer _enforcer;
     private readonly Localizer _localizer;
+    private readonly RateLimiter _rateLimiter;
 
     public NoPayNoPlayController(
         IUserManager userManager,
         SubscriptionService service,
         UserPolicyEnforcer enforcer,
-        Localizer localizer)
+        Localizer localizer,
+        RateLimiter rateLimiter)
     {
         _userManager = userManager;
         _service = service;
         _enforcer = enforcer;
         _localizer = localizer;
+        _rateLimiter = rateLimiter;
     }
 
     private static PluginConfiguration Cfg => Plugin.Instance!.Configuration;
@@ -182,7 +233,10 @@ public class NoPayNoPlayController : ControllerBase
             IsBlocked = sub.IsBlocked,
             State = state.ToString(),
             DaysLeft = (int)Math.Ceiling((sub.ExpiryDate - DateTime.UtcNow).TotalDays),
-            Transactions = sub.Transactions.OrderByDescending(t => t.Date).ToList()
+            Transactions = sub.Transactions.OrderByDescending(t => t.Date).ToList(),
+            HasPendingPaymentClaim = sub.HasPendingPaymentClaim,
+            PendingPaymentClaimAt = sub.PendingPaymentClaimAt,
+            PendingPaymentMethod = sub.PendingPaymentMethod
         };
     }
 
@@ -411,7 +465,6 @@ public class NoPayNoPlayController : ControllerBase
         Cfg.WarningDaysBefore = Math.Clamp(body.WarningDaysBefore, 0, 90);
         Cfg.PaypalMeUrl = SanitizeUrl(body.PaypalMeUrl);
         Cfg.LydiaUrl = SanitizeUrl(body.LydiaUrl);
-        Cfg.IbanText = Truncate(body.IbanText, 500);
         Cfg.CustomNote = Truncate(body.CustomNote, 1000);
         Cfg.UiCultureOverride = SanitizeCulture(body.UiCultureOverride);
         Plugin.Instance!.SaveConfiguration();
@@ -551,14 +604,16 @@ public class NoPayNoPlayController : ControllerBase
             Currency = Cfg.Currency,
             PaypalMeUrl = Cfg.PaypalMeUrl,
             LydiaUrl = Cfg.LydiaUrl,
-            IbanText = Cfg.IbanText,
             CustomNote = Cfg.CustomNote,
             WarningDaysBefore = Cfg.WarningDaysBefore,
             GraceDays = Cfg.GraceDays,
             Lang = culture,
             Strings = _localizer.GetBundle(culture),
             Transactions = transactions,
-            IsAdminPreview = isAdmin
+            IsAdminPreview = isAdmin,
+            HasPendingPaymentClaim = sub.HasPendingPaymentClaim && !isAdmin,
+            PendingPaymentClaimAt = isAdmin ? null : sub.PendingPaymentClaimAt,
+            PendingPaymentMethod = isAdmin ? string.Empty : sub.PendingPaymentMethod
         });
     }
 
@@ -811,6 +866,156 @@ public class NoPayNoPlayController : ControllerBase
         bool needsQuote = value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0;
         string v = value.Replace("\"", "\"\"", StringComparison.Ordinal);
         return needsQuote ? "\"" + v + "\"" : v;
+    }
+
+    private static readonly TimeSpan PendingClaimCooldown = TimeSpan.FromMinutes(30);
+
+    /// <summary>
+    /// Self-service "I paid" button. Records a pending claim that an admin must
+    /// confirm. Rate-limited to one call per 30 minutes per user.
+    /// </summary>
+    [HttpPost("Me/MarkPaid")]
+    public ActionResult<object> MarkPaid([FromBody] MarkPaidDto? body)
+    {
+        Guid? userId = GetCurrentUserId();
+        if (userId is null || userId == Guid.Empty) return Unauthorized();
+
+        string key = "markpaid:" + userId.Value.ToString("N");
+        if (!_rateLimiter.TryAcquire(key, PendingClaimCooldown))
+        {
+            TimeSpan remaining = _rateLimiter.Remaining(key, PendingClaimCooldown);
+            return StatusCode(StatusCodes.Status429TooManyRequests, new
+            {
+                ok = false,
+                retryAfterSeconds = (int)Math.Ceiling(remaining.TotalSeconds)
+            });
+        }
+
+        string method = body?.Method is null ? string.Empty : Truncate(body.Method, 50);
+        _service.MarkPaymentPending(userId.Value, method);
+        return Ok(new { ok = true });
+    }
+
+    /// <summary>Admin: confirms a pending claim and records a real payment.</summary>
+    [HttpPost("Users/{userId:guid}/ConfirmPending")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<UserSubscriptionDto>> ConfirmPending(
+        Guid userId,
+        [FromBody] PaymentDto body)
+    {
+        if (body is null) return BadRequest();
+        if (_userManager.GetUserById(userId) is null) return NotFound();
+
+        UserSubscription sub = _service.ApplyPayment(
+            userId,
+            Math.Max(0m, body.Amount),
+            string.IsNullOrWhiteSpace(body.Method) ? string.Empty : body.Method,
+            Math.Clamp(body.MonthsAdded, 1, 60),
+            body.Note ?? string.Empty,
+            body.Date);
+        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        _service.Save();
+        return Ok(Project(sub, ResolveCulture()));
+    }
+
+    /// <summary>Admin: rejects a pending claim without recording a payment.</summary>
+    [HttpPost("Users/{userId:guid}/RejectPending")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<UserSubscriptionDto> RejectPending(Guid userId)
+    {
+        if (_userManager.GetUserById(userId) is null) return NotFound();
+        _service.ClearPendingClaim(userId);
+        var sub = _service.EnsureUserTracked(userId);
+        return Ok(Project(sub, ResolveCulture()));
+    }
+
+    /// <summary>Lists every promo code (admin).</summary>
+    [HttpGet("PromoCodes")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<IEnumerable<PromoCode>> ListPromoCodes() => Ok(Cfg.PromoCodes);
+
+    /// <summary>Creates a new promo code (admin).</summary>
+    [HttpPost("PromoCodes")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<PromoCode> CreatePromoCode([FromBody] PromoCodeDto body)
+    {
+        if (body is null) return BadRequest();
+        string code = SanitizePromoCode(body.Code);
+        if (string.IsNullOrEmpty(code)) return BadRequest(new { error = "invalid_code" });
+
+        if (Cfg.PromoCodes.Any(p => string.Equals(p.Code, code, StringComparison.OrdinalIgnoreCase)))
+        {
+            return Conflict(new { error = "duplicate_code" });
+        }
+
+        var promo = new PromoCode
+        {
+            Code = code,
+            MonthsGranted = Math.Clamp(body.MonthsGranted, 1, 60),
+            MaxUses = Math.Clamp(body.MaxUses, 0, 100000),
+            ExpiresAt = body.ExpiresAt
+        };
+        Cfg.PromoCodes.Add(promo);
+        Plugin.Instance!.SaveConfiguration();
+        return Ok(promo);
+    }
+
+    /// <summary>Deletes a promo code (admin).</summary>
+    [HttpDelete("PromoCodes/{id:guid}")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult DeletePromoCode(Guid id)
+    {
+        int removed = Cfg.PromoCodes.RemoveAll(p => p.Id == id);
+        if (removed == 0) return NotFound();
+        Plugin.Instance!.SaveConfiguration();
+        return NoContent();
+    }
+
+    /// <summary>Self-service redeem of a promo code by the current user.</summary>
+    [HttpPost("Me/RedeemCode")]
+    public async Task<ActionResult<object>> RedeemCode([FromBody] RedeemCodeDto body)
+    {
+        Guid? userId = GetCurrentUserId();
+        if (userId is null || userId == Guid.Empty) return Unauthorized();
+        if (body is null || string.IsNullOrWhiteSpace(body.Code)) return BadRequest();
+
+        string key = "redeem:" + userId.Value.ToString("N");
+        if (!_rateLimiter.TryAcquire(key, TimeSpan.FromMinutes(1)))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { ok = false });
+        }
+
+        int months = _service.RedeemPromoCode(userId.Value, body.Code);
+        if (months <= 0) return Ok(new { ok = false });
+
+        var sub = _service.EnsureUserTracked(userId.Value);
+        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        _service.Save();
+        return Ok(new { ok = true, monthsAdded = months, expiryDate = sub.ExpiryDate });
+    }
+
+    /// <summary>Returns an SVG QR code for a short payment URL or text.</summary>
+    [HttpGet("Qr")]
+    [AllowAnonymous]
+    [Produces("image/svg+xml")]
+    public IActionResult GetQr([FromQuery] string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return BadRequest();
+        if (text.Length > 350) text = text.Substring(0, 350);
+        string svg = Services.QrSvgGenerator.Generate(text);
+        return Content(svg, "image/svg+xml; charset=utf-8");
+    }
+
+    private static string SanitizePromoCode(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        string normalized = value.Trim().ToUpperInvariant();
+        if (normalized.Length > 32) normalized = normalized.Substring(0, 32);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(normalized, "^[A-Z0-9_-]{3,32}$"))
+        {
+            return string.Empty;
+        }
+        return normalized;
     }
 
     private Guid? GetCurrentUserId()

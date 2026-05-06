@@ -17,7 +17,8 @@
         activityTo: '',
         selected: {},
         stats: null,
-        diagnostics: null
+        diagnostics: null,
+        promoCodes: []
     };
 
     var STATE_COLORS = {
@@ -65,6 +66,13 @@
     }
 
     function lcfirst(s) { return s ? s.charAt(0).toLowerCase() + s.slice(1) : s; }
+
+    function formatPrice(value) {
+        var n = Number(value || 0);
+        if (!isFinite(n)) return '0';
+        if (Math.abs(n - Math.round(n)) < 0.005) return String(Math.round(n));
+        return n.toFixed(2);
+    }
 
     function loadStrings() {
         return api().ajax({
@@ -118,7 +126,6 @@
             page.querySelector('#npnpWarning').value = cfg.WarningDaysBefore;
             page.querySelector('#npnpPaypal').value = cfg.PaypalMeUrl || '';
             page.querySelector('#npnpLydia').value = cfg.LydiaUrl || '';
-            page.querySelector('#npnpIban').value = cfg.IbanText || '';
             page.querySelector('#npnpNote').value = cfg.CustomNote || '';
             fillCultureSelect(page);
             var ui = page.querySelector('#npnpUiCulture');
@@ -135,7 +142,6 @@
             WarningDaysBefore: parseInt(page.querySelector('#npnpWarning').value || '0', 10),
             PaypalMeUrl: page.querySelector('#npnpPaypal').value,
             LydiaUrl: page.querySelector('#npnpLydia').value,
-            IbanText: page.querySelector('#npnpIban').value,
             CustomNote: page.querySelector('#npnpNote').value,
             UiCultureOverride: (page.querySelector('#npnpUiCulture') ? page.querySelector('#npnpUiCulture').value : '') || ''
         };
@@ -182,7 +188,7 @@
             ['admin.stats.transactions', 'Transactions', s.transactionCount, true]
         ];
         el.innerHTML = cards.map(function (card) {
-            var val = card[3] ? String(card[2] || 0) : (Number(card[2] || 0).toFixed(2) + ' ' + escapeHtml(c));
+            var val = card[3] ? String(card[2] || 0) : (formatPrice(card[2]) + ' ' + escapeHtml(c));
             return '<div class="npnp-stat-card">'
                 + '<span class="npnp-stat-num">' + escapeHtml(val) + '</span>'
                 + '<span class="npnp-stat-lbl">' + escapeHtml(t(card[0], card[1])) + '</span>'
@@ -448,15 +454,33 @@
                 : t('admin.users.action.exempt', 'Mark exempt');
             var checked = state.selected[u.UserId] ? ' checked' : '';
 
+            var pendingBadge = u.HasPendingPaymentClaim
+                ? '<span class="npnp-state-pill" style="background:#f39c12;margin-left:6px;" title="'
+                    + escapeHtml(format(t('admin.users.pending.tooltip',
+                        'User declared payment on {date} via {method}'),
+                        { date: formatDate(u.PendingPaymentClaimAt), method: u.PendingPaymentMethod || '—' }))
+                    + '">' + escapeHtml(t('admin.users.pending.badge', 'Pending claim')) + '</span>'
+                : '';
+
+            var pendingActions = u.HasPendingPaymentClaim
+                ? '<button is="emby-button" type="button" class="raised npnp-confirm-pending" title="'
+                    + escapeHtml(t('admin.users.pending.confirm', 'Confirm payment'))
+                    + '"><span class="material-icons" aria-hidden="true">check_circle</span></button>'
+                    + '<button is="emby-button" type="button" class="npnp-reject-pending npnp-danger" title="'
+                    + escapeHtml(t('admin.users.pending.reject', 'Reject claim'))
+                    + '"><span class="material-icons" aria-hidden="true">cancel</span></button>'
+                : '';
+
             html += '<tr data-userid="' + escapeHtml(u.UserId) + '">'
                 + '<td class="npnp-row-check"><input type="checkbox" class="npnp-rowcheck"' + checked + ' /></td>'
                 + '<td>' + escapeHtml(u.Username) + '</td>'
-                + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span></td>'
+                + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + '</td>'
                 + '<td>' + escapeHtml(formatDate(u.ExpiryDate)) + '</td>'
                 + '<td>' + escapeHtml(String(u.DaysLeft)) + '</td>'
                 + '<td>' + escapeHtml(lastLabel) + '</td>'
                 + '<td>' + escapeHtml(lastMethod) + '</td>'
                 + '<td><div class="npnp-actions">'
+                + pendingActions
                 + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span></button>'
                 + '<button is="emby-button" type="button" class="npnp-history" title="' + escapeHtml(t('admin.users.action.history', 'History')) + '"><span class="material-icons" aria-hidden="true">history</span></button>'
                 + '<button is="emby-button" type="button" class="npnp-exempt" title="' + escapeHtml(actExempt) + '"><span class="material-icons" aria-hidden="true">' + (u.IsExempt ? 'lock' : 'lock_open') + '</span></button>'
@@ -531,6 +555,24 @@
                         }).then(function () { return loadUsers(page); });
                     });
             });
+            var confirmBtn = tr.querySelector('.npnp-confirm-pending');
+            if (confirmBtn) {
+                confirmBtn.addEventListener('click', function () {
+                    openPaymentModal(page, user, /* fromPending */ true);
+                });
+            }
+            var rejectBtn = tr.querySelector('.npnp-reject-pending');
+            if (rejectBtn) {
+                rejectBtn.addEventListener('click', function () {
+                    api().ajax({
+                        type: 'POST',
+                        url: api().getUrl('NoPayNoPlay/Users/' + userId + '/RejectPending')
+                    }).then(function () {
+                        flash(page, t('admin.users.pending.rejected', 'Claim rejected.'));
+                        return loadUsers(page);
+                    });
+                });
+            }
         });
     }
 
@@ -565,7 +607,7 @@
             html += '<tr>'
                 + '<td>' + escapeHtml(formatDateTime(r.Date)) + '</td>'
                 + '<td>' + escapeHtml(r.Username || '') + '</td>'
-                + '<td>' + escapeHtml(Number(r.Amount || 0).toFixed(2)) + '</td>'
+                + '<td>' + escapeHtml(formatPrice(r.Amount)) + '</td>'
                 + '<td>' + escapeHtml(r.Method || '') + '</td>'
                 + '<td>' + escapeHtml(String(r.MonthsAdded || 0)) + '</td>'
                 + '<td>' + escapeHtml(r.AdminNote || '') + '</td>'
@@ -624,7 +666,7 @@
                 var id = e.Id || '';
                 return '<tr data-tx="' + escapeHtml(id) + '">'
                     + '<td>' + escapeHtml(formatDateTime(e.Date)) + '</td>'
-                    + '<td>' + escapeHtml(Number(e.Amount || 0).toFixed(2)) + '</td>'
+                    + '<td>' + escapeHtml(formatPrice(e.Amount)) + '</td>'
                     + '<td>' + escapeHtml(e.Method || '') + '</td>'
                     + '<td>' + escapeHtml(String(e.MonthsAdded || 0)) + '</td>'
                     + '<td>' + escapeHtml(e.AdminNote || '') + '</td>'
@@ -724,7 +766,7 @@
     }
 
 
-    function openPaymentModal(page, user) {
+    function openPaymentModal(page, user, fromPending) {
         var methods = [
             ['PayPal', t('admin.payment.method.paypal', 'PayPal')],
             ['Lydia', t('admin.payment.method.lydia', 'Lydia')],
@@ -781,7 +823,7 @@
             }
             api().ajax({
                 type: 'POST',
-                url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Pay'),
+                url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + (fromPending ? '/ConfirmPending' : '/Pay')),
                 data: JSON.stringify(payload),
                 contentType: 'application/json'
             }).then(function () {
@@ -789,6 +831,118 @@
                 flash(page, t('admin.users.payment.saved', 'Payment recorded.'));
                 return Promise.all([loadUsers(page), loadActivity(page)]);
             });
+        });
+    }
+
+    /* --- tabs --- */
+
+    function loadPromoCodes(page) {
+        return api().ajax({
+            type: 'GET', url: api().getUrl('NoPayNoPlay/PromoCodes'), dataType: 'json'
+        }).then(function (rows) {
+            state.promoCodes = rows || [];
+            renderPromoTable(page);
+        }).catch(function () {
+            state.promoCodes = [];
+            renderPromoTable(page);
+        });
+    }
+
+    function renderPromoTable(page) {
+        var container = page.querySelector('#npnpPromoTable');
+        if (!container) return;
+        var rows = state.promoCodes || [];
+        if (!rows.length) {
+            container.innerHTML = '<div class="npnp-empty" style="opacity:.6;font-style:italic;padding:8px 0;">'
+                + escapeHtml(t('admin.promo.empty', 'No promo codes yet.')) + '</div>';
+            return;
+        }
+        var unlimited = t('admin.promo.unlimited', 'Unlimited');
+        var never = t('admin.promo.never', 'Never');
+        var html = '<table class="npnp-table"><thead><tr>'
+            + '<th>' + escapeHtml(t('admin.promo.col.code', 'Code')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.promo.col.months', 'Months')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.promo.col.uses', 'Uses')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.promo.col.expires', 'Expires')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.promo.col.created', 'Created')) + '</th>'
+            + '<th>' + escapeHtml(t('admin.promo.col.actions', 'Actions')) + '</th>'
+            + '</tr></thead><tbody>';
+        rows.forEach(function (p) {
+            var maxUses = Number(p.MaxUses || 0);
+            var usedCount = Number(p.UsedCount || 0);
+            var usesText = maxUses > 0
+                ? (usedCount + ' / ' + maxUses)
+                : (usedCount + ' / ' + unlimited);
+            var expiresText = p.ExpiresAt ? formatDate(p.ExpiresAt) : never;
+            var createdText = p.CreatedAt ? formatDate(p.CreatedAt) : '—';
+            html += '<tr data-promoid="' + escapeHtml(p.Id) + '">'
+                + '<td><code style="font-weight:700;">' + escapeHtml(p.Code) + '</code></td>'
+                + '<td>' + escapeHtml(String(p.MonthsGranted || 1)) + '</td>'
+                + '<td>' + escapeHtml(usesText) + '</td>'
+                + '<td>' + escapeHtml(expiresText) + '</td>'
+                + '<td>' + escapeHtml(createdText) + '</td>'
+                + '<td><button is="emby-button" type="button" class="npnp-promo-delete npnp-danger" title="'
+                + escapeHtml(t('admin.promo.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button></td>'
+                + '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+
+        container.querySelectorAll('tr[data-promoid]').forEach(function (tr) {
+            var id = tr.getAttribute('data-promoid');
+            tr.querySelector('.npnp-promo-delete').addEventListener('click', function () {
+                openConfirmModal(page,
+                    t('admin.promo.delete', 'Delete'),
+                    t('admin.promo.deleteConfirm', 'Delete this promo code?'),
+                    function () {
+                        api().ajax({
+                            type: 'DELETE',
+                            url: api().getUrl('NoPayNoPlay/PromoCodes/' + encodeURIComponent(id))
+                        }).then(function () {
+                            flash(page, t('admin.promo.deleted', 'Promo code deleted.'));
+                            return loadPromoCodes(page);
+                        });
+                    });
+            });
+        });
+    }
+
+    function bindPromoForm(page) {
+        var form = page.querySelector('#npnpPromoForm');
+        if (!form) return;
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+            var code = (page.querySelector('#npnpPromoCode').value || '').trim().toUpperCase();
+            var months = parseInt(page.querySelector('#npnpPromoMonths').value || '1', 10);
+            var maxUses = parseInt(page.querySelector('#npnpPromoMaxUses').value || '0', 10);
+            var expiresVal = (page.querySelector('#npnpPromoExpires').value || '').trim();
+            var payload = {
+                Code: code,
+                MonthsGranted: months,
+                MaxUses: maxUses
+            };
+            if (expiresVal) {
+                payload.ExpiresAt = expiresVal + 'T23:59:59Z';
+            }
+            api().ajax({
+                type: 'POST',
+                url: api().getUrl('NoPayNoPlay/PromoCodes'),
+                data: JSON.stringify(payload),
+                contentType: 'application/json',
+                dataType: 'json'
+            }).then(function () {
+                flash(page, t('admin.promo.created', 'Promo code created.'));
+                form.reset();
+                page.querySelector('#npnpPromoMonths').value = '1';
+                page.querySelector('#npnpPromoMaxUses').value = '0';
+                return loadPromoCodes(page);
+            }).catch(function (err) {
+                var msg = (err && err.status === 409)
+                    ? t('admin.promo.duplicate', 'A promo code with this name already exists.')
+                    : t('admin.promo.invalid', 'Invalid promo code (use 3-32 chars, A-Z 0-9 _ -).');
+                flash(page, msg, true);
+            });
+            return false;
         });
     }
 
@@ -804,6 +958,7 @@
                 });
                 if (tab === 'activity') loadActivity(page);
                 if (tab === 'diagnostics') loadDiagnostics(page);
+                if (tab === 'promo') loadPromoCodes(page);
             });
         });
     }
@@ -1028,6 +1183,7 @@
         bindFilters(page);
         bindTestMode(page);
         bindDiagnostics(page);
+        bindPromoForm(page);
 
         page.querySelector('#npnpSettingsForm').addEventListener('submit', function (e) {
             e.preventDefault();
