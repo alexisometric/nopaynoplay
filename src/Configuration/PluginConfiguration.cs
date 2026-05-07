@@ -55,23 +55,28 @@ public class PluginConfiguration : BasePluginConfiguration
     /// Predefined subscription tiers shown to members in the user modal
     /// (e.g. 1 month / 3 months / 12 months packages with a discount).
     /// </summary>
-    public List<SubscriptionTier> Tiers { get; set; } = new()
-    {
-        new SubscriptionTier { Months = 1, Price = 10m, Label = string.Empty, Highlight = false },
-        new SubscriptionTier { Months = 3, Price = 27m, Label = string.Empty, Highlight = true },
-        new SubscriptionTier { Months = 12, Price = 100m, Label = string.Empty, Highlight = false }
-    };
+    /// <remarks>
+    /// Default is intentionally empty: <see cref="System.Xml.Serialization.XmlSerializer"/>
+    /// appends to existing collections during deserialization, so any inline
+    /// initializer here would be re-injected on every restart and produce
+    /// duplicates. Seeding happens once via <see cref="DefaultsSeeded"/>.
+    /// </remarks>
+    public List<SubscriptionTier> Tiers { get; set; } = new();
 
     /// <summary>
     /// User groups (family / friends / guests / …) that override the
     /// default monthly price for tagged members.
     /// </summary>
-    public List<UserTag> Tags { get; set; } = new()
-    {
-        new UserTag { Key = "family",  Label = "Family",  MonthlyPriceOverride = 0m, Color = "#9b59b6" },
-        new UserTag { Key = "friends", Label = "Friends", MonthlyPriceOverride = 0m, Color = "#3498db" },
-        new UserTag { Key = "guests",  Label = "Guests",  MonthlyPriceOverride = 0m, Color = "#95a5a6" }
-    };
+    /// <remarks>Empty by default for the same reason as <see cref="Tiers"/>.</remarks>
+    public List<UserTag> Tags { get; set; } = new();
+
+    /// <summary>
+    /// Set to <c>true</c> after the plugin has populated <see cref="Tiers"/>
+    /// and <see cref="Tags"/> with their first-run defaults. Prevents the
+    /// defaults from being re-seeded if an admin deliberately empties the
+    /// lists.
+    /// </summary>
+    public bool DefaultsSeeded { get; set; }
 
     /// <summary>
     /// In-memory audit trail of administrative actions. Capped at <see cref="AuditLogMaxEntries"/>;

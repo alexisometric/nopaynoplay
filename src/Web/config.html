@@ -8,10 +8,31 @@
 <div id="NoPayNoPlayConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-checkbox,emby-select">
 
     <style>
-        .npnp-tabs { display:flex; gap:4px; border-bottom:1px solid rgba(255,255,255,.15); margin-bottom:18px; flex-wrap:wrap; }
+        /* Theme-adaptive variables. The plugin admin page lives inside
+           Jellyfin's dashboard and inherits the dashboard's text colour;
+           we derive surfaces and borders from currentColor via color-mix
+           so the look adapts automatically to light, dark or custom
+           themes (e.g. ElegantFin) without any per-theme override.
+           Semantic state colours (ok/warn/danger) stay fixed because
+           they convey meaning. */
+        #NoPayNoPlayConfigPage {
+            --npnp-accent: var(--accent, var(--theme-primary-color, #00a4dc));
+            --npnp-accent-fg: var(--theme-accent-text-color, #fff);
+            --npnp-ok: #2ecc71;
+            --npnp-warn: #f39c12;
+            --npnp-danger: #e74c3c;
+            --npnp-surface-1: color-mix(in srgb, currentColor 5%, transparent);
+            --npnp-surface-2: color-mix(in srgb, currentColor 10%, transparent);
+            --npnp-border: color-mix(in srgb, currentColor 12%, transparent);
+            --npnp-border-strong: color-mix(in srgb, currentColor 22%, transparent);
+            --npnp-modal-bg: var(--theme-body-background-color, var(--background-color, #202020));
+            --npnp-modal-fg: var(--theme-body-color, inherit);
+        }
+
+        .npnp-tabs { display:flex; gap:4px; border-bottom:1px solid var(--npnp-border-strong); margin-bottom:18px; flex-wrap:wrap; }
         .npnp-tab-btn { background:transparent; border:none; color:inherit; padding:10px 18px; cursor:pointer; font-size:14px; opacity:.7; border-bottom:2px solid transparent; }
         .npnp-tab-btn:hover { opacity:1; }
-        .npnp-tab-btn.active { opacity:1; border-bottom-color:#00a4dc; font-weight:600; }
+        .npnp-tab-btn.active { opacity:1; border-bottom-color:var(--npnp-accent); font-weight:600; }
         .npnp-tab-panel { display:none; }
         .npnp-tab-panel.active { display:block; }
 
@@ -20,52 +41,93 @@
 
         .npnp-table-wrap { overflow-x:auto; }
         .npnp-table { width:100%; border-collapse:collapse; font-size:14px; }
-        .npnp-table th, .npnp-table td { padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.08); text-align:left; vertical-align:middle; }
+        .npnp-table th, .npnp-table td { padding:10px 12px; border-bottom:1px solid var(--npnp-border); text-align:left; vertical-align:middle; }
         .npnp-table th { font-weight:600; opacity:.8; cursor:pointer; user-select:none; white-space:nowrap; }
         .npnp-table th .npnp-sort-arrow { opacity:.5; font-size:10px; margin-left:4px; }
+        .npnp-table .npnp-cell-center { text-align:center; }
+        .npnp-table .npnp-cell-actions { white-space:nowrap; text-align:right; }
+        /* Make raw inputs in tier/tag tables sit nicely with emby-input siblings. */
+        .npnp-table input[type="number"],
+        .npnp-table input[type="text"],
+        .npnp-table input.emby-input { min-width:80px; max-width:100%; box-sizing:border-box; margin:0; }
+        .npnp-table .npnp-tier-months { width:90px; }
+        .npnp-table .npnp-tier-price,
+        .npnp-table .npnp-tag-price { width:110px; }
+        .npnp-table .npnp-tier-label,
+        .npnp-table .npnp-tag-key,
+        .npnp-table .npnp-tag-label { width:100%; min-width:140px; }
+        .npnp-table input[type="color"] {
+            width:34px; height:34px; padding:2px; border:1px solid var(--npnp-border-strong);
+            border-radius:6px; background:transparent; cursor:pointer; vertical-align:middle;
+        }
+        .npnp-table input[type="color"]::-webkit-color-swatch { border:none; border-radius:4px; }
+        .npnp-table .emby-checkbox-label { display:inline-flex; align-items:center; margin:0; }
+
         .npnp-stats-row { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
-        .npnp-stats-row .npnp-stat-card { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1);
+        .npnp-stats-row .npnp-stat-card { background:var(--npnp-surface-1); border:1px solid var(--npnp-border);
             border-radius:6px; padding:12px 16px; min-width:160px; }
         .npnp-stats-row .npnp-stat-card .npnp-stat-num { font-size:1.4em; font-weight:600; display:block; }
         .npnp-stats-row .npnp-stat-card .npnp-stat-lbl { opacity:.7; font-size:.85em; }
-        .npnp-revenue-chart { margin:0 0 16px; padding:10px 12px; background:rgba(255,255,255,.03);
-            border:1px solid rgba(255,255,255,.08); border-radius:8px; }
+        .npnp-revenue-chart { margin:0 0 16px; padding:10px 12px; background:var(--npnp-surface-1);
+            border:1px solid var(--npnp-border); border-radius:8px; }
         .npnp-revenue-chart:empty { display:none; }
         .npnp-chart-title { font-size:13px; font-weight:600; margin-bottom:6px; opacity:.85; }
         .npnp-bulk-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:8px 12px;
-            background:rgba(0,164,220,.12); border:1px solid #00a4dc; border-radius:6px; margin-bottom:8px; }
+            background:color-mix(in srgb, var(--npnp-accent) 12%, transparent);
+            border:1px solid var(--npnp-accent); border-radius:6px; margin-bottom:8px; }
         .npnp-bulk-bar[hidden] { display:none; }
         .npnp-bulk-count { font-weight:600; margin-right:8px; }
         .npnp-table .npnp-row-check { width:32px; }
-        .npnp-table tbody tr:hover { background:rgba(255,255,255,.04); }
+        .npnp-table tbody tr:hover { background:var(--npnp-surface-1); }
 
         .npnp-state-pill { display:inline-block; padding:2px 8px; border-radius:10px; font-size:12px; color:#fff; font-weight:600; }
         .npnp-actions { display:flex; gap:6px; flex-wrap:wrap; }
         .npnp-actions button { padding:6px 8px; font-size:12px; min-width:0; }
         .npnp-actions .material-icons { font-size:18px; }
-        .npnp-danger { background:rgba(231,76,60,.15); }
-        .npnp-danger:hover { background:rgba(231,76,60,.35); }
+        /* Compact icon-only emby-button for table rows. */
+        .npnp-icon-btn { padding:6px 8px; min-width:0; }
+        .npnp-icon-btn .material-icons { font-size:18px; }
+        /* npnp-danger overrides Jellyfin's button-alt/raised theming with a red tint.
+           Specificity is bumped via attribute selector so it always wins. */
+        #NoPayNoPlayConfigPage [is="emby-button"].npnp-danger,
+        #NoPayNoPlayConfigPage button.npnp-danger {
+            background:color-mix(in srgb, var(--npnp-danger) 15%, transparent);
+            color:inherit;
+        }
+        #NoPayNoPlayConfigPage [is="emby-button"].npnp-danger:hover,
+        #NoPayNoPlayConfigPage button.npnp-danger:hover {
+            background:color-mix(in srgb, var(--npnp-danger) 38%, transparent);
+        }
+        /* Visual fallback for themes that don't style button-alt: subtle outlined chip. */
+        #NoPayNoPlayConfigPage [is="emby-button"].button-alt:not(.npnp-danger) {
+            background:var(--npnp-surface-1);
+            border:1px solid var(--npnp-border-strong);
+        }
+        #NoPayNoPlayConfigPage [is="emby-button"].button-alt:not(.npnp-danger):hover {
+            background:var(--npnp-surface-2);
+            border-color:var(--npnp-accent);
+        }
 
         .npnp-summary { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
-        .npnp-stat { background:rgba(255,255,255,.04); border:2px solid transparent; border-radius:6px;
+        .npnp-stat { background:var(--npnp-surface-1); border:2px solid transparent; border-radius:6px;
             padding:10px 14px; cursor:pointer; color:inherit; display:flex; flex-direction:column;
             align-items:flex-start; min-width:110px; transition:border-color .15s, background .15s; }
-        .npnp-stat:hover { background:rgba(255,255,255,.08); }
-        .npnp-stat.active { border-color:var(--c); background:rgba(255,255,255,.08); }
+        .npnp-stat:hover { background:var(--npnp-surface-2); }
+        .npnp-stat.active { border-color:var(--c); background:var(--npnp-surface-2); }
         .npnp-stat-num { font-size:22px; font-weight:700; color:var(--c); line-height:1; }
         .npnp-stat-lbl { font-size:11px; opacity:.75; text-transform:uppercase; letter-spacing:.5px; margin-top:4px; }
 
         .npnp-status { padding:10px 14px; border-radius:6px; margin-bottom:14px; font-size:13px;
             display:flex; gap:10px; align-items:center; }
-        .npnp-status.ok { background:rgba(46,204,113,.12); color:#2ecc71; }
-        .npnp-status.warn { background:rgba(243,156,18,.12); color:#f39c12; }
-        .npnp-status-strong { background:rgba(231,76,60,.18) !important; color:#fff !important;
-            border:2px solid #e74c3c; padding:14px 16px !important; }
+        .npnp-status.ok { background:color-mix(in srgb, var(--npnp-ok) 12%, transparent); color:var(--npnp-ok); }
+        .npnp-status.warn { background:color-mix(in srgb, var(--npnp-warn) 12%, transparent); color:var(--npnp-warn); }
+        .npnp-status-strong { background:color-mix(in srgb, var(--npnp-danger) 18%, transparent) !important; color:#fff !important;
+            border:2px solid var(--npnp-danger); padding:14px 16px !important; }
         .npnp-status .material-icons { font-size:18px; }
 
         .npnp-empty { padding:24px; text-align:center; opacity:.6; font-style:italic; }
 
-        .npnp-section { background:rgba(255,255,255,.03); border-radius:6px; padding:18px; margin-bottom:18px; }
+        .npnp-section { background:var(--npnp-surface-1); border-radius:6px; padding:18px; margin-bottom:18px; }
         .npnp-section h3 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.5px; opacity:.8; }
         .npnp-section .inputContainer { display:block; margin:0 0 14px; }
         .npnp-section .inputContainer:last-child { margin-bottom:0; }
@@ -79,13 +141,13 @@
         .npnp-grid-2 .inputContainer { margin-bottom:0; }
 
         .npnp-modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:10000; display:flex; align-items:center; justify-content:center; }
-        .npnp-modal { background:#202020; color:#fff; padding:24px; border-radius:8px; min-width:340px; max-width:90vw; max-height:90vh; overflow:auto; box-shadow:0 10px 40px rgba(0,0,0,.5); }
+        .npnp-modal { background:var(--npnp-modal-bg); color:var(--npnp-modal-fg); padding:24px; border-radius:8px; min-width:340px; max-width:90vw; max-height:90vh; overflow:auto; box-shadow:0 10px 40px rgba(0,0,0,.5); border:1px solid var(--npnp-border); }
         .npnp-modal h2 { margin:0 0 14px; }
         .npnp-modal .modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:18px; }
-        .npnp-modal .close { float:right; cursor:pointer; background:none; border:none; color:#fff; font-size:20px; line-height:1; }
+        .npnp-modal .close { float:right; cursor:pointer; background:none; border:none; color:inherit; font-size:20px; line-height:1; }
 
-        .npnp-flash { padding:8px 14px; border-radius:4px; background:#2ecc71; color:#fff; font-weight:600; margin-bottom:12px; display:none; }
-        .npnp-flash.error { background:#e74c3c; }
+        .npnp-flash { padding:8px 14px; border-radius:4px; background:var(--npnp-ok); color:#fff; font-weight:600; margin-bottom:12px; display:none; }
+        .npnp-flash.error { background:var(--npnp-danger); }
         .npnp-flash.show { display:block; }
     </style>
 
@@ -201,7 +263,7 @@
                         </select>
                     </div>
                     <div class="inputContainer" style="align-self:flex-end;">
-                        <button is="emby-button" type="button" id="npnpExportUsers">
+                        <button is="emby-button" type="button" id="npnpExportUsers" class="button-alt">
                             <span class="material-icons" aria-hidden="true">download</span>
                             <span data-i18n="admin.users.export">Export CSV</span>
                         </button>
@@ -213,15 +275,15 @@
                         <span class="material-icons" aria-hidden="true">payments</span>
                         <span data-i18n="admin.users.bulk.pay">Record payment</span>
                     </button>
-                    <button is="emby-button" type="button" id="npnpBulkExempt">
+                    <button is="emby-button" type="button" id="npnpBulkExempt" class="button-alt">
                         <span class="material-icons" aria-hidden="true">lock_open</span>
                         <span data-i18n="admin.users.bulk.exempt">Toggle exemption</span>
                     </button>
-                    <button is="emby-button" type="button" id="npnpBulkReset" class="npnp-danger">
+                    <button is="emby-button" type="button" id="npnpBulkReset" class="raised npnp-danger">
                         <span class="material-icons" aria-hidden="true">restart_alt</span>
                         <span data-i18n="admin.users.bulk.reset">Reset</span>
                     </button>
-                    <button is="emby-button" type="button" id="npnpBulkClear">
+                    <button is="emby-button" type="button" id="npnpBulkClear" class="button-alt">
                         <span data-i18n="admin.users.bulk.clear">Clear selection</span>
                     </button>
                 </div>
@@ -244,7 +306,7 @@
                         <input is="emby-input" id="npnpActivityTo" type="date" />
                     </div>
                     <div class="inputContainer" style="align-self:flex-end;">
-                        <button is="emby-button" type="button" id="npnpExportActivity">
+                        <button is="emby-button" type="button" id="npnpExportActivity" class="button-alt">
                             <span class="material-icons" aria-hidden="true">download</span>
                             <span data-i18n="admin.activity.export">Export CSV</span>
                         </button>
@@ -295,7 +357,7 @@
                     <p data-i18n="admin.tiers.help" style="opacity:.8;">Define the bundles users see in their modal.</p>
                     <div id="npnpTiersTable" class="npnp-table-wrap"></div>
                     <div class="npnp-toolbar" style="margin-top:12px;">
-                        <button is="emby-button" type="button" id="npnpTiersAdd">
+                        <button is="emby-button" type="button" id="npnpTiersAdd" class="button-alt">
                             <span class="material-icons" aria-hidden="true">add</span>
                             <span data-i18n="admin.tiers.add">Add tier</span>
                         </button>
@@ -313,7 +375,7 @@
                     <p data-i18n="admin.tags.help" style="opacity:.8;">Group members and override price per tag.</p>
                     <div id="npnpTagsTable" class="npnp-table-wrap"></div>
                     <div class="npnp-toolbar" style="margin-top:12px;">
-                        <button is="emby-button" type="button" id="npnpTagsAdd">
+                        <button is="emby-button" type="button" id="npnpTagsAdd" class="button-alt">
                             <span class="material-icons" aria-hidden="true">add</span>
                             <span data-i18n="admin.tags.add">Add tag</span>
                         </button>
@@ -356,7 +418,7 @@
                         <button is="emby-button" type="button" id="npnpTestPreview" class="raised">
                             <span data-i18n="admin.test.preview">Preview in a new tab</span>
                         </button>
-                        <button is="emby-button" type="button" id="npnpTestCopy">
+                        <button is="emby-button" type="button" id="npnpTestCopy" class="button-alt">
                             <span data-i18n="admin.test.copy">Copy URL</span>
                         </button>
                     </div>
@@ -379,10 +441,10 @@
                         <button is="emby-button" type="button" id="npnpDiagRetry" class="raised">
                             <span data-i18n="admin.diag.retry">Retry registration</span>
                         </button>
-                        <button is="emby-button" type="button" id="npnpDiagRefresh">
+                        <button is="emby-button" type="button" id="npnpDiagRefresh" class="button-alt">
                             <span data-i18n="admin.diag.refresh">Refresh</span>
                         </button>
-                        <button is="emby-button" type="button" id="npnpDiagCopy">
+                        <button is="emby-button" type="button" id="npnpDiagCopy" class="button-alt">
                             <span data-i18n="admin.diag.copy">Copy raw JSON</span>
                         </button>
                     </div>

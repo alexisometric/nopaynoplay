@@ -790,7 +790,12 @@ public class NoPayNoPlayController : ControllerBase
 
         DateTime now = DateTime.UtcNow;
         DateTime startOfMonth = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc);
-        DateTime startOfYearWindow = now.AddMonths(-12);
+        // The 12-month window is anchored on calendar months: it starts on the
+        // first day of (currentMonth - 11) so the chart bars and the
+        // "last 12 months" total always cover the exact same set of
+        // transactions. Using a rolling "now - 12 months" instead would
+        // double-count or drop transactions on the edge month.
+        DateTime startOfYearWindow = startOfMonth.AddMonths(-11);
 
         decimal totalAllTime = 0m;
         decimal totalThisMonth = 0m;
@@ -804,7 +809,7 @@ public class NoPayNoPlayController : ControllerBase
         var monthlyLabels = new string[12];
         for (int i = 0; i < 12; i++)
         {
-            DateTime m = new DateTime(now.Year, now.Month, 1, 0, 0, 0, DateTimeKind.Utc).AddMonths(-(11 - i));
+            DateTime m = startOfMonth.AddMonths(-(11 - i));
             monthlyLabels[i] = m.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
         }
 
@@ -812,17 +817,27 @@ public class NoPayNoPlayController : ControllerBase
         {
             foreach (var t in sub.Transactions)
             {
+                // Compare on UTC ticks regardless of the persisted Kind: dates
+                // loaded from the XML configuration come back as Unspecified
+                // and must not be reinterpreted as Local during comparison.
+                DateTime txUtc = t.Date.Kind == DateTimeKind.Utc
+                    ? t.Date
+                    : DateTime.SpecifyKind(t.Date, DateTimeKind.Utc);
+
                 txAllTime++;
                 totalAllTime += t.Amount;
-                if (t.Date >= startOfMonth) totalThisMonth += t.Amount;
-                if (t.Date >= startOfYearWindow) total12m += t.Amount;
+                if (txUtc >= startOfMonth) totalThisMonth += t.Amount;
 
-                // Bucket into the right month slot if within the 12-month window.
-                if (t.Date >= startOfYearWindow)
+                if (txUtc >= startOfYearWindow)
                 {
-                    string label = t.Date.ToString("yyyy-MM", System.Globalization.CultureInfo.InvariantCulture);
-                    int idx = Array.IndexOf(monthlyLabels, label);
-                    if (idx >= 0) monthly[idx] += t.Amount;
+                    total12m += t.Amount;
+
+                    // Bucket into the right month slot. Computed via month
+                    // arithmetic so it stays correct across DST and year
+                    // boundaries (no string parse roundtrip required).
+                    int idx = ((txUtc.Year - startOfYearWindow.Year) * 12)
+                              + (txUtc.Month - startOfYearWindow.Month);
+                    if (idx >= 0 && idx < 12) monthly[idx] += t.Amount;
                 }
             }
         }

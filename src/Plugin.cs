@@ -34,6 +34,78 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         _applicationPaths = applicationPaths;
         _logger = logger;
         Instance = this;
+        SeedDefaultsAndDedupe();
+    }
+
+    /// <summary>
+    /// Seeds first-run tier and tag defaults, and removes duplicates that
+    /// previous releases (≤ 1.2.1) accumulated on every Jellyfin restart
+    /// because <see cref="System.Xml.Serialization.XmlSerializer"/> appends
+    /// to collections initialised inline.
+    /// </summary>
+    private void SeedDefaultsAndDedupe()
+    {
+        var cfg = Configuration;
+        var dirty = false;
+
+        // Dedupe Tiers by (Months, Price, Label, Highlight).
+        if (cfg.Tiers is { Count: > 0 })
+        {
+            var deduped = cfg.Tiers
+                .GroupBy(t => (t.Months, t.Price, t.Label ?? string.Empty, t.Highlight))
+                .Select(g => g.First())
+                .ToList();
+            if (deduped.Count != cfg.Tiers.Count)
+            {
+                cfg.Tiers = deduped;
+                dirty = true;
+                _logger.LogInformation("[NoPayNoPlay] Removed duplicate tiers from configuration.");
+            }
+        }
+
+        // Dedupe Tags by Key (case-insensitive).
+        if (cfg.Tags is { Count: > 0 })
+        {
+            var deduped = cfg.Tags
+                .GroupBy(t => (t.Key ?? string.Empty).Trim().ToLowerInvariant())
+                .Select(g => g.First())
+                .ToList();
+            if (deduped.Count != cfg.Tags.Count)
+            {
+                cfg.Tags = deduped;
+                dirty = true;
+                _logger.LogInformation("[NoPayNoPlay] Removed duplicate tags from configuration.");
+            }
+        }
+
+        // First-run seeding: only when the flag is unset AND the lists are
+        // empty (so we don't clobber an admin who deliberately deleted them).
+        if (!cfg.DefaultsSeeded)
+        {
+            if (cfg.Tiers.Count == 0)
+            {
+                cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 1,  Price = 10m,  Highlight = false });
+                cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 3,  Price = 27m,  Highlight = true });
+                cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 12, Price = 100m, Highlight = false });
+            }
+            if (cfg.Tags.Count == 0)
+            {
+                cfg.Tags.Add(new Configuration.UserTag { Key = "family",  Label = "Family",  Color = "#9b59b6" });
+                cfg.Tags.Add(new Configuration.UserTag { Key = "friends", Label = "Friends", Color = "#3498db" });
+                cfg.Tags.Add(new Configuration.UserTag { Key = "guests",  Label = "Guests",  Color = "#95a5a6" });
+            }
+            cfg.DefaultsSeeded = true;
+            dirty = true;
+        }
+
+        if (dirty)
+        {
+            try { SaveConfiguration(); }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "[NoPayNoPlay] Failed to persist seeded/deduped configuration.");
+            }
+        }
     }
 
     /// <summary>Gets the singleton instance of the plugin.</summary>

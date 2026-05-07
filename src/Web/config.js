@@ -276,7 +276,7 @@
                     + 'target="_blank" rel="noopener" class="emby-button raised">'
                     + escapeHtml(t('admin.status.ftMissing.docs', 'Install instructions'))
                     + '</a>'
-                    + '<button is="emby-button" type="button" id="npnpStatusRetry" class="emby-button">'
+                    + '<button is="emby-button" type="button" id="npnpStatusRetry" class="button-alt">'
                     + escapeHtml(t('admin.diag.retry', 'Retry registration'))
                     + '</button>'
                     + '</div>'
@@ -504,7 +504,7 @@
 
         var html = '<table class="npnp-table">'
             + '<thead><tr>'
-            + '<th class="npnp-row-check"><input type="checkbox" id="npnpSelectAll" /></th>'
+            + '<th class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" id="npnpSelectAll" /><span></span></label></th>'
             + '<th data-sort="Username">' + escapeHtml(t('admin.users.col.user', 'User')) + arrowFor('Username') + '</th>'
             + '<th data-sort="State">' + escapeHtml(t('admin.users.col.state', 'State')) + arrowFor('State') + '</th>'
             + '<th data-sort="ExpiryDate">' + escapeHtml(t('admin.users.col.expiry', 'Expiry')) + arrowFor('ExpiryDate') + '</th>'
@@ -551,20 +551,20 @@
                         + (tg.Key === currentTag ? ' selected' : '') + '>'
                         + escapeHtml(tg.Label || tg.Key) + '</option>';
                 }).join('');
-            var tagCell = '<select class="npnp-tag-select" data-userid="' + escapeHtml(u.UserId) + '">'
+            var tagCell = '<select is="emby-select" class="emby-select npnp-tag-select" data-userid="' + escapeHtml(u.UserId) + '">'
                 + tagOpts + '</select>';
 
             var pendingActions = u.HasPendingPaymentClaim
                 ? '<button is="emby-button" type="button" class="raised npnp-confirm-pending" title="'
                     + escapeHtml(t('admin.users.pending.confirm', 'Confirm payment'))
                     + '"><span class="material-icons" aria-hidden="true">check_circle</span></button>'
-                    + '<button is="emby-button" type="button" class="npnp-reject-pending npnp-danger" title="'
+                    + '<button is="emby-button" type="button" class="button-alt npnp-reject-pending npnp-danger" title="'
                     + escapeHtml(t('admin.users.pending.reject', 'Reject claim'))
                     + '"><span class="material-icons" aria-hidden="true">cancel</span></button>'
                 : '';
 
             html += '<tr data-userid="' + escapeHtml(u.UserId) + '">'
-                + '<td class="npnp-row-check"><input type="checkbox" class="npnp-rowcheck"' + checked + ' /></td>'
+                + '<td class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-rowcheck"' + checked + ' /><span></span></label></td>'
                 + '<td>' + escapeHtml(u.Username) + '</td>'
                 + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + arrearsBadge + '</td>'
                 + '<td>' + escapeHtml(formatDate(u.ExpiryDate)) + '</td>'
@@ -576,9 +576,9 @@
                 + '<td><div class="npnp-actions">'
                 + pendingActions
                 + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span></button>'
-                + '<button is="emby-button" type="button" class="npnp-history" title="' + escapeHtml(t('admin.users.action.history', 'History')) + '"><span class="material-icons" aria-hidden="true">history</span></button>'
-                + '<button is="emby-button" type="button" class="npnp-exempt" title="' + escapeHtml(actExempt) + '"><span class="material-icons" aria-hidden="true">' + (u.IsExempt ? 'lock' : 'lock_open') + '</span></button>'
-                + '<button is="emby-button" type="button" class="npnp-reset npnp-danger" title="' + escapeHtml(t('admin.users.action.reset', 'Reset trial')) + '"><span class="material-icons" aria-hidden="true">restart_alt</span></button>'
+                + '<button is="emby-button" type="button" class="raised npnp-history" title="' + escapeHtml(t('admin.users.action.history', 'History')) + '"><span class="material-icons" aria-hidden="true">history</span></button>'
+                + '<button is="emby-button" type="button" class="raised npnp-exempt" title="' + escapeHtml(actExempt) + '"><span class="material-icons" aria-hidden="true">' + (u.IsExempt ? 'lock' : 'lock_open') + '</span></button>'
+                + '<button is="emby-button" type="button" class="raised npnp-reset npnp-danger" title="' + escapeHtml(t('admin.users.action.reset', 'Reset trial')) + '"><span class="material-icons" aria-hidden="true">restart_alt</span></button>'
                 + '</div></td>'
                 + '</tr>';
         });
@@ -757,7 +757,7 @@
         var modal = buildModal(page,
             escapeHtml(title),
             '<p>' + escapeHtml(message) + '</p>',
-            '<button is="emby-button" type="button" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
+            '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
             + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
         modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
@@ -781,8 +781,8 @@
                     + '<td>' + escapeHtml(String(e.MonthsAdded || 0)) + '</td>'
                     + '<td>' + escapeHtml(e.AdminNote || '') + '</td>'
                     + '<td><div class="npnp-actions">'
-                    + (id ? '<button is="emby-button" type="button" class="npnp-tx-edit" title="' + escapeHtml(t('admin.users.tx.edit', 'Edit')) + '"><span class="material-icons" aria-hidden="true">edit</span></button>' : '')
-                    + (id ? '<button is="emby-button" type="button" class="npnp-tx-del npnp-danger" title="' + escapeHtml(t('admin.users.tx.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button>' : '')
+                    + (id ? '<button is="emby-button" type="button" class="button-alt npnp-tx-edit" title="' + escapeHtml(t('admin.users.tx.edit', 'Edit')) + '"><span class="material-icons" aria-hidden="true">edit</span></button>' : '')
+                    + (id ? '<button is="emby-button" type="button" class="button-alt npnp-tx-del npnp-danger" title="' + escapeHtml(t('admin.users.tx.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button>' : '')
                     + '</div></td>'
                     + '</tr>';
             }).join('');
@@ -842,7 +842,7 @@
         var modal = buildModal(page,
             escapeHtml(t('admin.users.tx.edit', 'Edit transaction')),
             body,
-            '<button is="emby-button" type="button" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
+            '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
             + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
         modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
@@ -914,7 +914,7 @@
             + '</form>';
 
         var footer = ''
-            + '<button is="emby-button" type="button" data-npnp-cancel>' + escapeHtml(t('admin.payment.cancel', 'Cancel')) + '</button>'
+            + '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('admin.payment.cancel', 'Cancel')) + '</button>'
             + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-save>' + escapeHtml(t('admin.payment.save', 'Save')) + '</button>';
 
         var modal = buildModal(page, escapeHtml(t('admin.payment.title', 'Record a payment')), body, footer);
@@ -991,7 +991,7 @@
                 + '<td>' + escapeHtml(usesText) + '</td>'
                 + '<td>' + escapeHtml(expiresText) + '</td>'
                 + '<td>' + escapeHtml(createdText) + '</td>'
-                + '<td><button is="emby-button" type="button" class="npnp-promo-delete npnp-danger" title="'
+                + '<td><button is="emby-button" type="button" class="button-alt npnp-promo-delete npnp-danger" title="'
                 + escapeHtml(t('admin.promo.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button></td>'
                 + '</tr>';
         });
@@ -1100,11 +1100,11 @@
             + '</tr></thead><tbody>';
         var body = rows.map(function (r, idx) {
             return '<tr data-idx="' + idx + '">'
-                + '<td><input type="number" min="1" max="60" class="npnp-tier-months" value="' + (r.Months || 1) + '" style="width:80px;" /></td>'
-                + '<td><input type="number" min="0" step="0.01" class="npnp-tier-price" value="' + (r.Price || 0) + '" style="width:100px;" /></td>'
-                + '<td><input type="text" maxlength="64" class="npnp-tier-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
-                + '<td><input type="checkbox" class="npnp-tier-highlight"' + (r.Highlight ? ' checked' : '') + ' /></td>'
-                + '<td><button is="emby-button" type="button" class="npnp-tier-del npnp-danger">'
+                + '<td><input is="emby-input" type="number" min="1" max="60" class="emby-input npnp-tier-months" value="' + (r.Months || 1) + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="emby-input npnp-tier-price" value="' + (r.Price || 0) + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="64" class="emby-input npnp-tier-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td class="npnp-cell-center"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-tier-highlight"' + (r.Highlight ? ' checked' : '') + ' /><span></span></label></td>'
+                + '<td class="npnp-cell-actions"><button is="emby-button" type="button" class="button-alt npnp-tier-del npnp-icon-btn npnp-danger" title="' + escapeHtml(t('admin.tiers.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.tiers.delete', 'Delete')) + '">'
                 + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
                 + '</tr>';
         }).join('');
@@ -1187,11 +1187,11 @@
             + '</tr></thead><tbody>';
         var body = rows.map(function (r, idx) {
             return '<tr data-idx="' + idx + '">'
-                + '<td><input type="text" maxlength="32" class="npnp-tag-key" value="' + escapeHtml(r.Key || '') + '" /></td>'
-                + '<td><input type="text" maxlength="64" class="npnp-tag-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
-                + '<td><input type="color" class="npnp-tag-color" value="' + escapeHtml(r.Color || '#888888') + '" /></td>'
-                + '<td><input type="number" min="0" step="0.01" class="npnp-tag-price" value="' + (r.MonthlyPriceOverride || 0) + '" style="width:100px;" /></td>'
-                + '<td><button is="emby-button" type="button" class="npnp-tag-del npnp-danger">'
+                + '<td><input is="emby-input" type="text" maxlength="32" class="emby-input npnp-tag-key" value="' + escapeHtml(r.Key || '') + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="64" class="emby-input npnp-tag-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td class="npnp-cell-center"><input type="color" class="npnp-tag-color" value="' + escapeHtml(r.Color || '#888888') + '" aria-label="' + escapeHtml(t('admin.tags.col.color', 'Color')) + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="emby-input npnp-tag-price" value="' + (r.MonthlyPriceOverride || 0) + '" /></td>'
+                + '<td class="npnp-cell-actions"><button is="emby-button" type="button" class="button-alt npnp-tag-del npnp-icon-btn npnp-danger" title="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '">'
                 + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
                 + '</tr>';
         }).join('');
@@ -1467,7 +1467,7 @@
         var modal = buildModal(page,
             escapeHtml(t('admin.users.bulk.pay', 'Record payment')),
             body,
-            '<button is="emby-button" type="button" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
+            '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
             + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
         modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
