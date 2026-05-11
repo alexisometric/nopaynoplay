@@ -352,6 +352,7 @@ public class NoPayNoPlayController : ControllerBase
     {
         // Make sure every non-admin Jellyfin user is represented.
         var adminIds = new HashSet<Guid>();
+        var liveUserIds = new HashSet<Guid>();
         foreach (var u in _userManager.Users)
         {
             if (u.HasPermission(PermissionKind.IsAdministrator))
@@ -360,12 +361,16 @@ public class NoPayNoPlayController : ControllerBase
                 continue;
             }
 
+            liveUserIds.Add(u.Id);
             _service.EnsureUserTracked(u.Id);
         }
 
         string culture = ResolveCulture();
+        // Hide subscriptions whose Jellyfin user has been deleted; the orphaned
+        // entries are kept in configuration for audit purposes but are not
+        // surfaced in the admin list.
         var dto = Cfg.Subscriptions
-            .Where(s => !adminIds.Contains(s.UserId))
+            .Where(s => !adminIds.Contains(s.UserId) && liveUserIds.Contains(s.UserId))
             .Select(s => Project(s, culture))
             .ToList();
         return Ok(dto);
@@ -378,16 +383,20 @@ public class NoPayNoPlayController : ControllerBase
     public ActionResult<object> GetActivity()
     {
         var adminIds = new HashSet<Guid>();
+        var liveUserIds = new HashSet<Guid>();
         foreach (var u in _userManager.Users)
         {
             if (u.HasPermission(PermissionKind.IsAdministrator))
             {
                 adminIds.Add(u.Id);
+                continue;
             }
+
+            liveUserIds.Add(u.Id);
         }
 
         var rows = Cfg.Subscriptions
-            .Where(s => !adminIds.Contains(s.UserId))
+            .Where(s => !adminIds.Contains(s.UserId) && liveUserIds.Contains(s.UserId))
             .SelectMany(s => s.Transactions.Select(t => new
             {
                 t.Id,
@@ -878,15 +887,22 @@ public class NoPayNoPlayController : ControllerBase
     public IActionResult ExportUsersCsv()
     {
         var adminIds = new HashSet<Guid>();
+        var liveUserIds = new HashSet<Guid>();
         foreach (var u in _userManager.Users)
         {
-            if (u.HasPermission(PermissionKind.IsAdministrator)) adminIds.Add(u.Id);
+            if (u.HasPermission(PermissionKind.IsAdministrator))
+            {
+                adminIds.Add(u.Id);
+                continue;
+            }
+
+            liveUserIds.Add(u.Id);
         }
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("UserId,Username,State,IsExempt,SubscriptionDate,ExpiryDate,DaysLeft,LastPaymentDate,LastPaymentAmount,LastPaymentMethod,TotalPaid");
         DateTime now = DateTime.UtcNow;
-        foreach (var s in Cfg.Subscriptions.Where(s => !adminIds.Contains(s.UserId)))
+        foreach (var s in Cfg.Subscriptions.Where(s => !adminIds.Contains(s.UserId) && liveUserIds.Contains(s.UserId)))
         {
             string username = _userManager.GetUserById(s.UserId)?.Username ?? "(deleted)";
             string state = _service.EvaluateState(s).ToString();
@@ -918,15 +934,22 @@ public class NoPayNoPlayController : ControllerBase
     public IActionResult ExportActivityCsv()
     {
         var adminIds = new HashSet<Guid>();
+        var liveUserIds = new HashSet<Guid>();
         foreach (var u in _userManager.Users)
         {
-            if (u.HasPermission(PermissionKind.IsAdministrator)) adminIds.Add(u.Id);
+            if (u.HasPermission(PermissionKind.IsAdministrator))
+            {
+                adminIds.Add(u.Id);
+                continue;
+            }
+
+            liveUserIds.Add(u.Id);
         }
 
         var sb = new System.Text.StringBuilder();
         sb.AppendLine("Date,UserId,Username,Method,Amount,MonthsAdded,Note");
         var rows = Cfg.Subscriptions
-            .Where(s => !adminIds.Contains(s.UserId))
+            .Where(s => !adminIds.Contains(s.UserId) && liveUserIds.Contains(s.UserId))
             .SelectMany(s => s.Transactions.Select(t => new
             {
                 Username = _userManager.GetUserById(s.UserId)?.Username ?? "(deleted)",
