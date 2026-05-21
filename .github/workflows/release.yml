@@ -84,6 +84,83 @@ jobs:
             echo "size=$SIZE"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Build release notes
+        id: notes
+        env:
+          TAG: v${{ steps.ver.outputs.version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          PREV_TAG=$(git tag --list 'v*.*.*.*' --sort=-version:refname | grep -vFx "$TAG" | head -n1 || true)
+          if [[ -n "$PREV_TAG" ]]; then
+            RANGE="${PREV_TAG}..${TAG}"
+            COMPARE="https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
+          else
+            RANGE="$TAG"
+            COMPARE="https://github.com/${REPO}/commits/${TAG}"
+          fi
+
+          # Collect commits as "<short-sha><TAB><subject>" lines.
+          mapfile -t COMMITS < <(git log --no-merges --pretty=format:'%h%x09%s' "$RANGE" 2>/dev/null || true)
+
+          declare -A SECTIONS=(
+            [feat]="### Features"
+            [fix]="### Bug fixes"
+            [perf]="### Performance"
+            [refactor]="### Refactoring"
+            [docs]="### Documentation"
+            [test]="### Tests"
+            [build]="### Build"
+            [ci]="### CI"
+            [chore]="### Chores"
+          )
+          ORDER=(feat fix perf refactor docs test build ci chore other)
+
+          declare -A BUCKETS=()
+          for line in "${COMMITS[@]}"; do
+            [[ -z "$line" ]] && continue
+            sha="${line%%	*}"
+            subject="${line#*	}"
+            # Skip the auto manifest commit.
+            if [[ "$subject" == *"[skip ci]"* ]]; then continue; fi
+            type="other"
+            if [[ "$subject" =~ ^([a-z]+)(\([^)]+\))?!?:[[:space:]]*(.*)$ ]]; then
+              t="${BASH_REMATCH[1]}"
+              rest="${BASH_REMATCH[3]}"
+              if [[ -n "${SECTIONS[$t]:-}" ]]; then
+                type="$t"
+                subject="$rest"
+              fi
+            fi
+            BUCKETS[$type]+="- ${subject} (${sha})"$'\n'
+          done
+
+          {
+            echo "## What's changed"
+            echo
+            any=0
+            for t in "${ORDER[@]}"; do
+              content="${BUCKETS[$t]:-}"
+              [[ -z "$content" ]] && continue
+              any=1
+              if [[ "$t" == "other" ]]; then
+                echo "### Other"
+              else
+                echo "${SECTIONS[$t]}"
+              fi
+              echo
+              printf '%s' "$content"
+              echo
+            done
+            if [[ $any -eq 0 ]]; then
+              echo "_No notable changes._"
+              echo
+            fi
+            echo "**Full changelog:** ${COMPARE}"
+          } > release-notes.md
+
+          echo "path=release-notes.md" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         id: gh_release
         uses: softprops/action-gh-release@v3
@@ -91,7 +168,7 @@ jobs:
           tag_name: v${{ steps.ver.outputs.version }}
           name: NoPayNoPlay ${{ steps.ver.outputs.version }}
           files: artifacts/nopaynoplay_${{ steps.ver.outputs.version }}.zip
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
 
       - name: Update manifest.json
         env:
