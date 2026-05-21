@@ -283,6 +283,8 @@
   "user.modal.section.donate": "Support the server",
   "user.modal.donate.note": "Beyond your subscription, donations are welcome to help cover server costs and continued improvements.",
   "user.modal.donate.exempt": "Your access is free \u2014 if you want to help cover server costs and maintenance, any donation is welcome.",
+  "user.modal.donate.freeAmount": "Choose your amount",
+  "user.modal.summary.noExpiry": "No expiry \u2014 free access",
   "user.modal.exempt.title": "Free access for you",
   "user.modal.exempt.sub": "No subscription is required \u2014 enjoy the server.",
 

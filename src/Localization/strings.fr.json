@@ -284,6 +284,8 @@
   "user.modal.section.donate": "Soutenir le serveur",
   "user.modal.donate.note": "En plus de votre abonnement, les dons sont les bienvenus pour aider à couvrir les frais du serveur et financer les améliorations.",
   "user.modal.donate.exempt": "Votre accès est gratuit \u2014 si vous souhaitez aider à couvrir les frais et la maintenance, tout don est apprécié.",
+  "user.modal.donate.freeAmount": "Choisissez votre montant",
+  "user.modal.summary.noExpiry": "Pas d'échéance \u2014 accès gratuit",
   "user.modal.exempt.title": "Accès gratuit pour vous",
   "user.modal.exempt.sub": "Aucun abonnement n'est requis \u2014 profitez du serveur.",
 

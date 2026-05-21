@@ -283,6 +283,8 @@
   "user.modal.section.donate": "Server unterstützen",
   "user.modal.donate.note": "Zusätzlich zu deinem Abo sind Spenden willkommen, um Serverkosten und laufende Verbesserungen zu finanzieren.",
   "user.modal.donate.exempt": "Dein Zugang ist kostenlos \u2014 wenn du die Serverkosten und Wartung unterstützen möchtest, ist jede Spende willkommen.",
+  "user.modal.donate.freeAmount": "Wähle deinen Betrag",
+  "user.modal.summary.noExpiry": "Kein Ablauf \u2014 kostenloser Zugang",
   "user.modal.exempt.title": "Kostenloser Zugang für dich",
   "user.modal.exempt.sub": "Kein Abo nötig \u2014 viel Spaß auf dem Server.",
 

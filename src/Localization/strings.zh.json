@@ -283,6 +283,8 @@
   "user.modal.section.donate": "支持服务器",
   "user.modal.donate.note": "除订阅外，捐赠也很受欢迎，可帮助分担服务器费用并支持后续改进。",
   "user.modal.donate.exempt": "您的访问是免费的 \u2014 如果愿意帮助分担服务器和维护费用，欢迎任何捐赠。",
+  "user.modal.donate.freeAmount": "选择您的金额",
+  "user.modal.summary.noExpiry": "无到期 \u2014 免费访问",
   "user.modal.exempt.title": "您可免费访问",
   "user.modal.exempt.sub": "无需订阅 \u2014 尽情享受服务器吧。",
 

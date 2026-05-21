@@ -451,6 +451,9 @@
                 format(t(data, 'user.modal.summary.expiredAgo', 'Expired {days} day(s) ago'),
                     { days: Math.max(0, -Number(data.daysLeft || 0)) }));
             sub = dueOn;
+        } else if (data.state === 'Exempt') {
+            main = stateLabel;
+            sub = t(data, 'user.modal.summary.noExpiry', 'No expiry — free access');
         } else {
             main = stateLabel;
             sub = dueOn;
@@ -492,10 +495,13 @@
             + '</h3><div class="npnp-tiers">' + html + '</div>';
     }
 
-    function paymentCardHtml(data, key, url, methodLabel) {
+    function paymentCardHtml(data, key, url, methodLabel, isExempt) {
         if (!url) return '';
-        var amount = formatPrice(data.price) + ' ' + (data.currency || 'EUR');
-        return '<a class="npnp-pay-card" href="' + escapeHtml(buildPaymentUrl(key, url, Number(data.price || 0), data.currency || 'EUR'))
+        var priceForUrl = isExempt ? 0 : Number(data.price || 0);
+        var amount = isExempt
+            ? t(data, 'user.modal.donate.freeAmount', 'Choose your amount')
+            : formatPrice(data.price) + ' ' + (data.currency || 'EUR');
+        return '<a class="npnp-pay-card" href="' + escapeHtml(buildPaymentUrl(key, url, priceForUrl, data.currency || 'EUR'))
             + '" target="_blank" rel="noopener" data-method="' + escapeHtml(key) + '"'
             + ' data-base-url="' + escapeHtml(url) + '">'
             + '<span class="npnp-pay-title">'
@@ -543,8 +549,8 @@
         var paypalLabel = t(data, 'user.modal.method.paypal', 'Pay with PayPal');
         var lydiaLabel = t(data, 'user.modal.method.lydia', 'Pay with Lydia');
         var cards = [
-            paymentCardHtml(data, 'paypal', data.paypalMeUrl, paypalLabel),
-            paymentCardHtml(data, 'lydia', data.lydiaUrl, lydiaLabel)
+            paymentCardHtml(data, 'paypal', data.paypalMeUrl, paypalLabel, isExempt),
+            paymentCardHtml(data, 'lydia', data.lydiaUrl, lydiaLabel, isExempt)
         ].filter(Boolean).join('');
         var paySectionHeader = isExempt
             ? t(data, 'user.modal.section.donate', 'Support the server')
