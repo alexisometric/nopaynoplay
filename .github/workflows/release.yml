@@ -117,6 +117,7 @@ jobs:
           ORDER=(feat fix perf refactor docs test build ci chore other)
 
           declare -A BUCKETS=()
+          cc_re='^([a-z]+)(\([^)]+\))?!?:[[:space:]]*(.*)$'
           for line in "${COMMITS[@]}"; do
             [[ -z "$line" ]] && continue
             sha="${line%%	*}"
@@ -124,7 +125,7 @@ jobs:
             # Skip the auto manifest commit.
             if [[ "$subject" == *"[skip ci]"* ]]; then continue; fi
             type="other"
-            if [[ "$subject" =~ ^([a-z]+)(\([^)]+\))?!?:[[:space:]]*(.*)$ ]]; then
+            if [[ "$subject" =~ $cc_re ]]; then
               t="${BASH_REMATCH[1]}"
               rest="${BASH_REMATCH[3]}"
               if [[ -n "${SECTIONS[$t]:-}" ]]; then
