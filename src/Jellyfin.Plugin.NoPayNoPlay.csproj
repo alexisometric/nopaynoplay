@@ -9,14 +9,14 @@
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
-    <Version>1.2.3.0</Version>
-    <FileVersion>1.2.3.0</FileVersion>
-    <AssemblyVersion>1.2.3.0</AssemblyVersion>
+    <Version>1.2.4.0</Version>
+    <FileVersion>1.2.4.0</FileVersion>
+    <AssemblyVersion>1.2.4.0</AssemblyVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Jellyfin.Controller" Version="10.11.8" />
-    <PackageReference Include="Jellyfin.Model" Version="10.11.8" />
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.9" />
+    <PackageReference Include="Jellyfin.Model" Version="10.11.9" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
   </ItemGroup>
 

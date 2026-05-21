@@ -353,7 +353,7 @@ public class NoPayNoPlayController : ControllerBase
         // Make sure every non-admin Jellyfin user is represented.
         var adminIds = new HashSet<Guid>();
         var liveUserIds = new HashSet<Guid>();
-        foreach (var u in _userManager.Users)
+        foreach (var u in _userManager.GetUsers())
         {
             if (u.HasPermission(PermissionKind.IsAdministrator))
             {
@@ -384,7 +384,7 @@ public class NoPayNoPlayController : ControllerBase
     {
         var adminIds = new HashSet<Guid>();
         var liveUserIds = new HashSet<Guid>();
-        foreach (var u in _userManager.Users)
+        foreach (var u in _userManager.GetUsers())
         {
             if (u.HasPermission(PermissionKind.IsAdministrator))
             {
@@ -789,7 +789,7 @@ public class NoPayNoPlayController : ControllerBase
     public ActionResult<object> GetStats()
     {
         var adminIds = new HashSet<Guid>();
-        foreach (var u in _userManager.Users)
+        foreach (var u in _userManager.GetUsers())
         {
             if (u.HasPermission(PermissionKind.IsAdministrator))
             {
@@ -888,7 +888,7 @@ public class NoPayNoPlayController : ControllerBase
     {
         var adminIds = new HashSet<Guid>();
         var liveUserIds = new HashSet<Guid>();
-        foreach (var u in _userManager.Users)
+        foreach (var u in _userManager.GetUsers())
         {
             if (u.HasPermission(PermissionKind.IsAdministrator))
             {
@@ -935,7 +935,7 @@ public class NoPayNoPlayController : ControllerBase
     {
         var adminIds = new HashSet<Guid>();
         var liveUserIds = new HashSet<Guid>();
-        foreach (var u in _userManager.Users)
+        foreach (var u in _userManager.GetUsers())
         {
             if (u.HasPermission(PermissionKind.IsAdministrator))
             {

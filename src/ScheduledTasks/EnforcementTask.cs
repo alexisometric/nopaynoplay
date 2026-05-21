@@ -81,7 +81,7 @@ public class EnforcementTask : IScheduledTask
     /// <inheritdoc />
     public async Task ExecuteAsync(IProgress<double> progress, CancellationToken cancellationToken)
     {
-        var users = _userManager.Users.ToList();
+        var users = _userManager.GetUsers().ToList();
         int total = users.Count;
         int done = 0;
         string culture = ServerCulture;
