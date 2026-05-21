@@ -11,7 +11,7 @@ on:
       target_abi:
         description: 'Jellyfin target ABI'
         required: true
-        default: '10.11.8.0'
+        default: '10.11.9.0'
 
 concurrency:
   group: release-${{ github.ref }}
@@ -44,7 +44,9 @@ jobs:
             ABI="${{ inputs.target_abi }}"
           else
             VERSION="${GITHUB_REF#refs/tags/v}"
-            ABI="10.11.8.0"
+            # Source of truth: src/meta.json. Falls back to 10.11.9.0 if absent.
+            ABI=$(jq -r '.targetAbi' src/meta.json 2>/dev/null || echo '10.11.9.0')
+            [[ -z "$ABI" || "$ABI" == "null" ]] && ABI='10.11.9.0'
           fi
           {
             echo "version=$VERSION"
