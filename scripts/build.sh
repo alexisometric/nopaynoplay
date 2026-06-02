@@ -7,7 +7,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 VERSION="${1:-$(grep -m1 '<Version>' src/Jellyfin.Plugin.NoPayNoPlay.csproj | sed -E 's@.*<Version>([^<]+)</Version>.*@\1@')}"
-TARGET_ABI="${TARGET_ABI:-10.11.8.0}"
+# Default the ABI to src/meta.json (single source of truth) so manual builds match
+# the CI release; only fall back to a literal when meta.json can't be read.
+TARGET_ABI="${TARGET_ABI:-$(python3 -c 'import json;print(json.load(open("src/meta.json"))["targetAbi"])' 2>/dev/null || true)}"
+[[ -z "${TARGET_ABI:-}" || "$TARGET_ABI" == "null" ]] && TARGET_ABI="10.11.9.0"
 OUT_DIR="$ROOT/artifacts"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT

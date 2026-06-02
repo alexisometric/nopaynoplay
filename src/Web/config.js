@@ -21,7 +21,9 @@
         promoCodes: [],
         tiers: [],
         tags: [],
-        audit: []
+        audit: [],
+        page: 1,
+        pageSize: 50
     };
 
     var STATE_COLORS = {
@@ -29,7 +31,7 @@
         WarningSoon: '#f39c12',
         InGrace: '#e67e22',
         Blocked: '#e74c3c',
-        Exempt: '#95a5a6'
+        Exempt: '#6c7a89'
     };
 
     function api() { return window.ApiClient; }
@@ -159,6 +161,26 @@
         });
     }
 
+    // Client-side validation for settings fields that the server may silently sanitize.
+    function validateSettingsFields(page) {
+        var warnings = [];
+        var paypal = (page.querySelector('#npnpPaypal').value || '').trim();
+        var lydia = (page.querySelector('#npnpLydia').value || '').trim();
+        var email = (page.querySelector('#npnpContactEmail') ? page.querySelector('#npnpContactEmail').value : '') || '';
+        var emailTrimmed = email.trim();
+
+        if (paypal && !/^https?:\/\//i.test(paypal)) {
+            warnings.push(t('admin.settings.validation.url', 'PayPal link must start with http:// or https://'));
+        }
+        if (lydia && !/^https?:\/\//i.test(lydia)) {
+            warnings.push(t('admin.settings.validation.url', 'Lydia link must start with http:// or https://'));
+        }
+        if (emailTrimmed && !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(emailTrimmed)) {
+            warnings.push(t('admin.settings.validation.email', 'Contact email does not look valid.'));
+        }
+        return warnings;
+    }
+
     function loadUsers(page) {
         return api().ajax({
             type: 'GET', url: api().getUrl('NoPayNoPlay/Users'), dataType: 'json'
@@ -241,7 +263,17 @@
         }
     }
 
+    // Shows a brief "Loading…" placeholder for lazy-loaded tabs, but only when the
+    // target is still empty — so revisiting a tab doesn't flicker its content.
+    function setBusy(page, sel) {
+        var el = page.querySelector(sel);
+        if (el && !el.querySelector('table')) {
+            el.innerHTML = '<div class="npnp-empty">' + escapeHtml(t('common.loading', 'Loading…')) + '</div>';
+        }
+    }
+
     function loadActivity(page) {
+        setBusy(page, '#npnpActivityTable');
         return api().ajax({
             type: 'GET', url: api().getUrl('NoPayNoPlay/Activity'), dataType: 'json'
         }).then(function (rows) {
@@ -294,6 +326,7 @@
     }
 
     function loadDiagnostics(page) {
+        setBusy(page, '#npnpDiagBody');
         return api().ajax({
             type: 'GET', url: api().getUrl('NoPayNoPlay/Diagnostics'), dataType: 'json'
         }).then(function (d) {
@@ -491,10 +524,10 @@
     function renderUsers(page) {
         renderSummary(page);
         refreshMethodFilter(page);
-        var rows = filterUsers();
+        var allRows = filterUsers();
         var container = page.querySelector('#npnpUsersTable');
 
-        if (!rows.length) {
+        if (!allRows.length) {
             var msg = (state.userFilter || state.stateFilter)
                 ? t('admin.users.empty.filter', 'No member matches the current filter.')
                 : t('admin.users.empty', 'No member to display.');
@@ -502,9 +535,17 @@
             return;
         }
 
+        // Pagination: clamp page and slice rows.
+        var totalPages = Math.ceil(allRows.length / state.pageSize);
+        if (state.page < 1) state.page = 1;
+        if (state.page > totalPages) state.page = totalPages;
+        var start = (state.page - 1) * state.pageSize;
+        var rows = allRows.slice(start, start + state.pageSize);
+
+        var selectAllLabel = escapeHtml(t('admin.users.selectAll', 'Select all'));
         var html = '<table class="npnp-table">'
             + '<thead><tr>'
-            + '<th class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" id="npnpSelectAll" /><span></span></label></th>'
+            + '<th class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" id="npnpSelectAll" aria-label="' + selectAllLabel + '" /><span></span></label></th>'
             + '<th data-sort="Username">' + escapeHtml(t('admin.users.col.user', 'User')) + arrowFor('Username') + '</th>'
             + '<th data-sort="State">' + escapeHtml(t('admin.users.col.state', 'State')) + arrowFor('State') + '</th>'
             + '<th data-sort="ExpiryDate">' + escapeHtml(t('admin.users.col.expiry', 'Expiry')) + arrowFor('ExpiryDate') + '</th>'
@@ -563,8 +604,9 @@
                     + '"><span class="material-icons" aria-hidden="true">cancel</span></button>'
                 : '';
 
+            var rowCheckLabel = escapeHtml(format(t('admin.users.selectRow', 'Select {username}'), { username: u.Username }));
             html += '<tr data-userid="' + escapeHtml(u.UserId) + '">'
-                + '<td class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-rowcheck"' + checked + ' /><span></span></label></td>'
+                + '<td class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-rowcheck"' + checked + ' aria-label="' + rowCheckLabel + '" /><span></span></label></td>'
                 + '<td>' + escapeHtml(u.Username) + '</td>'
                 + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + arrearsBadge + '</td>'
                 + '<td>' + escapeHtml(u.IsExempt ? '—' : formatDate(u.ExpiryDate)) + '</td>'
@@ -584,8 +626,32 @@
         });
 
         html += '</tbody></table>';
+
+        // Pagination controls (only when more than one page).
+        if (totalPages > 1) {
+            var prevDisabled = state.page <= 1 ? ' disabled' : '';
+            var nextDisabled = state.page >= totalPages ? ' disabled' : '';
+            html += '<div class="npnp-pagination" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;font-size:13px;">'
+                + '<button is="emby-button" type="button" class="button-alt npnp-page-prev"' + prevDisabled + ' aria-label="' + escapeHtml(t('admin.pagination.prev', 'Previous page')) + '">'
+                + '<span class="material-icons" aria-hidden="true">chevron_left</span></button>'
+                + '<span style="opacity:.8;">' + escapeHtml(format(t('admin.pagination.info', 'Page {page} of {total}'), { page: state.page, total: totalPages })) + '</span>'
+                + '<button is="emby-button" type="button" class="button-alt npnp-page-next"' + nextDisabled + ' aria-label="' + escapeHtml(t('admin.pagination.next', 'Next page')) + '">'
+                + '<span class="material-icons" aria-hidden="true">chevron_right</span></button>'
+                + '</div>';
+        }
+
         container.innerHTML = html;
         renderBulkBar(page);
+
+        // Pagination button handlers.
+        var prevBtn = container.querySelector('.npnp-page-prev');
+        var nextBtn = container.querySelector('.npnp-page-next');
+        if (prevBtn) prevBtn.addEventListener('click', function () {
+            if (state.page > 1) { state.page--; renderUsers(page); }
+        });
+        if (nextBtn) nextBtn.addEventListener('click', function () {
+            if (state.page < totalPages) { state.page++; renderUsers(page); }
+        });
 
         var selectAll = container.querySelector('#npnpSelectAll');
         if (selectAll) {
@@ -621,6 +687,7 @@
                     state.sortKey = key;
                     state.sortDir = 1;
                 }
+                state.page = 1;
                 renderUsers(page);
             });
         });
@@ -699,6 +766,30 @@
                 || (r.Method || '').toLowerCase().indexOf(q) >= 0
                 || (r.AdminNote || '').toLowerCase().indexOf(q) >= 0;
         });
+
+        // Sort activity rows.
+        var actSort = state.activitySortKey || 'Date';
+        var actDir = state.activitySortDir || -1;
+        rows.sort(function (a, b) {
+            var av, bv;
+            switch (actSort) {
+                case 'Date': av = new Date(a.Date).getTime(); bv = new Date(b.Date).getTime(); break;
+                case 'Username': av = (a.Username || '').toLowerCase(); bv = (b.Username || '').toLowerCase(); break;
+                case 'Amount': av = Number(a.Amount || 0); bv = Number(b.Amount || 0); break;
+                case 'Method': av = (a.Method || '').toLowerCase(); bv = (b.Method || '').toLowerCase(); break;
+                case 'MonthsAdded': av = Number(a.MonthsAdded || 0); bv = Number(b.MonthsAdded || 0); break;
+                default: return 0;
+            }
+            if (av < bv) return -1 * actDir;
+            if (av > bv) return 1 * actDir;
+            return 0;
+        });
+
+        function actArrow(key) {
+            if (actSort !== key) return '';
+            return '<span class="npnp-sort-arrow">' + (actDir > 0 ? '▲' : '▼') + '</span>';
+        }
+
         var container = page.querySelector('#npnpActivityTable');
         if (!rows.length) {
             container.innerHTML = '<div class="npnp-empty">' + escapeHtml(t('admin.activity.empty', 'No activity yet.')) + '</div>';
@@ -706,11 +797,11 @@
         }
         var html = '<table class="npnp-table">'
             + '<thead><tr>'
-            + '<th>' + escapeHtml(t('admin.activity.col.date', 'Date')) + '</th>'
-            + '<th>' + escapeHtml(t('admin.activity.col.user', 'User')) + '</th>'
-            + '<th>' + escapeHtml(t('admin.activity.col.amount', 'Amount')) + '</th>'
-            + '<th>' + escapeHtml(t('admin.activity.col.method', 'Method')) + '</th>'
-            + '<th>' + escapeHtml(t('admin.activity.col.months', 'Months')) + '</th>'
+            + '<th data-sort="Date">' + escapeHtml(t('admin.activity.col.date', 'Date')) + actArrow('Date') + '</th>'
+            + '<th data-sort="Username">' + escapeHtml(t('admin.activity.col.user', 'User')) + actArrow('Username') + '</th>'
+            + '<th data-sort="Amount">' + escapeHtml(t('admin.activity.col.amount', 'Amount')) + actArrow('Amount') + '</th>'
+            + '<th data-sort="Method">' + escapeHtml(t('admin.activity.col.method', 'Method')) + actArrow('Method') + '</th>'
+            + '<th data-sort="MonthsAdded">' + escapeHtml(t('admin.activity.col.months', 'Months')) + actArrow('MonthsAdded') + '</th>'
             + '<th>' + escapeHtml(t('admin.activity.col.note', 'Note')) + '</th>'
             + '</tr></thead><tbody>';
         rows.forEach(function (r) {
@@ -725,6 +816,20 @@
         });
         html += '</tbody></table>';
         container.innerHTML = html;
+
+        // Bind sort on activity table headers.
+        container.querySelectorAll('th[data-sort]').forEach(function (th) {
+            th.addEventListener('click', function () {
+                var key = th.getAttribute('data-sort');
+                if (state.activitySortKey === key) {
+                    state.activitySortDir = -(state.activitySortDir || -1);
+                } else {
+                    state.activitySortKey = key;
+                    state.activitySortDir = key === 'Date' ? -1 : 1;
+                }
+                renderActivity(page);
+            });
+        });
     }
 
     /* --- modals --- */
@@ -738,7 +843,7 @@
         var root = page.querySelector('#npnpModalRoot');
         root.innerHTML = ''
             + '<div class="npnp-modal-backdrop" data-npnp-backdrop>'
-            + '  <div class="npnp-modal" role="dialog" aria-modal="true">'
+            + '  <div class="npnp-modal" role="dialog" aria-modal="true" tabindex="-1">'
             + '    <button type="button" class="close" aria-label="' + escapeHtml(t('common.close', 'Close')) + '" data-npnp-close>&times;</button>'
             + '    <h2>' + titleHtml + '</h2>'
             + '    <div>' + bodyHtml + '</div>'
@@ -750,7 +855,46 @@
             if (e.target === backdrop) closeModal(page);
         });
         root.querySelector('[data-npnp-close]').addEventListener('click', function () { closeModal(page); });
-        return root.querySelector('.npnp-modal');
+
+        var modal = root.querySelector('.npnp-modal');
+
+        // --- Accessibility: Escape to close, focus trap, restore focus on close ---
+        var opener = document.activeElement;
+        function onKey(e) {
+            if (!page.contains(modal)) { document.removeEventListener('keydown', onKey); return; }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal(page);
+            } else if (e.key === 'Tab') {
+                var f = Array.prototype.slice.call(modal.querySelectorAll(
+                    'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),'
+                    + 'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+                    .filter(function (el) { return el.offsetParent !== null; });
+                if (!f.length) return;
+                var first = f[0], last = f[f.length - 1];
+                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+            }
+        }
+        document.addEventListener('keydown', onKey);
+        try {
+            var mo = new MutationObserver(function () {
+                if (!page.contains(modal)) {
+                    mo.disconnect();
+                    document.removeEventListener('keydown', onKey);
+                    if (opener && typeof opener.focus === 'function') {
+                        try { opener.focus(); } catch (_) {}
+                    }
+                }
+            });
+            mo.observe(root, { childList: true });
+        } catch (_) {}
+
+        // Focus the first real field (not the corner close button), else the dialog.
+        var firstField = modal.querySelector('input:not([type="hidden"]),select,textarea,[data-npnp-cancel]');
+        try { (firstField || modal).focus(); } catch (_) {}
+
+        return modal;
     }
 
     function openConfirmModal(page, title, message, onConfirm) {
@@ -855,19 +999,10 @@
                 Date: dv ? (dv + 'T12:00:00Z') : null
             };
             api().ajax({
-                type: 'POST',
+                type: 'PATCH',
                 url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Transactions/' + entry.Id),
                 data: JSON.stringify(payload),
-                contentType: 'application/json',
-                headers: { 'X-HTTP-Method-Override': 'PATCH' }
-            }).catch(function () {
-                // Some Jellyfin proxies strip PATCH; fall back to direct PATCH.
-                return api().ajax({
-                    type: 'PATCH',
-                    url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Transactions/' + entry.Id),
-                    data: JSON.stringify(payload),
-                    contentType: 'application/json'
-                });
+                contentType: 'application/json'
             }).then(function () {
                 closeModal(page);
                 return loadUsers(page).then(function () { return loadActivity(page); });
@@ -907,7 +1042,7 @@
             + '<div class="inputContainer"><label for="npnpPayMonths">' + escapeHtml(t('admin.payment.months', 'Months to add')) + '</label>'
             + '<input is="emby-input" id="npnpPayMonths" type="number" min="1" max="60" value="1" required /></div>'
             + '<div class="inputContainer"><label for="npnpPayDate">' + escapeHtml(t('admin.payment.date', 'Payment date')) + '</label>'
-            + '<input is="emby-input" id="npnpPayDate" type="date" max="' + escapeHtml(todayIso) + '" value="' + escapeHtml(todayIso) + '" />'
+            + '<input is="emby-input" id="npnpPayDate" type="date" min="2020-01-01" max="' + escapeHtml(todayIso) + '" value="' + escapeHtml(todayIso) + '" />'
             + '<div class="fieldDescription" style="opacity:.7;font-size:12px;margin-top:4px;">' + escapeHtml(t('admin.payment.date.help', 'Leave empty for today. Use a past date to backfill payments already received.')) + '</div></div>'
             + '<div class="inputContainer"><label for="npnpPayNote">' + escapeHtml(t('admin.payment.note', 'Note (optional)')) + '</label>'
             + '<textarea is="emby-textarea" id="npnpPayNote" rows="2"></textarea></div>'
@@ -947,6 +1082,7 @@
     /* --- tabs --- */
 
     function loadPromoCodes(page) {
+        setBusy(page, '#npnpPromoTable');
         return api().ajax({
             type: 'GET', url: api().getUrl('NoPayNoPlay/PromoCodes'), dataType: 'json'
         }).then(function (rows) {
@@ -1049,7 +1185,7 @@
             }).catch(function (err) {
                 var msg = (err && err.status === 409)
                     ? t('admin.promo.duplicate', 'A promo code with this name already exists.')
-                    : t('admin.promo.invalid', 'Invalid promo code (use 3-32 chars, A-Z 0-9 _ -).');
+                    : t('admin.promo.invalid', 'Invalid promo code (use 6-32 chars, A-Z 0-9 _ -).');
                 flash(page, msg, true);
             });
             return false;
@@ -1058,22 +1194,120 @@
 
     /* --- tabs --- */
 
+    // Detect unsaved changes in the Tiers or Tags inline editors by comparing
+    // the current DOM values against the last-saved state snapshot.
+    function hasUnsavedEdits() {
+        try {
+            var tiersTable = document.querySelector('#npnpTiersTable');
+            if (tiersTable) {
+                var tierRows = tiersTable.querySelectorAll('tbody tr');
+                if (tierRows.length !== (state._savedTiers || []).length) return true;
+                for (var i = 0; i < tierRows.length; i++) {
+                    var tr = tierRows[i];
+                    var saved = (state._savedTiers || [])[i] || {};
+                    var monthsEl = tr.querySelector('.npnp-tier-months');
+                    var priceEl = tr.querySelector('.npnp-tier-price');
+                    var labelEl = tr.querySelector('.npnp-tier-label');
+                    var hlEl = tr.querySelector('.npnp-tier-highlight');
+                    if ((monthsEl && parseInt(monthsEl.value || '1', 10) !== (saved.Months || 1))
+                        || (priceEl && parseFloat(priceEl.value || '0') !== (saved.Price || 0))
+                        || (labelEl && (labelEl.value || '') !== (saved.Label || ''))
+                        || (hlEl && hlEl.checked !== !!saved.Highlight)) return true;
+                }
+            }
+            var tagsTable = document.querySelector('#npnpTagsTable');
+            if (tagsTable) {
+                var tagRows = tagsTable.querySelectorAll('tbody tr');
+                if (tagRows.length !== (state._savedTags || []).length) return true;
+                for (var j = 0; j < tagRows.length; j++) {
+                    var tr2 = tagRows[j];
+                    var saved2 = (state._savedTags || [])[j] || {};
+                    var keyEl = tr2.querySelector('.npnp-tag-key');
+                    var labelEl2 = tr2.querySelector('.npnp-tag-label');
+                    var colorEl = tr2.querySelector('.npnp-tag-color');
+                    var priceEl2 = tr2.querySelector('.npnp-tag-price');
+                    if ((keyEl && (keyEl.value || '') !== (saved2.Key || ''))
+                        || (labelEl2 && (labelEl2.value || '') !== (saved2.Label || ''))
+                        || (colorEl && (colorEl.value || '') !== (saved2.Color || ''))
+                        || (priceEl2 && parseFloat(priceEl2.value || '0') !== (saved2.MonthlyPriceOverride || 0))) return true;
+                }
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    function snapshotSavedState() {
+        state._savedTiers = (state.tiers || []).map(function (r) { return Object.assign({}, r); });
+        state._savedTags = (state.tags || []).map(function (r) { return Object.assign({}, r); });
+    }
+
+    function activateTab(page, tab, moveFocus) {
+        // Warn before leaving tiers/tags tabs with unsaved edits.
+        var currentActive = page.querySelector('.npnp-tab-panel.active');
+        var currentTabId = currentActive ? currentActive.id.replace('npnpTab-', '') : '';
+        if ((currentTabId === 'tiers' || currentTabId === 'tags') && tab !== currentTabId && hasUnsavedEdits()) {
+            if (!confirm(t('admin.unsaved.confirm', 'You have unsaved changes. Leave without saving?'))) return;
+        }
+
+        var btns = Array.prototype.slice.call(page.querySelectorAll('.npnp-tab-btn'));
+        btns.forEach(function (b) {
+            var isActive = b.getAttribute('data-tab') === tab;
+            b.classList.toggle('active', isActive);
+            b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+            b.tabIndex = isActive ? 0 : -1;
+            if (isActive && moveFocus) { try { b.focus(); } catch (_) {} }
+        });
+        page.querySelectorAll('.npnp-tab-panel').forEach(function (p) {
+            p.classList.toggle('active', p.id === 'npnpTab-' + tab);
+        });
+        try { sessionStorage.setItem('npnpAdminTab', tab); } catch (_) {}
+        if (tab === 'activity') loadActivity(page);
+        if (tab === 'diagnostics') loadDiagnostics(page);
+        if (tab === 'promo') loadPromoCodes(page);
+        if (tab === 'tiers') { loadTiers(page).then(function () { snapshotSavedState(); }); }
+        if (tab === 'tags') { loadTags(page).then(function () { snapshotSavedState(); }); }
+        if (tab === 'audit') loadAudit(page);
+    }
+
     function bindTabs(page) {
-        page.querySelectorAll('.npnp-tab-btn').forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var tab = btn.getAttribute('data-tab');
-                page.querySelectorAll('.npnp-tab-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });
-                page.querySelectorAll('.npnp-tab-panel').forEach(function (p) {
-                    p.classList.toggle('active', p.id === 'npnpTab-' + tab);
-                });
-                if (tab === 'activity') loadActivity(page);
-                if (tab === 'diagnostics') loadDiagnostics(page);
-                if (tab === 'promo') loadPromoCodes(page);
-                if (tab === 'tiers') loadTiers(page);
-                if (tab === 'tags') loadTags(page);
-                if (tab === 'audit') loadAudit(page);
+        var tablist = page.querySelector('.npnp-tabs');
+        if (tablist) tablist.setAttribute('aria-label', t('admin.tabs.aria', 'Sections'));
+        var btns = Array.prototype.slice.call(page.querySelectorAll('.npnp-tab-btn'));
+        btns.forEach(function (btn) {
+            var tab = btn.getAttribute('data-tab');
+            btn.setAttribute('role', 'tab');
+            btn.id = 'npnpTabBtn-' + tab;
+            btn.setAttribute('aria-controls', 'npnpTab-' + tab);
+            var active = btn.classList.contains('active');
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+            btn.tabIndex = active ? 0 : -1;
+
+            var panel = page.querySelector('#npnpTab-' + tab);
+            if (panel) {
+                panel.setAttribute('role', 'tabpanel');
+                panel.setAttribute('aria-labelledby', btn.id);
+                panel.setAttribute('tabindex', '0');
+            }
+
+            btn.addEventListener('click', function () { activateTab(page, tab, false); });
+            // Roving keyboard navigation (WAI-ARIA tabs pattern).
+            btn.addEventListener('keydown', function (e) {
+                var idx = btns.indexOf(btn);
+                var target = null;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') target = btns[(idx + 1) % btns.length];
+                else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') target = btns[(idx - 1 + btns.length) % btns.length];
+                else if (e.key === 'Home') target = btns[0];
+                else if (e.key === 'End') target = btns[btns.length - 1];
+                if (target) { e.preventDefault(); activateTab(page, target.getAttribute('data-tab'), true); }
             });
         });
+
+        // Restore the last-used tab within the session (defaults to Members).
+        var saved = null;
+        try { saved = sessionStorage.getItem('npnpAdminTab'); } catch (_) {}
+        if (saved && page.querySelector('#npnpTab-' + saved)) {
+            activateTab(page, saved, false);
+        }
     }
 
     /* --- tiers --- */
@@ -1157,6 +1391,7 @@
                 }).then(function (rows) {
                     state.tiers = rows || [];
                     renderTiers(page);
+                    snapshotSavedState();
                     flash(page, t('admin.tiers.saved', 'Tiers saved.'));
                 });
             });
@@ -1189,7 +1424,7 @@
             return '<tr data-idx="' + idx + '">'
                 + '<td><input is="emby-input" type="text" maxlength="32" class="emby-input npnp-tag-key" value="' + escapeHtml(r.Key || '') + '" /></td>'
                 + '<td><input is="emby-input" type="text" maxlength="64" class="emby-input npnp-tag-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
-                + '<td class="npnp-cell-center"><input type="color" class="npnp-tag-color" value="' + escapeHtml(r.Color || '#888888') + '" aria-label="' + escapeHtml(t('admin.tags.col.color', 'Color')) + '" /></td>'
+                + '<td class="npnp-cell-center"><input type="color" class="npnp-tag-color" value="' + escapeHtml(r.Color || '#888888') + '" aria-label="' + escapeHtml(t('admin.tags.col.color', 'Color')) + '" /><span class="npnp-tag-color-hex" style="font-size:11px;opacity:.7;margin-left:4px;vertical-align:middle;font-family:monospace;">' + escapeHtml(r.Color || '#888888') + '</span></td>'
                 + '<td><input is="emby-input" type="number" min="0" step="0.01" class="emby-input npnp-tag-price" value="' + (r.MonthlyPriceOverride || 0) + '" /></td>'
                 + '<td class="npnp-cell-actions"><button is="emby-button" type="button" class="button-alt npnp-tag-del npnp-icon-btn npnp-danger" title="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '">'
                 + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
@@ -1243,8 +1478,23 @@
                 }).then(function (rows) {
                     state.tags = rows || [];
                     renderTags(page);
+                    snapshotSavedState();
                     flash(page, t('admin.tags.saved', 'Tags saved.'));
                 });
+            });
+        }
+
+        // Keep the hex label in sync with the color picker.
+        var tagsTable = page.querySelector('#npnpTagsTable');
+        if (tagsTable) {
+            tagsTable.addEventListener('input', function (e) {
+                var input = e.target;
+                if (input.classList.contains('npnp-tag-color')) {
+                    var hex = input.nextElementSibling;
+                    if (hex && hex.classList.contains('npnp-tag-color-hex')) {
+                        hex.textContent = input.value || '#888888';
+                    }
+                }
             });
         }
     }
@@ -1252,6 +1502,7 @@
     /* --- audit log --- */
 
     function loadAudit(page) {
+        setBusy(page, '#npnpAuditTable');
         return api().ajax({
             type: 'GET', url: api().getUrl('NoPayNoPlay/AuditLog'), dataType: 'json'
         }).then(function (rows) {
@@ -1332,13 +1583,17 @@
             } catch (_) {}
         }
 
+        var userSearchDebounce = null;
         page.querySelector('#npnpUserSearch').addEventListener('input', function (e) {
             state.userFilter = e.target.value || '';
+            state.page = 1;
             persistFilters();
-            renderUsers(page);
+            clearTimeout(userSearchDebounce);
+            userSearchDebounce = setTimeout(function () { renderUsers(page); }, 200);
         });
         page.querySelector('#npnpStateFilter').addEventListener('change', function (e) {
             state.stateFilter = e.target.value || '';
+            state.page = 1;
             persistFilters();
             renderUsers(page);
         });
@@ -1346,6 +1601,7 @@
         if (methodSel) {
             methodSel.addEventListener('change', function (e) {
                 state.methodFilter = e.target.value || '';
+                state.page = 1;
                 persistFilters();
                 renderUsers(page);
             });
@@ -1379,12 +1635,15 @@
         api().ajax({ type: 'GET', url: api().getUrl(apiPath), dataType: 'text' })
             .then(function (text) {
                 var blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
+                var url = URL.createObjectURL(blob);
                 var a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
+                a.href = url;
                 a.download = filename;
+                a.style.display = 'none';
                 document.body.appendChild(a);
                 a.click();
-                setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+                // Clean up after the download dialog has been handed off to the browser.
+                setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 100);
             })
             .catch(function () { Dashboard.alert(t('admin.export.error', 'Export failed.')); });
     }
@@ -1538,8 +1797,21 @@
         bindTiersTab(page);
         bindTagsTab(page);
 
+        // Warn before leaving the page when tiers/tags have unsaved edits.
+        window.addEventListener('beforeunload', function (e) {
+            if (hasUnsavedEdits()) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
         page.querySelector('#npnpSettingsForm').addEventListener('submit', function (e) {
             e.preventDefault();
+            var warnings = validateSettingsFields(page);
+            if (warnings.length) {
+                flash(page, warnings.join(' '), true);
+                return false;
+            }
             Dashboard.showLoadingMsg();
             saveSettings(page).then(function () {
                 Dashboard.hideLoadingMsg();

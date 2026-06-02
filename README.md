@@ -270,7 +270,7 @@ Yes. The price is read at the time a payment is recorded. Already-computed expir
 <details>
 <summary><b>Is it compatible with Jellyfin 10.10?</b></summary>
 
-No, the API has changed. This release targets Jellyfin **10.11.x** (`targetAbi` 10.11.8.0).
+No, the API has changed. This release targets Jellyfin **10.11.x** (`targetAbi` 10.11.9.0).
 </details>
 
 ---

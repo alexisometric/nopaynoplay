@@ -143,6 +143,7 @@
 
   "common.deletedUser": "(deleted)",
   "common.close": "Close",
+  "common.loading": "Loading…",
   "admin.status.ftMissing": "File Transformation plugin not detected — the user-side UI (header button, banner, modal) will not appear until it is installed and the server is restarted.",
   "admin.status.ftOk": "File Transformation plugin detected — the user-side UI is active.",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "Invalid or already-used code.",
   "user.modal.method.paypal": "Pay with PayPal",
   "user.modal.method.lydia": "Pay with Lydia",
+  "user.modal.method.donateWith": "Donate via {method}",
   "user.toast.dismiss": "Dismiss",
 
   "admin.tabs.promo": "Promo codes",
@@ -220,11 +222,13 @@
   "admin.promo.col.uses": "Uses",
   "admin.promo.col.expires": "Expires",
   "admin.promo.col.actions": "Actions",
+  "admin.promo.empty": "No promo codes yet.",
+  "admin.promo.col.created": "Created",
   "admin.promo.unlimited": "Unlimited",
   "admin.promo.never": "Never",
   "admin.promo.created": "Code created.",
   "admin.promo.duplicate": "A code with that name already exists.",
-  "admin.promo.invalid": "Invalid code (use 3–32 letters, digits, _ or -).",
+  "admin.promo.invalid": "Invalid code (use 6–32 letters, digits, _ or -).",
   "admin.promo.deleted": "Code deleted.",
   "admin.promo.deleteConfirm": "Delete this promo code? Existing redemptions are kept.",
 
@@ -298,5 +302,15 @@
   "admin.status.ftMissing.title": "File Transformation plugin missing",
   "admin.status.ftMissing.docs": "Install instructions",
 
-  "admin.stats.chart.title": "Revenue \u2014 last 12 months"
+  "admin.stats.chart.title": "Revenue \u2014 last 12 months",
+
+  "admin.users.selectAll": "Select all",
+  "admin.users.selectRow": "Select {username}",
+  "admin.pagination.prev": "Previous page",
+  "admin.pagination.next": "Next page",
+  "admin.pagination.info": "Page {page} of {total}",
+  "admin.unsaved.confirm": "You have unsaved changes. Leave without saving?",
+  "admin.settings.validation.url": "Must start with http:// or https://",
+  "admin.settings.validation.email": "Contact email does not look valid.",
+  "admin.test.helpTitle": "How does test mode work?"
 }

@@ -110,6 +110,14 @@ public sealed class Localizer
         return template.Replace("{n}", count.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Resolves an explicitly-provided culture code (e.g. the admin
+    /// <c>UiCultureOverride</c>) to an available bundle, applying the same
+    /// region → base fallback (<c>pt-BR</c> → <c>pt</c>) used for request-based
+    /// resolution. Falls back to English when nothing matches.
+    /// </summary>
+    public string ResolveExplicit(string? culture) => MatchAvailable(culture ?? string.Empty);
+
     /// <summary>Picks the best culture for an HTTP request.</summary>
     public string ResolveCulture(HttpContext? httpContext)
     {

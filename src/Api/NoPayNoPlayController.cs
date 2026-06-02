@@ -4,12 +4,14 @@ using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Data;
+using Jellyfin.Database.Implementations.Entities;
 using Jellyfin.Database.Implementations.Enums;
 using Jellyfin.Plugin.NoPayNoPlay.Configuration;
 using Jellyfin.Plugin.NoPayNoPlay.Localization;
 using Jellyfin.Plugin.NoPayNoPlay.Services;
 using MediaBrowser.Common.Api;
 using MediaBrowser.Controller.Library;
+using MediaBrowser.Model.Activity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -81,8 +83,24 @@ public class UserSubscriptionDto
     /// <summary>Effective monthly price applied to this user (after tag overrides).</summary>
     public decimal EffectiveMonthlyPrice { get; set; }
 }
+/// <summary>
+/// A payment row exposed to the member on <c>/Me</c>. Deliberately omits the
+/// admin-only <see cref="TransactionEntry.AdminNote"/> so internal notes are never
+/// serialized into a response the member can read via DevTools.
+/// </summary>
+public class MeTransactionDto
+{
+    public DateTime Date { get; set; }
+    public decimal Amount { get; set; }
+    public int MonthsAdded { get; set; }
+    public string Method { get; set; } = string.Empty;
+}
+
 public class MeDto
 {
+    /// <summary>The caller's own Jellyfin username (used to build a payment reference).</summary>
+    public string Username { get; set; } = string.Empty;
+
     public DateTime ExpiryDate { get; set; }
     public int DaysLeft { get; set; }
     public string State { get; set; } = string.Empty;
@@ -101,8 +119,8 @@ public class MeDto
     public IReadOnlyDictionary<string, string> Strings { get; set; } =
         new Dictionary<string, string>();
 
-    /// <summary>Personal payment history (most recent first).</summary>
-    public List<TransactionEntry> Transactions { get; set; } = new();
+    /// <summary>Personal payment history (most recent first), without admin notes.</summary>
+    public List<MeTransactionDto> Transactions { get; set; } = new();
 
     /// <summary>
     /// True when the response is rendered for an administrator. Administrators have
@@ -214,19 +232,45 @@ public class NoPayNoPlayController : ControllerBase
     private readonly UserPolicyEnforcer _enforcer;
     private readonly Localizer _localizer;
     private readonly RateLimiter _rateLimiter;
+    private readonly IActivityManager _activityManager;
+    private readonly ILogger<NoPayNoPlayController> _logger;
 
     public NoPayNoPlayController(
         IUserManager userManager,
         SubscriptionService service,
         UserPolicyEnforcer enforcer,
         Localizer localizer,
-        RateLimiter rateLimiter)
+        RateLimiter rateLimiter,
+        IActivityManager activityManager,
+        ILogger<NoPayNoPlayController> logger)
     {
         _userManager = userManager;
         _service = service;
         _enforcer = enforcer;
         _localizer = localizer;
         _rateLimiter = rateLimiter;
+        _activityManager = activityManager;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Applies the playback policy without letting a transient enforcement failure
+    /// (DB lock, IO) surface as a 500 *after* the subscription change has already
+    /// been persisted. The gap is logged; the 12 h scheduled task reconciles it.
+    /// </summary>
+    private async Task ApplyEnforcementSafelyAsync(UserSubscription sub, SubscriptionState state)
+    {
+        try
+        {
+            await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "NoPayNoPlay: subscription updated for {UserId} but playback policy could not be applied; the scheduled task will reconcile within 12h",
+                sub.UserId);
+        }
     }
 
     private static PluginConfiguration Cfg => Plugin.Instance!.Configuration;
@@ -237,7 +281,9 @@ public class NoPayNoPlayController : ControllerBase
         string? overrideCulture = Cfg.UiCultureOverride;
         if (!string.IsNullOrWhiteSpace(overrideCulture))
         {
-            return overrideCulture.Trim().ToLowerInvariant();
+            // Route through MatchAvailable so a region code (pt-BR) resolves to its
+            // base bundle (pt) rather than silently falling back to English.
+            return _localizer.ResolveExplicit(overrideCulture);
         }
 
         return _localizer.ResolveCulture(HttpContext);
@@ -438,7 +484,7 @@ public class NoPayNoPlayController : ControllerBase
             body.Date);
 
         SubscriptionState state = _service.EvaluateState(sub);
-        await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
+        await ApplyEnforcementSafelyAsync(sub, state).ConfigureAwait(false);
         _service.Save();
         _service.Audit(ResolveActor(), "payment.add", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
@@ -463,7 +509,7 @@ public class NoPayNoPlayController : ControllerBase
         }
 
         UserSubscription sub = _service.SetExempt(userId, body.IsExempt);
-        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
         _service.Audit(ResolveActor(), "exempt.toggle", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
@@ -482,7 +528,7 @@ public class NoPayNoPlayController : ControllerBase
         }
 
         UserSubscription sub = _service.Reset(userId);
-        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
         _service.Audit(ResolveActor(), "reset", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty);
@@ -504,17 +550,20 @@ public class NoPayNoPlayController : ControllerBase
             return BadRequest();
         }
 
-        Cfg.MonthlyPrice = Math.Clamp(body.MonthlyPrice, 0m, 100000m);
-        Cfg.Currency = SanitizeCurrency(body.Currency);
-        Cfg.GraceDays = Math.Clamp(body.GraceDays, 0, 365);
-        Cfg.TrialDays = Math.Clamp(body.TrialDays, 0, 365);
-        Cfg.WarningDaysBefore = Math.Clamp(body.WarningDaysBefore, 0, 90);
-        Cfg.PaypalMeUrl = SanitizeUrl(body.PaypalMeUrl);
-        Cfg.LydiaUrl = SanitizeUrl(body.LydiaUrl);
-        Cfg.CustomNote = Truncate(body.CustomNote, 1000);
-        Cfg.ContactEmail = SanitizeEmail(body.ContactEmail);
-        Cfg.UiCultureOverride = SanitizeCulture(body.UiCultureOverride);
-        Plugin.Instance!.SaveConfiguration();
+        _service.MutateConfig(cfg =>
+        {
+            cfg.MonthlyPrice = Math.Clamp(body.MonthlyPrice, 0m, 100000m);
+            cfg.Currency = SanitizeCurrency(body.Currency);
+            cfg.GraceDays = Math.Clamp(body.GraceDays, 0, 365);
+            cfg.TrialDays = Math.Clamp(body.TrialDays, 0, 365);
+            cfg.WarningDaysBefore = Math.Clamp(body.WarningDaysBefore, 0, 90);
+            cfg.PaypalMeUrl = SanitizeUrl(body.PaypalMeUrl);
+            cfg.LydiaUrl = SanitizeUrl(body.LydiaUrl);
+            cfg.CustomNote = Truncate(body.CustomNote, 1000);
+            cfg.ContactEmail = SanitizeEmail(body.ContactEmail);
+            cfg.UiCultureOverride = SanitizeCulture(body.UiCultureOverride);
+            return true;
+        });
         return Ok(Cfg);
     }
 
@@ -616,8 +665,15 @@ public class NoPayNoPlayController : ControllerBase
 
         DateTime expiry = sub.ExpiryDate;
         int daysLeft = (int)Math.Ceiling((expiry - DateTime.UtcNow).TotalDays);
-        List<TransactionEntry> transactions = sub.Transactions
+        List<MeTransactionDto> transactions = sub.Transactions
             .OrderByDescending(t => t.Date)
+            .Select(t => new MeTransactionDto
+            {
+                Date = t.Date,
+                Amount = t.Amount,
+                MonthsAdded = t.MonthsAdded,
+                Method = t.Method
+            })
             .ToList();
 
         if (isAdmin)
@@ -627,37 +683,17 @@ public class NoPayNoPlayController : ControllerBase
             expiry = now.AddDays(3);
             daysLeft = 3;
             decimal samplePrice = Cfg.MonthlyPrice > 0 ? Cfg.MonthlyPrice : 10m;
-            transactions = new List<TransactionEntry>
+            transactions = new List<MeTransactionDto>
             {
-                new TransactionEntry
-                {
-                    Date = now.AddMonths(-1),
-                    Amount = samplePrice,
-                    MonthsAdded = 1,
-                    Method = "PayPal",
-                    AdminNote = string.Empty
-                },
-                new TransactionEntry
-                {
-                    Date = now.AddMonths(-2),
-                    Amount = samplePrice,
-                    MonthsAdded = 1,
-                    Method = "Bank",
-                    AdminNote = string.Empty
-                },
-                new TransactionEntry
-                {
-                    Date = now.AddMonths(-3),
-                    Amount = samplePrice,
-                    MonthsAdded = 1,
-                    Method = "Cash",
-                    AdminNote = string.Empty
-                }
+                new MeTransactionDto { Date = now.AddMonths(-1), Amount = samplePrice, MonthsAdded = 1, Method = "PayPal" },
+                new MeTransactionDto { Date = now.AddMonths(-2), Amount = samplePrice, MonthsAdded = 1, Method = "Bank" },
+                new MeTransactionDto { Date = now.AddMonths(-3), Amount = samplePrice, MonthsAdded = 1, Method = "Cash" }
             };
         }
 
         return Ok(new MeDto
         {
+            Username = user?.Username ?? string.Empty,
             ExpiryDate = expiry,
             DaysLeft = daysLeft,
             State = state.ToString(),
@@ -702,7 +738,7 @@ public class NoPayNoPlayController : ControllerBase
         if (!ok) return NotFound();
 
         var sub = _service.EnsureUserTracked(userId);
-        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }
@@ -718,7 +754,7 @@ public class NoPayNoPlayController : ControllerBase
         if (!ok) return NotFound();
 
         var sub = _service.EnsureUserTracked(userId);
-        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }
@@ -740,7 +776,7 @@ public class NoPayNoPlayController : ControllerBase
                 Math.Clamp(body.MonthsAdded, 1, 60),
                 body.Note ?? string.Empty,
                 body.Date);
-            await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+            await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
             processed++;
         }
         _service.Save();
@@ -758,7 +794,7 @@ public class NoPayNoPlayController : ControllerBase
         {
             if (_userManager.GetUserById(uid) is null) continue;
             UserSubscription sub = _service.SetExempt(uid, body.IsExempt);
-            await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+            await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
             processed++;
         }
         _service.Save();
@@ -776,7 +812,7 @@ public class NoPayNoPlayController : ControllerBase
         {
             if (_userManager.GetUserById(uid) is null) continue;
             UserSubscription sub = _service.Reset(uid);
-            await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+            await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
             processed++;
         }
         _service.Save();
@@ -977,7 +1013,19 @@ public class NoPayNoPlayController : ControllerBase
     private static string CsvEscape(string? value)
     {
         if (string.IsNullOrEmpty(value)) return string.Empty;
-        bool needsQuote = value.IndexOfAny(new[] { ',', '"', '\n', '\r' }) >= 0;
+
+        // CSV formula-injection guard: a cell starting with =, +, -, @, tab or CR
+        // is interpreted as a formula by Excel/LibreOffice/Sheets. Prefix it with a
+        // single quote so the spreadsheet treats it as text. The Username comes
+        // straight from Jellyfin (user-controlled), so this matters even though the
+        // export is admin-only.
+        if ("=+-@\t\r".IndexOf(value[0]) >= 0)
+        {
+            value = "'" + value;
+        }
+
+        bool needsQuote = value.IndexOfAny(new[] { ',', '"', '\n', '\r', '\t' }) >= 0
+                          || value[0] == '\'';
         string v = value.Replace("\"", "\"\"", StringComparison.Ordinal);
         return needsQuote ? "\"" + v + "\"" : v;
     }
@@ -989,7 +1037,7 @@ public class NoPayNoPlayController : ControllerBase
     /// confirm. Rate-limited to one call per 30 minutes per user.
     /// </summary>
     [HttpPost("Me/MarkPaid")]
-    public ActionResult<object> MarkPaid([FromBody] MarkPaidDto? body)
+    public async Task<ActionResult<object>> MarkPaid([FromBody] MarkPaidDto? body)
     {
         Guid? userId = GetCurrentUserId();
         if (userId is null || userId == Guid.Empty) return Unauthorized();
@@ -1007,7 +1055,131 @@ public class NoPayNoPlayController : ControllerBase
 
         string method = body?.Method is null ? string.Empty : Truncate(body.Method, 50);
         _service.MarkPaymentPending(userId.Value, method);
+
+        // Surface the claim to administrators through the Jellyfin activity feed/bell
+        // (in addition to the pending badge on the dashboard).
+        try
+        {
+            string uname = _userManager.GetUserById(userId.Value)?.Username ?? string.Empty;
+            string culture = ResolveCulture();
+            var tokens = new Dictionary<string, string?> { ["username"] = uname };
+            string overview = _localizer.Get("notif.markPaid.body", culture, tokens);
+            await _activityManager.CreateAsync(new ActivityLog(
+                _localizer.Get("notif.markPaid.title", culture),
+                "NoPayNoPlay",
+                Guid.Empty)
+            {
+                Overview = overview,
+                ShortOverview = overview,
+                LogSeverity = Microsoft.Extensions.Logging.LogLevel.Information
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "NoPayNoPlay: failed to post 'I paid' admin activity for {UserId}", userId);
+        }
+
         return Ok(new { ok = true });
+    }
+
+    /// <summary>
+    /// Posts the state-appropriate reminder notification (J-3 / grace / blocked) to a
+    /// user's activity feed. Used by the admin "send reminder" actions. Returns true
+    /// when a notification was actually posted (skips Ok/Exempt users).
+    /// </summary>
+    private async Task<bool> PostStateReminderAsync(UserSubscription sub, string username, string culture)
+    {
+        SubscriptionState state = _service.EvaluateState(sub);
+        if (state == SubscriptionState.Ok || state == SubscriptionState.Exempt)
+        {
+            return false;
+        }
+
+        string titleKey = state switch
+        {
+            SubscriptionState.WarningSoon => "notif.warningSoon.title",
+            SubscriptionState.InGrace => "notif.inGrace.title",
+            SubscriptionState.Blocked => "notif.blocked.title",
+            _ => "plugin.name"
+        };
+        string bodyKey = state switch
+        {
+            SubscriptionState.WarningSoon => "notif.warningSoon.body",
+            SubscriptionState.InGrace => "notif.inGrace.body",
+            SubscriptionState.Blocked => "notif.blocked.body",
+            _ => string.Empty
+        };
+
+        int daysLeft = (int)Math.Ceiling((sub.ExpiryDate - DateTime.UtcNow).TotalDays);
+        var tokens = new Dictionary<string, string?>
+        {
+            ["username"] = username,
+            ["date"] = sub.ExpiryDate.ToString("yyyy-MM-dd"),
+            ["days"] = Math.Max(0, daysLeft).ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        string title = _localizer.Get(titleKey, culture);
+        string overview = string.IsNullOrEmpty(bodyKey) ? string.Empty : _localizer.Get(bodyKey, culture, tokens);
+
+        await _activityManager.CreateAsync(new ActivityLog(title, "NoPayNoPlay", sub.UserId)
+        {
+            Overview = overview,
+            ShortOverview = overview,
+            LogSeverity = state == SubscriptionState.Blocked
+                ? Microsoft.Extensions.Logging.LogLevel.Warning
+                : Microsoft.Extensions.Logging.LogLevel.Information
+        }).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>Admin: re-sends the current reminder notification to one member.</summary>
+    [HttpPost("Users/{userId:guid}/Notify")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<object>> NotifyUser(Guid userId)
+    {
+        var u = _userManager.GetUserById(userId);
+        if (u is null) return NotFound();
+        var sub = _service.EnsureUserTracked(userId);
+        bool sent = false;
+        try
+        {
+            sent = await PostStateReminderAsync(sub, u.Username, ResolveCulture()).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "NoPayNoPlay: failed to send reminder to {UserId}", userId);
+        }
+
+        _service.Audit(ResolveActor(), "user.notify", userId, u.Username, sent ? "reminder sent" : "no reminder (state ok/exempt)");
+        return Ok(new { ok = true, sent });
+    }
+
+    /// <summary>Admin: re-sends reminders to a batch of members (skips up-to-date ones).</summary>
+    [HttpPost("Users/BulkNotify")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public async Task<ActionResult<object>> BulkNotify([FromBody] BulkUserDto body)
+    {
+        if (body?.UserIds is null) return BadRequest();
+        string culture = ResolveCulture();
+        int sent = 0;
+        foreach (var id in body.UserIds.Distinct())
+        {
+            var u = _userManager.GetUserById(id);
+            if (u is null) continue;
+            try
+            {
+                if (await PostStateReminderAsync(_service.EnsureUserTracked(id), u.Username, culture).ConfigureAwait(false))
+                {
+                    sent++;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "NoPayNoPlay: failed to send reminder to {UserId}", id);
+            }
+        }
+
+        _service.Audit(ResolveActor(), "users.notify", null, string.Empty, "count=" + sent);
+        return Ok(new { ok = true, sent });
     }
 
     /// <summary>Admin: confirms a pending claim and records a real payment.</summary>
@@ -1027,7 +1199,7 @@ public class NoPayNoPlayController : ControllerBase
             Math.Clamp(body.MonthsAdded, 1, 60),
             body.Note ?? string.Empty,
             body.Date);
-        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
         _service.Audit(ResolveActor(), "pending.confirm", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
@@ -1062,11 +1234,6 @@ public class NoPayNoPlayController : ControllerBase
         string code = SanitizePromoCode(body.Code);
         if (string.IsNullOrEmpty(code)) return BadRequest(new { error = "invalid_code" });
 
-        if (Cfg.PromoCodes.Any(p => string.Equals(p.Code, code, StringComparison.OrdinalIgnoreCase)))
-        {
-            return Conflict(new { error = "duplicate_code" });
-        }
-
         var promo = new PromoCode
         {
             Code = code,
@@ -1074,8 +1241,21 @@ public class NoPayNoPlayController : ControllerBase
             MaxUses = Math.Clamp(body.MaxUses, 0, 100000),
             ExpiresAt = body.ExpiresAt
         };
-        Cfg.PromoCodes.Add(promo);
-        Plugin.Instance!.SaveConfiguration();
+
+        bool duplicate = false;
+        _service.MutateConfig(cfg =>
+        {
+            if (cfg.PromoCodes.Any(p => string.Equals(p.Code, code, StringComparison.OrdinalIgnoreCase)))
+            {
+                duplicate = true;
+                return false;
+            }
+
+            cfg.PromoCodes.Add(promo);
+            return true;
+        });
+
+        if (duplicate) return Conflict(new { error = "duplicate_code" });
         return Ok(promo);
     }
 
@@ -1084,9 +1264,13 @@ public class NoPayNoPlayController : ControllerBase
     [Authorize(Policy = Policies.RequiresElevation)]
     public ActionResult DeletePromoCode(Guid id)
     {
-        int removed = Cfg.PromoCodes.RemoveAll(p => p.Id == id);
+        int removed = 0;
+        _service.MutateConfig(cfg =>
+        {
+            removed = cfg.PromoCodes.RemoveAll(p => p.Id == id);
+            return removed > 0;
+        });
         if (removed == 0) return NotFound();
-        Plugin.Instance!.SaveConfiguration();
         return NoContent();
     }
 
@@ -1099,7 +1283,14 @@ public class NoPayNoPlayController : ControllerBase
         if (body is null || string.IsNullOrWhiteSpace(body.Code)) return BadRequest();
 
         string lockKey = "redeem-fail:" + userId.Value.ToString("N");
-        if (_rateLimiter.IsLocked(lockKey))
+        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        string ipKey = "redeem-fail:ip:" + clientIp;
+        const string globalKey = "redeem-fail:global";
+
+        // Aggregated throttle: a per-user lockout alone can be sidestepped by
+        // creating many accounts, so we also gate on a per-IP and a global failure
+        // budget that the per-user reset can't clear.
+        if (_rateLimiter.IsLocked(lockKey) || _rateLimiter.IsLocked(ipKey) || _rateLimiter.IsLocked(globalKey))
         {
             return StatusCode(StatusCodes.Status429TooManyRequests,
                 new { ok = false, locked = true });
@@ -1116,16 +1307,20 @@ public class NoPayNoPlayController : ControllerBase
         int months = _service.RedeemPromoCode(userId.Value, body.Code);
         if (months <= 0)
         {
-            // Track failed attempts — 5 failures within a window lock the user out
-            // for 15 minutes to defeat brute-force enumeration of short codes.
+            // Track failed attempts: 5/user, 20/IP, 100 global within the window all
+            // trigger a 15-minute lockout, defeating slow brute-force enumeration.
             bool locked = _rateLimiter.RegisterFailureAndShouldLock(
                 lockKey, threshold: 5, lockout: TimeSpan.FromMinutes(15));
+            _rateLimiter.RegisterFailureAndShouldLock(ipKey, threshold: 20, lockout: TimeSpan.FromMinutes(15));
+            _rateLimiter.RegisterFailureAndShouldLock(globalKey, threshold: 100, lockout: TimeSpan.FromMinutes(15));
             return Ok(new { ok = false, locked });
         }
 
+        // Only clear the per-user counter on success — keep the IP/global budgets so
+        // a single guessed valid code can't reset the aggregated protection.
         _rateLimiter.ClearFailures(lockKey);
         var sub = _service.EnsureUserTracked(userId.Value);
-        await _enforcer.ApplyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
+        await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
         _service.Save();
         return Ok(new { ok = true, monthsAdded = months, expiryDate = sub.ExpiryDate });
     }
@@ -1135,7 +1330,10 @@ public class NoPayNoPlayController : ControllerBase
         if (string.IsNullOrWhiteSpace(value)) return string.Empty;
         string normalized = value.Trim().ToUpperInvariant();
         if (normalized.Length > 32) normalized = normalized.Substring(0, 32);
-        if (!System.Text.RegularExpressions.Regex.IsMatch(normalized, "^[A-Z0-9_-]{3,32}$"))
+        // Minimum length 6 raises the keyspace enough that enumeration is impractical
+        // even before the per-IP/global brute-force throttle kicks in, while still
+        // allowing memorable referral codes (e.g. SUMMER, NOEL26).
+        if (!System.Text.RegularExpressions.Regex.IsMatch(normalized, "^[A-Z0-9_-]{6,32}$"))
         {
             return string.Empty;
         }
@@ -1198,8 +1396,7 @@ public class NoPayNoPlayController : ControllerBase
             if (t.Highlight && !seen) { seen = true; continue; }
             t.Highlight = false;
         }
-        Cfg.Tiers = sanitized;
-        Plugin.Instance!.SaveConfiguration();
+        _service.MutateConfig(cfg => { cfg.Tiers = sanitized; return true; });
         _service.Audit(ResolveActor(), "tiers.update", null, string.Empty,
             "tiers=" + sanitized.Count);
         return Ok(Cfg.Tiers);
@@ -1242,8 +1439,7 @@ public class NoPayNoPlayController : ControllerBase
             .Select(g => g.First())
             .Take(50)
             .ToList();
-        Cfg.Tags = sanitized;
-        Plugin.Instance!.SaveConfiguration();
+        _service.MutateConfig(cfg => { cfg.Tags = sanitized; return true; });
         _service.Audit(ResolveActor(), "tags.update", null, string.Empty,
             "tags=" + sanitized.Count);
         return Ok(Cfg.Tags);

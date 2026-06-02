@@ -143,6 +143,7 @@
 
   "common.deletedUser": "(eliminato)",
   "common.close": "Chiudi",
+  "common.loading": "Caricamento…",
   "admin.status.ftMissing": "Plugin File Transformation non rilevato — l'interfaccia utente (pulsante header, banner, modale) non apparirà finché non sarà installato e il server riavviato.",
   "admin.status.ftOk": "Plugin File Transformation rilevato — l'interfaccia utente è attiva.",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "Codice non valido o già usato.",
   "user.modal.method.paypal": "Paga con PayPal",
   "user.modal.method.lydia": "Paga con Lydia",
+  "user.modal.method.donateWith": "Dona con {method}",
   "user.toast.dismiss": "Chiudi",
 
   "admin.tabs.promo": "Codici promo",
@@ -220,11 +222,13 @@
   "admin.promo.col.uses": "Usi",
   "admin.promo.col.expires": "Scadenza",
   "admin.promo.col.actions": "Azioni",
+  "admin.promo.empty": "Nessun codice promo.",
+  "admin.promo.col.created": "Creato",
   "admin.promo.unlimited": "Illimitato",
   "admin.promo.never": "Mai",
   "admin.promo.created": "Codice creato.",
   "admin.promo.duplicate": "Esiste già un codice con questo nome.",
-  "admin.promo.invalid": "Codice non valido (3–32 lettere, cifre, _ o -).",
+  "admin.promo.invalid": "Codice non valido (6–32 lettere, cifre, _ o -).",
   "admin.promo.deleted": "Codice eliminato.",
   "admin.promo.deleteConfirm": "Eliminare questo codice promo? Le redenzioni esistenti vengono mantenute.",
 

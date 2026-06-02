@@ -143,6 +143,7 @@
 
   "common.deletedUser": "(удалён)",
   "common.close": "Закрыть",
+  "common.loading": "Загрузка…",
   "admin.status.ftMissing": "Плагин File Transformation не обнаружен — пользовательский интерфейс (кнопка в шапке, баннер, модальное окно) не появится, пока он не установлен и сервер не перезапущен.",
   "admin.status.ftOk": "Плагин File Transformation обнаружен — пользовательский интерфейс активен.",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "Недействительный или уже использованный код.",
   "user.modal.method.paypal": "Оплатить через PayPal",
   "user.modal.method.lydia": "Оплатить через Lydia",
+  "user.modal.method.donateWith": "Пожертвовать через {method}",
   "user.toast.dismiss": "Закрыть",
 
   "admin.tabs.promo": "Промокоды",
@@ -220,11 +222,13 @@
   "admin.promo.col.uses": "Использований",
   "admin.promo.col.expires": "Истекает",
   "admin.promo.col.actions": "Действия",
+  "admin.promo.empty": "Промокодов пока нет.",
+  "admin.promo.col.created": "Создан",
   "admin.promo.unlimited": "Без ограничений",
   "admin.promo.never": "Никогда",
   "admin.promo.created": "Код создан.",
   "admin.promo.duplicate": "Код с таким именем уже существует.",
-  "admin.promo.invalid": "Недопустимый код (3–32 буквы, цифры, _ или -).",
+  "admin.promo.invalid": "Недопустимый код (6–32 буквы, цифры, _ или -).",
   "admin.promo.deleted": "Код удалён.",
   "admin.promo.deleteConfirm": "Удалить этот промокод? Существующие применения сохраняются.",
 

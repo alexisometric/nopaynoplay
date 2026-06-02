@@ -9,10 +9,14 @@
     <LangVersion>latest</LangVersion>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <NoWarn>CS1591</NoWarn>
-    <Version>1.2.5.0</Version>
-    <FileVersion>1.2.5.0</FileVersion>
-    <AssemblyVersion>1.2.5.0</AssemblyVersion>
+    <Version>1.2.6.0</Version>
+    <FileVersion>1.2.6.0</FileVersion>
+    <AssemblyVersion>1.2.6.0</AssemblyVersion>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Jellyfin.Plugin.NoPayNoPlay.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Jellyfin.Controller" Version="10.11.9" />
@@ -22,6 +26,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Web\client.js" />
+    <EmbeddedResource Include="Web\qrcode.js" />
     <EmbeddedResource Include="Web\config.html" />
     <EmbeddedResource Include="Web\config.js" />
     <EmbeddedResource Include="Localization\strings.en.json" WithCulture="false" LogicalName="Jellyfin.Plugin.NoPayNoPlay.Localization.strings.en.json" />

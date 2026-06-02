@@ -143,6 +143,7 @@
 
   "common.deletedUser": "(gelöscht)",
   "common.close": "Schließen",
+  "common.loading": "Wird geladen…",
   "admin.status.ftMissing": "File-Transformation-Plugin nicht erkannt — die Benutzer-Oberfläche (Header-Button, Banner, Modal) erscheint erst nach Installation und Neustart des Servers.",
   "admin.status.ftOk": "File-Transformation-Plugin erkannt — die Benutzer-Oberfläche ist aktiv.",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "Ungültiger oder bereits genutzter Code.",
   "user.modal.method.paypal": "Mit PayPal zahlen",
   "user.modal.method.lydia": "Mit Lydia zahlen",
+  "user.modal.method.donateWith": "Spenden über {method}",
   "user.toast.dismiss": "Schließen",
 
   "admin.tabs.promo": "Promocodes",
@@ -220,11 +222,13 @@
   "admin.promo.col.uses": "Nutzungen",
   "admin.promo.col.expires": "Ablauf",
   "admin.promo.col.actions": "Aktionen",
+  "admin.promo.empty": "Noch keine Promo-Codes.",
+  "admin.promo.col.created": "Erstellt",
   "admin.promo.unlimited": "Unbegrenzt",
   "admin.promo.never": "Nie",
   "admin.promo.created": "Code erstellt.",
   "admin.promo.duplicate": "Ein Code mit diesem Namen existiert bereits.",
-  "admin.promo.invalid": "Ungültiger Code (3–32 Buchstaben, Ziffern, _ oder -).",
+  "admin.promo.invalid": "Ungültiger Code (6–32 Buchstaben, Ziffern, _ oder -).",
   "admin.promo.deleted": "Code gelöscht.",
   "admin.promo.deleteConfirm": "Diesen Code löschen? Bestehende Einlösungen bleiben erhalten.",
 

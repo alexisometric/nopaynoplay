@@ -19,6 +19,10 @@ public class PluginEntryPoint : IHostedService
 {
     private readonly ILogger<PluginEntryPoint> _logger;
 
+    /// <summary>Serializes registration so the back-off loop and a concurrent
+    /// /RetryRegistration call can't both invoke RegisterTransformation.</summary>
+    private static readonly object _registrationLock = new();
+
     /// <summary>True once the File Transformation registration has succeeded.</summary>
     public static bool FileTransformationRegistered { get; private set; }
 
@@ -66,12 +70,23 @@ public class PluginEntryPoint : IHostedService
     /// </summary>
     public static bool ForceRetry(ILogger logger)
     {
-        FileTransformationRegistered = false;
-        var entry = new PluginEntryPoint(logger as ILogger<PluginEntryPoint> ?? new LoggerWrapper(logger));
-        return entry.TryRegisterFileTransformation();
+        lock (_registrationLock)
+        {
+            FileTransformationRegistered = false;
+            var entry = new PluginEntryPoint(logger as ILogger<PluginEntryPoint> ?? new LoggerWrapper(logger));
+            return entry.TryRegisterFileTransformation();
+        }
     }
 
     private bool TryRegisterFileTransformation()
+    {
+        lock (_registrationLock)
+        {
+            return TryRegisterFileTransformationCore();
+        }
+    }
+
+    private bool TryRegisterFileTransformationCore()
     {
         var diag = new FtDiagnostics
         {

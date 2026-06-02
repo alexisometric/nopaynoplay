@@ -143,6 +143,7 @@
 
   "common.deletedUser": "(eliminado)",
   "common.close": "Cerrar",
+  "common.loading": "Cargando…",
   "admin.status.ftMissing": "Plugin File Transformation no detectado — la interfaz para usuarios (botón en la cabecera, banner, modal) no aparecerá hasta que se instale y se reinicie el servidor.",
   "admin.status.ftOk": "Plugin File Transformation detectado — la interfaz de usuario está activa.",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "Código inválido o ya utilizado.",
   "user.modal.method.paypal": "Pagar con PayPal",
   "user.modal.method.lydia": "Pagar con Lydia",
+  "user.modal.method.donateWith": "Donar con {method}",
   "user.toast.dismiss": "Cerrar",
 
   "admin.tabs.promo": "Códigos promo",
@@ -220,11 +222,13 @@
   "admin.promo.col.uses": "Usos",
   "admin.promo.col.expires": "Caduca",
   "admin.promo.col.actions": "Acciones",
+  "admin.promo.empty": "Aún no hay códigos promocionales.",
+  "admin.promo.col.created": "Creado",
   "admin.promo.unlimited": "Ilimitado",
   "admin.promo.never": "Nunca",
   "admin.promo.created": "Código creado.",
   "admin.promo.duplicate": "Ya existe un código con ese nombre.",
-  "admin.promo.invalid": "Código inválido (3–32 letras, dígitos, _ o -).",
+  "admin.promo.invalid": "Código inválido (6–32 letras, dígitos, _ o -).",
   "admin.promo.deleted": "Código eliminado.",
   "admin.promo.deleteConfirm": "¿Eliminar este código? Las redenciones existentes se conservan.",
 

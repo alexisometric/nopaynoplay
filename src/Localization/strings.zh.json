@@ -143,6 +143,7 @@
 
   "common.deletedUser": "（已删除）",
   "common.close": "关闭",
+  "common.loading": "加载中…",
   "admin.status.ftMissing": "未检测到 File Transformation 插件 — 用户端界面（顶栏按钮、横幅、弹窗）需要安装并重启服务器后才会出现。",
   "admin.status.ftOk": "已检测到 File Transformation 插件 — 用户端界面已激活。",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "代码无效或已使用。",
   "user.modal.method.paypal": "用 PayPal 付款",
   "user.modal.method.lydia": "用 Lydia 付款",
+  "user.modal.method.donateWith": "通过 {method} 捐赠",
   "user.toast.dismiss": "关闭",
 
   "admin.tabs.promo": "促销码",
@@ -220,11 +222,13 @@
   "admin.promo.col.uses": "使用次数",
   "admin.promo.col.expires": "失效",
   "admin.promo.col.actions": "操作",
+  "admin.promo.empty": "暂无促销代码。",
+  "admin.promo.col.created": "创建时间",
   "admin.promo.unlimited": "不限",
   "admin.promo.never": "从不",
   "admin.promo.created": "代码已创建。",
   "admin.promo.duplicate": "已存在同名代码。",
-  "admin.promo.invalid": "代码无效（3–32 个字母、数字、_ 或 -）。",
+  "admin.promo.invalid": "代码无效（6–32 个字母、数字、_ 或 -）。",
   "admin.promo.deleted": "代码已删除。",
   "admin.promo.deleteConfirm": "删除此促销码？已使用记录将保留。",
 

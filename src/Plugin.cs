@@ -98,6 +98,20 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             dirty = true;
         }
 
+        // Backfill missing transaction IDs once, at startup, so the read paths
+        // (GET /Me, GET /Users) never have to turn into a disk write later on.
+        foreach (var s in cfg.Subscriptions)
+        {
+            foreach (var t in s.Transactions)
+            {
+                if (t.Id == Guid.Empty)
+                {
+                    t.Id = Guid.NewGuid();
+                    dirty = true;
+                }
+            }
+        }
+
         if (dirty)
         {
             try { SaveConfiguration(); }
@@ -165,14 +179,26 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 "NoPayNoPlay.backups");
             Directory.CreateDirectory(backupDir);
 
-            string stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+            // Millisecond-resolution stamp + a uniqueness suffix so two saves within
+            // the same second/millisecond (e.g. a BulkPay loop) never collide and
+            // silently overwrite an earlier restore point.
+            string stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
             string backupPath = Path.Combine(backupDir, $"config.xml.bak-{stamp}");
-            File.Copy(configPath, backupPath, overwrite: true);
+            int collision = 0;
+            while (File.Exists(backupPath))
+            {
+                backupPath = Path.Combine(backupDir, $"config.xml.bak-{stamp}-{++collision}");
+            }
 
-            // Retention: keep the MaxBackups most recent files.
+            File.Copy(configPath, backupPath, overwrite: false);
+
+            // Retention: keep the MaxBackups most recent files. Sort by file name
+            // (the embedded timestamp sorts chronologically) rather than by the
+            // filesystem CreationTimeUtc, which is unreliable on many Linux/NFS/
+            // container filesystems and breaks after a bulk copy/restore.
             FileInfo[] backups = new DirectoryInfo(backupDir)
                 .GetFiles("config.xml.bak-*")
-                .OrderByDescending(f => f.CreationTimeUtc)
+                .OrderByDescending(f => f.Name, StringComparer.Ordinal)
                 .ToArray();
 
             for (int i = MaxBackups; i < backups.Length; i++)

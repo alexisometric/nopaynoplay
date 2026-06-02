@@ -49,7 +49,10 @@ public class EnforcementTask : IScheduledTask
             string? overrideCulture = Plugin.Instance?.Configuration?.UiCultureOverride;
             if (!string.IsNullOrWhiteSpace(overrideCulture))
             {
-                return overrideCulture.Trim().ToLowerInvariant();
+                // Route the override through the same region->base resolution as the
+                // request path so a region code (e.g. pt-BR) maps to its base bundle
+                // (pt) instead of silently falling back to English.
+                return _localizer.ResolveExplicit(overrideCulture);
             }
 
             return _localizer.ResolveCulture(null);
@@ -106,6 +109,10 @@ public class EnforcementTask : IScheduledTask
             progress.Report(100.0 * done / Math.Max(1, total));
         }
 
+        // Drop subscription records whose Jellyfin user has since been deleted so
+        // dead state (history, admin notes, policy snapshots) doesn't accumulate.
+        _subscriptionService.PurgeOrphanedSubscriptions(users.Select(u => u.Id).ToList());
+
         _subscriptionService.Save();
     }
 
@@ -118,6 +125,10 @@ public class EnforcementTask : IScheduledTask
         if (state == SubscriptionState.Exempt || state == SubscriptionState.Ok)
         {
             sub.LastNotifiedState = state;
+            // Clear the milestone key so the dedup is fully re-armed for the next
+            // warning/grace cycle (belt-and-suspenders alongside the resets done on
+            // payment / promo / reset).
+            sub.LastNotificationKey = string.Empty;
             return;
         }
 

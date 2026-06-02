@@ -12,7 +12,7 @@
         WarningSoon: '#f39c12',
         InGrace: '#e67e22',
         Blocked: '#e74c3c',
-        Exempt: '#95a5a6'
+        Exempt: '#6c7a89'
     };
 
     var TEST_STATES = {
@@ -195,6 +195,76 @@
         return n.toFixed(2);
     }
 
+    // Locale-aware currency formatting (e.g. "10 €" / "€10" / "10,50 €"), dropping
+    // the cents on round amounts. Falls back to "<price> <CODE>" when the currency
+    // code isn't a valid ISO 4217 symbol Intl can render.
+    function formatMoney(value, currency, lang) {
+        var n = Number(value || 0);
+        if (!isFinite(n)) n = 0;
+        var isInt = Math.abs(n - Math.round(n)) < 0.005;
+        try {
+            return new Intl.NumberFormat(lang || 'en', {
+                style: 'currency',
+                currency: String(currency || 'EUR').toUpperCase(),
+                minimumFractionDigits: isInt ? 0 : 2,
+                maximumFractionDigits: isInt ? 0 : 2
+            }).format(n);
+        } catch (_) {
+            return formatPrice(n) + ' ' + (currency || 'EUR');
+        }
+    }
+
+    // Clipboard copy with a graceful execCommand fallback + toast feedback.
+    function copyToClipboard(text, okMsg, failMsg, dismissLabel) {
+        var done = function () { toast(okMsg, 'success', dismissLabel); };
+        var fail = function () { toast(failMsg, 'error', dismissLabel); };
+        var fallback = function () {
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                done();
+            } catch (_) { fail(); }
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(fallback);
+        } else {
+            fallback();
+        }
+    }
+
+    // Render a QR code as an inline SVG using the vendored generator (window.qrcode,
+    // loaded lazily). Fixed black-on-white so it stays scannable on any theme.
+    // Returns '' if the generator isn't available or encoding fails.
+    function qrSvg(text, size) {
+        if (!window.qrcode || !text) return '';
+        try {
+            var qr = window.qrcode(0, 'M');
+            qr.addData(String(text));
+            qr.make();
+            var count = qr.getModuleCount();
+            var cell = size / count;
+            var rects = '';
+            for (var r = 0; r < count; r++) {
+                for (var c = 0; c < count; c++) {
+                    if (qr.isDark(r, c)) {
+                        rects += '<rect x="' + (c * cell).toFixed(2) + '" y="' + (r * cell).toFixed(2)
+                            + '" width="' + cell.toFixed(2) + '" height="' + cell.toFixed(2) + '"/>';
+                    }
+                }
+            }
+            return '<svg class="npnp-qr" width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size
+                + '" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">'
+                + '<rect width="' + size + '" height="' + size + '" fill="#fff"/>'
+                + '<g fill="#000">' + rects + '</g></svg>';
+        } catch (_) { return ''; }
+    }
+
     function ensureStyles() {
         if (document.getElementById('npnp-styles')) return;
         // Theme-adaptive variables. Strategy:
@@ -262,35 +332,70 @@
             + 'animation:npnpFade .15s ease-out;}'
             + '@keyframes npnpFade{from{opacity:0}to{opacity:1}}'
             + '@keyframes npnpSlide{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}'
-            + '.npnp-modal{background:var(--npnp-bg);color:var(--npnp-fg);padding:0;border-radius:12px;'
-            + 'width:min(560px,92vw);max-height:90vh;overflow:auto;'
+            + '.npnp-modal{background:var(--npnp-bg);color:var(--npnp-fg);padding:0;border-radius:16px;'
+            + 'width:min(600px,94vw);max-height:90vh;overflow:auto;'
             + 'font:14px/1.5 system-ui,-apple-system,sans-serif;'
             + 'border:1px solid var(--npnp-border);'
-            + 'box-shadow:0 16px 48px rgba(0,0,0,.6);animation:npnpSlide .18s ease-out;}'
-            + '.npnp-modal-header{padding:18px 20px 0;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}'
-            + '.npnp-modal-header h2{margin:0;font-size:19px;font-weight:700;}'
+            + 'box-shadow:0 24px 64px rgba(0,0,0,.55);animation:npnpSlide .2s cubic-bezier(.2,.8,.2,1);}'
+            + '.npnp-modal-header{padding:18px 22px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
+            + 'position:sticky;top:0;z-index:3;background:var(--npnp-bg);border-bottom:1px solid var(--npnp-border);}'
+            + '.npnp-modal-header h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.2px;}'
             + '.npnp-modal-header .close{background:none;border:none;color:inherit;'
-            + 'font-size:24px;line-height:1;cursor:pointer;opacity:.7;padding:4px 8px;}'
-            + '.npnp-modal-header .close:hover{opacity:1;}'
-            + '.npnp-modal-body{padding:14px 20px 20px;}'
-            + '.npnp-summary{display:flex;flex-direction:column;gap:6px;padding:14px 16px;'
-            + 'border-radius:10px;margin-bottom:14px;}'
-            + '.npnp-summary .npnp-status-pill{display:inline-flex;align-items:center;gap:6px;'
-            + 'font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;'
-            + 'padding:4px 10px;border-radius:999px;background:rgba(255,255,255,.18);align-self:flex-start;}'
-            + '.npnp-summary .npnp-summary-main{font-size:22px;font-weight:700;line-height:1.2;}'
-            + '.npnp-summary .npnp-summary-sub{font-size:13px;opacity:.92;}'
-            + '.npnp-modal h3{margin:18px 0 8px;font-size:11px;text-transform:uppercase;'
-            + 'letter-spacing:.7px;opacity:.65;font-weight:700;}'
+            + 'font-size:22px;line-height:1;cursor:pointer;opacity:.6;padding:6px 8px;border-radius:8px;'
+            + 'transition:opacity .12s,background .12s;}'
+            + '.npnp-modal-header .close:hover{opacity:1;background:var(--npnp-surface);}'
+            + '.npnp-modal-body{padding:12px 22px 22px;}'
+            // Hero card (status + countdown, or free-access for exempt users).
+            + '.npnp-hero{display:flex;gap:14px;align-items:center;padding:16px;border-radius:14px;margin-bottom:16px;'
+            + 'background:linear-gradient(135deg,color-mix(in srgb,var(--npnp-state) 22%,transparent),color-mix(in srgb,var(--npnp-state) 6%,transparent));'
+            + 'border:1px solid color-mix(in srgb,var(--npnp-state) 42%,transparent);}'
+            + '.npnp-hero-icon{width:46px;height:46px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;'
+            + 'background:color-mix(in srgb,var(--npnp-state) 28%,transparent);}'
+            + '.npnp-hero-icon .material-icons{font-size:26px;color:var(--npnp-state);}'
+            + '.npnp-hero-body{display:flex;flex-direction:column;gap:3px;min-width:0;}'
+            + '.npnp-status-pill{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;'
+            + 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;'
+            + 'padding:3px 9px;border-radius:999px;background:color-mix(in srgb,var(--npnp-state) 32%,transparent);color:var(--npnp-fg);}'
+            + '.npnp-hero-main{font-size:24px;font-weight:800;line-height:1.15;}'
+            + '.npnp-hero-sub{font-size:13px;opacity:.85;}'
+            + '.npnp-modal h3{margin:20px 0 9px;font-size:11px;text-transform:uppercase;'
+            + 'letter-spacing:.7px;opacity:.7;font-weight:700;display:flex;align-items:center;gap:8px;}'
+            + '.npnp-modal h3::before{content:"";width:16px;height:2px;border-radius:2px;background:var(--npnp-accent);opacity:.9;}'
             + '.npnp-modal .row{margin:6px 0;}'
-            + '.npnp-pay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;}'
-            + '.npnp-pay-card{background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:10px;padding:14px;'
-            + 'display:flex;flex-direction:column;gap:8px;text-decoration:none;color:inherit;'
-            + 'transition:border-color .12s,transform .12s,background .12s;}'
-            + '.npnp-pay-card:hover{border-color:var(--npnp-accent);background:var(--npnp-surface-hover);transform:translateY(-1px);}'
-            + '.npnp-pay-card .npnp-pay-title{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}'
-            + '.npnp-pay-card .npnp-pay-amount{font-size:13px;opacity:.85;}'
-            + '.npnp-pay-card .material-icons{font-size:18px;}'
+            + '.npnp-pay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}'
+            + '.npnp-pay-card{background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:12px;padding:13px 14px;'
+            + 'display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;'
+            + 'transition:border-color .12s,transform .12s,background .12s,box-shadow .12s;}'
+            + '.npnp-pay-card:hover{border-color:var(--npnp-accent);background:var(--npnp-surface-hover);transform:translateY(-1px);'
+            + 'box-shadow:0 6px 18px color-mix(in srgb,var(--npnp-accent) 18%,transparent);}'
+            + '.npnp-pay-icon{width:38px;height:38px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;'
+            + 'background:color-mix(in srgb,var(--npnp-accent) 16%,transparent);}'
+            + '.npnp-pay-icon .material-icons{font-size:20px;color:var(--npnp-accent);}'
+            + '.npnp-pay-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}'
+            + '.npnp-pay-card .npnp-pay-title{font-weight:700;font-size:14px;}'
+            + '.npnp-pay-card .npnp-pay-amount{font-size:12.5px;opacity:.8;}'
+            + '.npnp-pay-card .npnp-pay-go{font-size:16px;opacity:.45;flex-shrink:0;}'
+            // Hero time-remaining gauge.
+            + '.npnp-hero-gauge{height:5px;border-radius:999px;margin-top:9px;overflow:hidden;'
+            + 'background:color-mix(in srgb,var(--npnp-fg,currentColor) 14%,transparent);}'
+            + '.npnp-hero-gauge>span{display:block;height:100%;border-radius:999px;}'
+            // Tier savings chip.
+            + '.npnp-tier-save{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;'
+            + 'padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--npnp-ok) 22%,transparent);color:var(--npnp-ok);}'
+            // Payment reference.
+            + '.npnp-ref-row{display:flex;align-items:center;gap:10px;margin-top:12px;'
+            + 'background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:10px;padding:10px 12px;}'
+            + '.npnp-ref-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}'
+            + '.npnp-ref-label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.6;font-weight:700;}'
+            + '.npnp-ref-code{font:700 14px ui-monospace,monospace;letter-spacing:.5px;word-break:break-all;}'
+            + '.npnp-ref-hint{font-size:12px;opacity:.7;margin-top:6px;}'
+            // QR codes.
+            + '.npnp-qr-grid{display:flex;flex-wrap:wrap;gap:14px;}'
+            + '.npnp-qr-card{display:flex;flex-direction:column;align-items:center;gap:6px;}'
+            + '.npnp-qr-card .npnp-qr{border-radius:8px;display:block;}'
+            + '.npnp-qr-label{font-size:12px;font-weight:600;opacity:.85;}'
+            // Collapsible history rows.
+            + '.npnp-tx-hidden{display:none;}'
             + '.npnp-mini-btn{background:var(--npnp-surface);color:inherit;border:1px solid var(--npnp-border-strong);border-radius:6px;'
             + 'padding:6px 12px;cursor:pointer;font-size:13px;font-weight:600;}'
             + '.npnp-mini-btn:hover{border-color:var(--npnp-accent);background:var(--npnp-surface-hover);}'
@@ -328,13 +433,6 @@
             + '.npnp-contact-row{margin-top:10px;font-size:13px;}'
             + '.npnp-contact-row a{color:var(--npnp-accent);text-decoration:none;}'
             + '.npnp-contact-row a:hover{text-decoration:underline;}'
-            // Exempt banner
-            + '.npnp-exempt-banner{display:flex;align-items:center;gap:12px;'
-            + 'background:linear-gradient(135deg,color-mix(in srgb,var(--npnp-ok) 20%,transparent),var(--npnp-surface));border:1px solid color-mix(in srgb,var(--npnp-ok) 40%,transparent);'
-            + 'border-radius:10px;padding:12px 14px;margin:0 0 12px;}'
-            + '.npnp-exempt-banner .material-icons{color:var(--npnp-ok);font-size:28px;}'
-            + '.npnp-exempt-title{font-weight:700;font-size:15px;}'
-            + '.npnp-exempt-sub{font-size:13px;opacity:.85;margin-top:2px;}'
             // Donation note
             + '.npnp-donate-note{display:flex;align-items:center;gap:8px;'
             + 'background:color-mix(in srgb,var(--npnp-danger) 10%,transparent);border:1px solid color-mix(in srgb,var(--npnp-danger) 35%,transparent);'
@@ -354,7 +452,21 @@
             + '.npnp-toast.warn{border-left-color:var(--npnp-warn);}'
             + '.npnp-toast .npnp-toast-close{background:none;border:none;color:inherit;opacity:.6;'
             + 'cursor:pointer;font-size:16px;padding:0;line-height:1;}'
-            + '.npnp-toast .npnp-toast-close:hover{opacity:1;}';
+            + '.npnp-toast .npnp-toast-close:hover{opacity:1;}'
+            // Banner icon + slide-down entrance.
+            + '#npnp-banner .npnp-banner-icon{font-size:22px;flex-shrink:0;line-height:1;}'
+            + '#npnp-banner{animation:npnpBannerIn .22s ease-out;}'
+            + '@keyframes npnpBannerIn{from{transform:translateY(-100%);opacity:0}to{transform:none;opacity:1}}'
+            // Visible focus ring for keyboard users on every interactive element.
+            + '#npnp-banner button:focus-visible,.npnp-mini-btn:focus-visible,.npnp-tier:focus-visible,'
+            + '.npnp-pay-card:focus-visible,.npnp-modal-header .close:focus-visible,'
+            + '.npnp-promo-row input:focus-visible{outline:2px solid var(--npnp-accent);outline-offset:2px;}'
+            + '.npnp-modal:focus{outline:none;}'
+            // Respect the OS "reduce motion" setting.
+            + '@media (prefers-reduced-motion:reduce){'
+            + '.npnp-modal-backdrop,.npnp-modal,.npnp-toast,#npnp-banner{animation:none !important;}'
+            + '.npnp-pay-card,.npnp-tier,#npnp-banner button,.npnp-mini-btn{transition:none !important;}'
+            + '.npnp-pay-card:hover,.npnp-tier:hover,#npnp-banner button:hover{transform:none !important;}}';
         var s = document.createElement('style');
         s.id = 'npnp-styles';
         s.textContent = css;
@@ -412,60 +524,96 @@
                 + escapeHtml(t(data, 'user.modal.history.empty', 'No payment recorded yet.'))
                 + '</div>';
         }
-        var rows = tx.slice(0, 5).map(function (e) {
-            return '<tr>'
+        var rows = tx.map(function (e, i) {
+            return '<tr' + (i >= 5 ? ' class="npnp-tx-hidden"' : '') + '>'
                 + '<td>' + escapeHtml(formatDate(e.date, data.lang)) + '</td>'
-                + '<td>' + escapeHtml(formatPrice(e.amount)) + ' ' + escapeHtml(data.currency || 'EUR') + '</td>'
+                + '<td>' + escapeHtml(formatMoney(e.amount, data.currency, data.lang)) + '</td>'
                 + '<td>' + escapeHtml(e.method || '') + '</td>'
                 + '<td>' + escapeHtml(String(e.monthsAdded || 0)) + '</td>'
                 + '</tr>';
         }).join('');
-        return '<table class="npnp-history">'
+        var table = '<table class="npnp-history">'
             + '<thead><tr>'
             + '<th>' + escapeHtml(t(data, 'user.modal.history.date', 'Date')) + '</th>'
             + '<th>' + escapeHtml(t(data, 'user.modal.history.amount', 'Amount')) + '</th>'
             + '<th>' + escapeHtml(t(data, 'user.modal.history.method', 'Method')) + '</th>'
             + '<th>' + escapeHtml(t(data, 'user.modal.history.months', 'Months')) + '</th>'
             + '</tr></thead><tbody>' + rows + '</tbody></table>';
+        var more = tx.length > 5
+            ? '<button type="button" class="npnp-mini-btn" id="npnp-history-more" style="margin-top:10px;">'
+                + escapeHtml(format(t(data, 'user.modal.history.showAll', 'Show all ({n})'), { n: tx.length })) + '</button>'
+            : '';
+        return table + more;
     }
 
-    function renderSummary(data) {
-        var color = STATE_COLORS[data.state] || '#444';
+    function renderHero(data) {
+        // Exempt users get a positive (green) hero with NO expiry date; everyone
+        // else gets their state colour, a countdown and the due date.
+        var color = data.state === 'Exempt' ? '#2ecc71' : (STATE_COLORS[data.state] || '#888');
         var stateLabel = t(data, 'state.' + lcfirst(data.state), data.state);
+        var icons = {
+            Ok: 'check_circle', WarningSoon: 'schedule', InGrace: 'warning',
+            Blocked: 'block', Exempt: 'verified'
+        };
+        var icon = icons[data.state] || 'info';
 
-        var main = '';
-        var sub = '';
+        // A user with no recorded payment who is still Ok/WarningSoon is on their
+        // free trial — surface that with a friendly pill + gift icon.
+        var isTrial = data.state !== 'Exempt'
+            && (data.state === 'Ok' || data.state === 'WarningSoon')
+            && (!data.transactions || data.transactions.length === 0);
+        var pillLabel = isTrial ? t(data, 'user.modal.trial.pill', 'Free trial') : stateLabel;
+        if (isTrial) icon = 'card_giftcard';
+
         var dueOn = format(t(data, 'user.modal.summary.dueOn', 'Due on {date}'), {
             date: formatDate(data.expiryDate, data.lang)
         });
 
-        if (data.state === 'Ok' || data.state === 'WarningSoon') {
-            main = tp(data, 'user.modal.summary.daysLeft',
-                Math.max(0, Number(data.daysLeft || 0)),
-                format(t(data, 'user.modal.summary.daysLeft', '{days} day(s) left'),
-                    { days: Math.max(0, Number(data.daysLeft || 0)) }));
+        var main = '';
+        var sub = '';
+        if (data.state === 'Exempt') {
+            main = t(data, 'user.modal.exempt.title', 'Free access for you');
+            sub = t(data, 'user.modal.exempt.sub', 'No subscription is required — enjoy the server.');
+        } else if (data.state === 'Ok' || data.state === 'WarningSoon') {
+            var dl = Math.max(0, Number(data.daysLeft || 0));
+            main = tp(data, 'user.modal.summary.daysLeft', dl,
+                format(t(data, 'user.modal.summary.daysLeft', '{days} day(s) left'), { days: dl }));
             sub = dueOn;
         } else if (data.state === 'InGrace' || data.state === 'Blocked') {
-            main = tp(data, 'user.modal.summary.expiredAgo',
-                Math.max(0, -Number(data.daysLeft || 0)),
-                format(t(data, 'user.modal.summary.expiredAgo', 'Expired {days} day(s) ago'),
-                    { days: Math.max(0, -Number(data.daysLeft || 0)) }));
+            var ov = Math.max(0, -Number(data.daysLeft || 0));
+            main = tp(data, 'user.modal.summary.expiredAgo', ov,
+                format(t(data, 'user.modal.summary.expiredAgo', 'Expired {days} day(s) ago'), { days: ov }));
             sub = dueOn;
-        } else if (data.state === 'Exempt') {
-            main = stateLabel;
-            sub = t(data, 'user.modal.summary.noExpiry', 'No expiry — free access');
         } else {
             main = stateLabel;
             sub = dueOn;
         }
 
-        return '<div class="npnp-summary" style="background:linear-gradient(135deg,'
-            + color + '33,' + color + '11);border:1px solid ' + color + '66;">'
-            + '<span class="npnp-status-pill" style="background:' + color + '33;color:#fff;">'
-            + escapeHtml(stateLabel) + '</span>'
-            + '<div class="npnp-summary-main">' + escapeHtml(main) + '</div>'
-            + '<div class="npnp-summary-sub">' + escapeHtml(sub) + '</div>'
-            + '</div>';
+        // Time-remaining gauge (skipped for exempt users, who have no countdown).
+        var gauge = '';
+        if (data.state !== 'Exempt') {
+            var dl = Number(data.daysLeft || 0);
+            var frac;
+            if (data.state === 'Ok' || data.state === 'WarningSoon') {
+                frac = Math.max(0, Math.min(1, dl / 30));
+            } else if (data.state === 'InGrace') {
+                var grace = Math.max(1, Number(data.graceDays || 1));
+                frac = Math.max(0, Math.min(1, (grace - Math.max(0, -dl)) / grace));
+            } else {
+                frac = 0;
+            }
+            gauge = '<div class="npnp-hero-gauge"><span style="width:' + Math.round(frac * 100)
+                + '%;background:' + color + ';"></span></div>';
+        }
+
+        return '<div class="npnp-hero" style="--npnp-state:' + color + ';">'
+            + '<div class="npnp-hero-icon"><span class="material-icons" aria-hidden="true">' + icon + '</span></div>'
+            + '<div class="npnp-hero-body">'
+            + '<span class="npnp-status-pill">' + escapeHtml(pillLabel) + '</span>'
+            + '<div class="npnp-hero-main">' + escapeHtml(main) + '</div>'
+            + '<div class="npnp-hero-sub">' + escapeHtml(sub) + '</div>'
+            + gauge
+            + '</div></div>';
     }
 
     function renderTiers(data) {
@@ -475,19 +623,30 @@
         var badgeLabel = t(data, 'user.modal.tier.popular', 'Best deal');
         var perMonth = t(data, 'user.modal.tier.perMonth', '{price} / month');
         var monthsLabel = t(data, 'user.modal.tier.months', '{n} month(s)');
+        var saveLabel = t(data, 'user.modal.tier.save', 'Save {percent}%');
+        var monthly = Number(data.price || 0);
         var html = tiers.map(function (raw) {
             var t1 = normalizeKeys(raw);
             var months = Math.max(1, Number(t1.months || 1));
             var price = Number(t1.price || 0);
             var pm = months > 0 ? (price / months) : 0;
+            // Savings vs the plain monthly price (only when there's a real discount).
+            var saveChip = '';
+            if (monthly > 0 && pm > 0 && pm < monthly) {
+                var pct = Math.round((1 - pm / monthly) * 100);
+                if (pct > 0) {
+                    saveChip = '<div class="npnp-tier-save">' + escapeHtml(format(saveLabel, { percent: pct })) + '</div>';
+                }
+            }
             return '<button type="button" class="npnp-tier' + (t1.highlight ? ' highlight' : '')
                 + '" data-tier-id="' + escapeHtml(t1.id || '') + '"'
                 + ' data-tier-months="' + months + '"'
                 + ' data-tier-price="' + price + '">'
                 + (t1.highlight ? '<span class="npnp-tier-badge">' + escapeHtml(badgeLabel) + '</span>' : '')
                 + '<div class="npnp-tier-months">' + escapeHtml(format(monthsLabel, { n: months })) + '</div>'
-                + '<div class="npnp-tier-price">' + escapeHtml(formatPrice(price)) + ' ' + escapeHtml(currency) + '</div>'
-                + '<div class="npnp-tier-permonth">' + escapeHtml(format(perMonth, { price: formatPrice(pm) + ' ' + currency })) + '</div>'
+                + '<div class="npnp-tier-price">' + escapeHtml(formatMoney(price, currency, data.lang)) + '</div>'
+                + '<div class="npnp-tier-permonth">' + escapeHtml(format(perMonth, { price: formatMoney(pm, currency, data.lang) })) + '</div>'
+                + saveChip
                 + (t1.label ? '<div class="npnp-tier-label">' + escapeHtml(t1.label) + '</div>' : '')
                 + '</button>';
         }).join('');
@@ -497,17 +656,22 @@
 
     function paymentCardHtml(data, key, url, methodLabel, isExempt) {
         if (!url) return '';
+        // Exempt users never get a prefilled amount: the card is a pure donation
+        // invite ("Choose your amount", no price, no amount appended to the URL).
         var priceForUrl = isExempt ? 0 : Number(data.price || 0);
         var amount = isExempt
             ? t(data, 'user.modal.donate.freeAmount', 'Choose your amount')
             : formatPrice(data.price) + ' ' + (data.currency || 'EUR');
+        var icon = isExempt ? 'volunteer_activism' : (key === 'paypal' ? 'account_balance_wallet' : 'smartphone');
         return '<a class="npnp-pay-card" href="' + escapeHtml(buildPaymentUrl(key, url, priceForUrl, data.currency || 'EUR'))
             + '" target="_blank" rel="noopener" data-method="' + escapeHtml(key) + '"'
             + ' data-base-url="' + escapeHtml(url) + '">'
-            + '<span class="npnp-pay-title">'
-            + '<span class="material-icons" aria-hidden="true">open_in_new</span>'
-            + escapeHtml(methodLabel) + '</span>'
+            + '<span class="npnp-pay-icon"><span class="material-icons" aria-hidden="true">' + icon + '</span></span>'
+            + '<span class="npnp-pay-text">'
+            + '<span class="npnp-pay-title">' + escapeHtml(methodLabel) + '</span>'
             + '<span class="npnp-pay-amount">' + escapeHtml(amount) + '</span>'
+            + '</span>'
+            + '<span class="material-icons npnp-pay-go" aria-hidden="true">open_in_new</span>'
             + '</a>';
     }
 
@@ -546,8 +710,14 @@
         var data = applyAdminPreviewSkin(rawData);
         var isExempt = data.state === 'Exempt';
 
-        var paypalLabel = t(data, 'user.modal.method.paypal', 'Pay with PayPal');
-        var lydiaLabel = t(data, 'user.modal.method.lydia', 'Pay with Lydia');
+        // Exempt users see donation wording ("Donate via PayPal") instead of "Pay with…".
+        var donateWith = t(data, 'user.modal.method.donateWith', 'Donate via {method}');
+        var paypalLabel = isExempt
+            ? format(donateWith, { method: 'PayPal' })
+            : t(data, 'user.modal.method.paypal', 'Pay with PayPal');
+        var lydiaLabel = isExempt
+            ? format(donateWith, { method: 'Lydia' })
+            : t(data, 'user.modal.method.lydia', 'Pay with Lydia');
         var cards = [
             paymentCardHtml(data, 'paypal', data.paypalMeUrl, paypalLabel, isExempt),
             paymentCardHtml(data, 'lydia', data.lydiaUrl, lydiaLabel, isExempt)
@@ -634,24 +804,9 @@
                 + '</div>'
             : '';
 
-        var exemptBanner = isExempt && !data.__previewMode
-            ? '<div class="npnp-exempt-banner">'
-                + '<span class="material-icons" aria-hidden="true">verified</span>'
-                + '<div>'
-                + '<div class="npnp-exempt-title">'
-                + escapeHtml(t(data, 'user.modal.exempt.title', 'Free access for you'))
-                + '</div>'
-                + '<div class="npnp-exempt-sub">'
-                + escapeHtml(t(data, 'user.modal.exempt.sub',
-                    'No subscription is required — enjoy the server.'))
-                + '</div>'
-                + '</div>'
-                + '</div>'
-            : '';
-
         var html = ''
             + '<div class="npnp-modal-backdrop" id="npnp-modal-backdrop">'
-            + '  <div class="npnp-modal" role="dialog" aria-modal="true" aria-label="' + escapeHtml(modalTitle) + '">'
+            + '  <div class="npnp-modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="' + escapeHtml(modalTitle) + '">'
             + '    <div class="npnp-modal-header">'
             + '      <h2>' + escapeHtml(modalTitle) + '</h2>'
             + '      <button class="close" type="button" aria-label="'
@@ -659,8 +814,7 @@
             + '    </div>'
             + '    <div class="npnp-modal-body">'
             +        previewBanner
-            +        exemptBanner
-            +        renderSummary(data)
+            +        renderHero(data)
             +        pendingBlock
             +        (isExempt ? '' : renderTiers(data))
             +        paySection
@@ -683,6 +837,45 @@
             if (e.target === backdrop) closeModal();
         });
         backdrop.querySelector('.close').addEventListener('click', closeModal);
+
+        // --- Accessibility: focus trap, Escape to close, restore focus on close ---
+        var modalEl = backdrop.querySelector('.npnp-modal');
+        var opener = document.activeElement;
+        function focusables() {
+            return Array.prototype.slice.call(modalEl.querySelectorAll(
+                'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),'
+                + 'textarea:not([disabled]),[tabindex]:not([tabindex="-1"])'))
+                .filter(function (el) { return el.offsetParent !== null || el === document.activeElement; });
+        }
+        function onKey(e) {
+            if (!document.body.contains(modalEl)) { document.removeEventListener('keydown', onKey); return; }
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal();
+            } else if (e.key === 'Tab') {
+                var f = focusables();
+                if (!f.length) return;
+                var first = f[0], last = f[f.length - 1];
+                if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+                else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+            }
+        }
+        document.addEventListener('keydown', onKey);
+        // Restore focus to the opener once the modal is removed (any close path).
+        try {
+            var mo = new MutationObserver(function () {
+                if (!document.body.contains(modalEl)) {
+                    mo.disconnect();
+                    document.removeEventListener('keydown', onKey);
+                    if (opener && typeof opener.focus === 'function') {
+                        try { opener.focus(); } catch (_) {}
+                    }
+                }
+            });
+            mo.observe(document.body, { childList: true });
+        } catch (_) {}
+        // Move focus into the dialog so screen readers announce its label.
+        try { modalEl.focus(); } catch (_) {}
 
         // Tier selection: pick the highlight tier by default and let the user
         // choose another. The selection is reflected when claiming "I paid".
@@ -733,8 +926,9 @@
             );
         }
         // Apply the highlight tier amount immediately so the cards open with
-        // the correct value even before the user clicks a tier.
-        if (defaultTier) {
+        // the correct value even before the user clicks a tier. Never for exempt
+        // users — their cards are donation invites with no prefilled amount.
+        if (defaultTier && !isExempt) {
             updatePaymentCards(selectedTierAmount, data.currency || 'EUR');
         }
 
@@ -858,6 +1052,14 @@
                     redeem.disabled = false;
                 });
             });
+
+            // Pressing Enter in the code field redeems it (matches the button).
+            var promoInput = document.getElementById('npnp-promo-input');
+            if (promoInput) {
+                promoInput.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') { e.preventDefault(); redeem.click(); }
+                });
+            }
         }
     }
 
@@ -898,9 +1100,14 @@
 
         var banner = document.createElement('div');
         banner.id = 'npnp-banner';
+        // Urgent states (expired) are announced assertively; the soft warning is polite.
+        banner.setAttribute('role', data.state === 'WarningSoon' ? 'status' : 'alert');
         banner.style.background = 'linear-gradient(90deg,'
             + (STATE_COLORS[data.state] || '#e67e22') + ','
             + (STATE_COLORS[data.state] || '#e67e22') + 'cc)';
+        var bannerIcons = { WarningSoon: 'schedule', InGrace: 'warning', Blocked: 'block' };
+        var bannerIcon = '<span class="material-icons npnp-banner-icon" aria-hidden="true">'
+            + (bannerIcons[data.state] || 'info') + '</span>';
         var testBadge = data.__testMode
             ? '<span class="npnp-test-badge">' + escapeHtml(t(data, 'user.modal.testBadge', 'Test mode')) + '</span>'
             : '';
@@ -909,6 +1116,7 @@
                 + escapeHtml(t(data, 'user.banner.cta.dismiss', 'Dismiss')) + '</button>'
             : '';
         banner.innerHTML = ''
+            + bannerIcon
             + '<div class="npnp-banner-msg">'
             + '<span class="npnp-banner-title">' + testBadge + escapeHtml(title) + '</span>'
             + '<span class="npnp-banner-sub">' + escapeHtml(sub) + '</span>'

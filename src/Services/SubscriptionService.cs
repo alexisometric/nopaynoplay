@@ -13,15 +13,52 @@ public class SubscriptionService
 {
     private readonly IUserManager _userManager;
     private readonly ILogger<SubscriptionService> _logger;
+    private readonly Func<PluginConfiguration> _configAccessor;
+    private readonly Action _save;
     private static readonly object _lock = new();
 
     public SubscriptionService(IUserManager userManager, ILogger<SubscriptionService> logger)
+        : this(userManager, logger, null, null)
+    {
+    }
+
+    /// <summary>
+    /// Test-friendly constructor: lets callers inject the configuration accessor and
+    /// the persistence callback so the business logic can be exercised without the
+    /// <see cref="Plugin"/> singleton. The public constructor binds both to
+    /// <see cref="Plugin.Instance"/>.
+    /// </summary>
+    internal SubscriptionService(
+        IUserManager userManager,
+        ILogger<SubscriptionService> logger,
+        Func<PluginConfiguration>? configAccessor,
+        Action? save)
     {
         _userManager = userManager;
         _logger = logger;
+        _configAccessor = configAccessor ?? (() => Plugin.Instance!.Configuration);
+        _save = save ?? (() => Plugin.Instance!.SaveConfiguration());
     }
 
-    private static PluginConfiguration Config => Plugin.Instance!.Configuration;
+    private PluginConfiguration Config => _configAccessor();
+
+    /// <summary>
+    /// Runs <paramref name="mutator"/> under the same lock that guards every
+    /// subscription mutation and persists when it returns <c>true</c>. Lets the
+    /// controller mutate shared config lists (promo codes, tiers, tags, settings)
+    /// without racing the scheduled task or the self-service endpoints, which would
+    /// otherwise corrupt the XML or lose updates.
+    /// </summary>
+    public void MutateConfig(Func<PluginConfiguration, bool> mutator)
+    {
+        lock (_lock)
+        {
+            if (mutator(Config))
+            {
+                _save();
+            }
+        }
+    }
 
     /// <summary>
     /// Returns or creates the subscription for a user (granting a free trial on first call).
@@ -48,7 +85,7 @@ public class SubscriptionService
                 LastNotifiedState = SubscriptionState.Ok
             };
             Config.Subscriptions.Add(sub);
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             _logger.LogInformation(
                 "NoPayNoPlay: started tracking new user {UserId}, trial expires {Expiry:o}",
                 userId,
@@ -59,9 +96,12 @@ public class SubscriptionService
 
     /// <summary>
     /// Backfills missing transaction IDs (older configs predate the <see cref="TransactionEntry.Id"/>
-    /// field). Idempotent: only writes when at least one entry was patched.
+    /// field) <b>in memory only</b> — never triggers a save, so it cannot turn a
+    /// read path (GET /Me, GET /Users) into a disk write. Persistence happens once
+    /// at startup (see <see cref="Plugin"/> seeding) and on the next real mutation.
+    /// Returns <c>true</c> when at least one id was patched.
     /// </summary>
-    private static void MigrateTransactionIds(UserSubscription sub)
+    internal static bool MigrateTransactionIds(UserSubscription sub)
     {
         bool changed = false;
         foreach (var t in sub.Transactions)
@@ -73,10 +113,7 @@ public class SubscriptionService
             }
         }
 
-        if (changed)
-        {
-            Plugin.Instance!.SaveConfiguration();
-        }
+        return changed;
     }
 
     /// <summary>
@@ -143,7 +180,6 @@ public class SubscriptionService
         lock (_lock)
         {
             UserSubscription sub = EnsureUserTracked(userId);
-            int anchor = sub.SubscriptionDate.Day;
             int months = Math.Max(1, monthsAdded);
             DateTime now = DateTime.UtcNow;
 
@@ -185,9 +221,13 @@ public class SubscriptionService
             else
             {
                 // Regular "current payment": extend from current expiry, or from now
-                // if the subscription has already lapsed.
+                // if the subscription has already lapsed. Anchor on baseDate's own
+                // day — NOT the signup day — so the trial -> first-payment transition
+                // neither over-grants (signup day later in the month than the trial
+                // end, which used to add up to ~3 free weeks) nor truncates (signup
+                // day earlier, which used to shave off up to ~1 paid week).
                 DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
-                sub.ExpiryDate = ComputeNextExpiry(baseDate, months, anchor);
+                sub.ExpiryDate = ComputeNextExpiry(baseDate, months, baseDate.Day);
             }
 
             sub.Transactions.Add(new TransactionEntry
@@ -204,7 +244,7 @@ public class SubscriptionService
             sub.HasPendingPaymentClaim = false;
             sub.PendingPaymentClaimAt = null;
             sub.PendingPaymentMethod = string.Empty;
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             return sub;
         }
     }
@@ -216,7 +256,7 @@ public class SubscriptionService
         {
             UserSubscription sub = EnsureUserTracked(userId);
             sub.IsExempt = isExempt;
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             return sub;
         }
     }
@@ -231,7 +271,8 @@ public class SubscriptionService
             sub.SubscriptionDate = now;
             sub.ExpiryDate = now.AddDays(Math.Max(0, Config.TrialDays));
             sub.LastNotifiedState = SubscriptionState.Ok;
-            Plugin.Instance!.SaveConfiguration();
+            sub.LastNotificationKey = string.Empty;
+            _save();
             return sub;
         }
     }
@@ -241,7 +282,35 @@ public class SubscriptionService
     {
         lock (_lock)
         {
-            Plugin.Instance!.SaveConfiguration();
+            _save();
+        }
+    }
+
+    /// <summary>
+    /// Removes subscription records whose Jellyfin user no longer exists, so a
+    /// deleted account doesn't leave its payment history, admin notes and policy
+    /// snapshot orphaned in the config forever. No-op (defensive) when the live
+    /// user set is empty, to avoid wiping everything on a transient lookup failure.
+    /// </summary>
+    /// <returns>The number of orphaned records removed.</returns>
+    public int PurgeOrphanedSubscriptions(IReadOnlyCollection<Guid> liveUserIds)
+    {
+        if (liveUserIds == null || liveUserIds.Count == 0)
+        {
+            return 0;
+        }
+
+        lock (_lock)
+        {
+            var live = liveUserIds as HashSet<Guid> ?? new HashSet<Guid>(liveUserIds);
+            int removed = Config.Subscriptions.RemoveAll(s => !live.Contains(s.UserId));
+            if (removed > 0)
+            {
+                _save();
+                _logger.LogInformation("NoPayNoPlay: purged {Count} orphaned subscription record(s)", removed);
+            }
+
+            return removed;
         }
     }
 
@@ -254,7 +323,6 @@ public class SubscriptionService
     public DateTime RecomputeExpiry(UserSubscription sub)
     {
         DateTime now = DateTime.UtcNow;
-        int signupAnchor = sub.SubscriptionDate.Day;
         DateTime expiry = sub.SubscriptionDate.AddDays(Math.Max(0, Config.TrialDays));
 
         var ordered = sub.Transactions.OrderBy(t => t.Date).ToList();
@@ -273,8 +341,11 @@ public class SubscriptionService
             }
             else
             {
+                // Anchor on baseDate's day (mirrors ApplyPayment) so replaying the
+                // history after an edit/delete reproduces the same expiry the live
+                // path produced — no drift between the two.
                 DateTime baseDate = expiry < now ? now : expiry;
-                expiry = ComputeNextExpiry(baseDate, months, signupAnchor);
+                expiry = ComputeNextExpiry(baseDate, months, baseDate.Day);
             }
         }
 
@@ -316,7 +387,7 @@ public class SubscriptionService
             }
 
             RecomputeExpiry(sub);
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             return true;
         }
     }
@@ -333,7 +404,7 @@ public class SubscriptionService
             int removed = sub.Transactions.RemoveAll(t => t.Id == txId);
             if (removed == 0) return false;
             RecomputeExpiry(sub);
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             return true;
         }
     }
@@ -355,7 +426,7 @@ public class SubscriptionService
             {
                 sub.PendingPaymentMethod = sub.PendingPaymentMethod.Substring(0, 50);
             }
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             return true;
         }
     }
@@ -370,7 +441,7 @@ public class SubscriptionService
             sub.HasPendingPaymentClaim = false;
             sub.PendingPaymentClaimAt = null;
             sub.PendingPaymentMethod = string.Empty;
-            Plugin.Instance!.SaveConfiguration();
+            _save();
         }
     }
 
@@ -398,11 +469,13 @@ public class SubscriptionService
             if (sub.RedeemedPromoCodeIds.Contains(promo.Id)) return 0;
 
             int months = Math.Max(1, promo.MonthsGranted);
-            int anchor = sub.SubscriptionDate.Day;
             DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
-            sub.ExpiryDate = ComputeNextExpiry(baseDate, months, anchor);
+            sub.ExpiryDate = ComputeNextExpiry(baseDate, months, baseDate.Day);
             sub.RedeemedPromoCodeIds.Add(promo.Id);
             sub.LastNotifiedState = SubscriptionState.Ok;
+            // Re-arm the per-milestone notification dedup so the next J-3/J-1/J0
+            // reminder fires for the renewed cycle.
+            sub.LastNotificationKey = string.Empty;
 
             sub.Transactions.Add(new TransactionEntry
             {
@@ -414,7 +487,7 @@ public class SubscriptionService
             });
 
             promo.UsedCount++;
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             return months;
         }
     }
@@ -469,7 +542,7 @@ public class SubscriptionService
                 normalized = string.Empty;
             }
             sub.Tag = normalized;
-            Plugin.Instance!.SaveConfiguration();
+            _save();
             return sub;
         }
     }
@@ -505,7 +578,7 @@ public class SubscriptionService
             {
                 Config.AuditLog.RemoveRange(0, Config.AuditLog.Count - cap);
             }
-            Plugin.Instance!.SaveConfiguration();
+            _save();
         }
     }
 }

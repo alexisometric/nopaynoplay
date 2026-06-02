@@ -11,7 +11,20 @@ namespace Jellyfin.Plugin.NoPayNoPlay.Services;
 /// </summary>
 public class RateLimiter
 {
+    private readonly Func<DateTime> _now;
     private readonly ConcurrentDictionary<string, DateTime> _last = new();
+
+    /// <summary>Production constructor (uses the system UTC clock).</summary>
+    public RateLimiter()
+        : this(null)
+    {
+    }
+
+    /// <summary>Test-friendly constructor allowing a deterministic injected clock.</summary>
+    internal RateLimiter(Func<DateTime>? now)
+    {
+        _now = now ?? (() => DateTime.UtcNow);
+    }
 
     /// <summary>
     /// Returns true if the action is allowed for <paramref name="key"/>, and
@@ -20,7 +33,7 @@ public class RateLimiter
     /// </summary>
     public bool TryAcquire(string key, TimeSpan window)
     {
-        DateTime now = DateTime.UtcNow;
+        DateTime now = _now();
         bool allowed = false;
         _last.AddOrUpdate(
             key,
@@ -46,7 +59,7 @@ public class RateLimiter
     public TimeSpan Remaining(string key, TimeSpan window)
     {
         if (!_last.TryGetValue(key, out var last)) return TimeSpan.Zero;
-        TimeSpan elapsed = DateTime.UtcNow - last;
+        TimeSpan elapsed = _now() - last;
         return elapsed >= window ? TimeSpan.Zero : window - elapsed;
     }
 
@@ -59,7 +72,7 @@ public class RateLimiter
     /// </summary>
     public bool RegisterFailureAndShouldLock(string key, int threshold, TimeSpan lockout)
     {
-        DateTime now = DateTime.UtcNow;
+        DateTime now = _now();
         bool locked = false;
         _failures.AddOrUpdate(
             key,
@@ -93,7 +106,7 @@ public class RateLimiter
     {
         if (!_failures.TryGetValue(key, out var entry)) return false;
         if (entry.Until <= DateTime.MinValue) return false;
-        return DateTime.UtcNow < entry.Until;
+        return _now() < entry.Until;
     }
 
     /// <summary>Clears the failure counter for the key (e.g. after a success).</summary>

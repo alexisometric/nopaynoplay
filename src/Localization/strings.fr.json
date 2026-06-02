@@ -143,6 +143,7 @@
 
   "common.deletedUser": "(supprimé)",
   "common.close": "Fermer",
+  "common.loading": "Chargement…",
   "admin.status.ftMissing": "Plugin File Transformation introuvable — l'interface côté utilisateur (bouton dans le header, bannière, modal) ne s'affichera pas tant qu'il n'est pas installé et le serveur redémarré.",
   "admin.status.ftOk": "Plugin File Transformation détecté — l'interface côté utilisateur est active.",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "Code invalide ou déjà utilisé.",
   "user.modal.method.paypal": "Payer via PayPal",
   "user.modal.method.lydia": "Payer via Lydia",
+  "user.modal.method.donateWith": "Faire un don via {method}",
 
   "user.toast.dismiss": "Fermer",
 
@@ -221,11 +223,13 @@
   "admin.promo.col.uses": "Utilisations",
   "admin.promo.col.expires": "Expiration",
   "admin.promo.col.actions": "Actions",
+  "admin.promo.empty": "Aucun code promo pour le moment.",
+  "admin.promo.col.created": "Créé le",
   "admin.promo.unlimited": "Illimité",
   "admin.promo.never": "Jamais",
   "admin.promo.created": "Code créé.",
   "admin.promo.duplicate": "Un code avec ce nom existe déjà.",
-  "admin.promo.invalid": "Code invalide (3–32 caractères : lettres, chiffres, _ ou -).",
+  "admin.promo.invalid": "Code invalide (6–32 caractères : lettres, chiffres, _ ou -).",
   "admin.promo.deleted": "Code supprimé.",
   "admin.promo.deleteConfirm": "Supprimer ce code promo ? Les utilisations passées sont conservées.",
 
@@ -299,5 +303,15 @@
   "admin.status.ftMissing.title": "Plugin File Transformation manquant",
   "admin.status.ftMissing.docs": "Instructions d'installation",
 
-  "admin.stats.chart.title": "Recettes \u2014 12 derniers mois"
+  "admin.stats.chart.title": "Recettes \u2014 12 derniers mois",
+
+  "admin.users.selectAll": "Tout sélectionner",
+  "admin.users.selectRow": "Sélectionner {username}",
+  "admin.pagination.prev": "Page précédente",
+  "admin.pagination.next": "Page suivante",
+  "admin.pagination.info": "Page {page} sur {total}",
+  "admin.unsaved.confirm": "Vous avez des modifications non enregistrées. Quitter sans enregistrer ?",
+  "admin.settings.validation.url": "Doit commencer par http:// ou https://",
+  "admin.settings.validation.email": "L'adresse email ne semble pas valide.",
+  "admin.test.helpTitle": "Comment fonctionne le mode test ?"
 }

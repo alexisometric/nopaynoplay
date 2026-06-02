@@ -15,16 +15,16 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           fetch-depth: 1
 
       - name: Validate manifest entries
         run: |
           python3 - <<'PY'
-          import json, pathlib, urllib.request
+          import json, hashlib, pathlib, urllib.request
 
           data = json.loads(pathlib.Path("manifest.json").read_text())
           assert isinstance(data, list) and data, "manifest must be a non-empty list"
@@ -33,9 +33,28 @@ jobs:
           missing = required - plugin.keys()
           assert not missing, f"missing keys: {missing}"
           assert plugin["guid"] == "f3b4d2c1-7e9a-4b1e-9c6d-9a1b2c3d4e5f", "GUID drift"
-          for entry in plugin["versions"]:
+
+          versions = plugin["versions"]
+          assert versions, "no versions in manifest"
+          for entry in versions:
               for key in ("version", "changelog", "targetAbi", "sourceUrl", "checksum", "timestamp"):
                   assert key in entry, f"version missing key {key}"
+
+          # Fully verify the most recent version: download the asset and confirm its
+          # MD5 matches the declared checksum, so a wrong/stale checksum (which would
+          # make Jellyfin refuse the install) fails CI instead of shipping silently.
+          latest = versions[0]
+          url = latest["sourceUrl"]
+          print(f"downloading {url}")
+          with urllib.request.urlopen(url, timeout=120) as resp:
+              assert resp.status == 200, f"asset not reachable: {url}"
+              content = resp.read()
+          got = hashlib.md5(content).hexdigest()
+          assert got == latest["checksum"], f"checksum mismatch: declared {latest['checksum']} got {got}"
+          print(f"checksum OK for {latest['version']} ({got})")
+
+          # Older versions: only confirm reachability (avoid re-downloading everything).
+          for entry in versions[1:]:
               url = entry["sourceUrl"]
               print(f"checking {url}")
               req = urllib.request.Request(url, method="HEAD")

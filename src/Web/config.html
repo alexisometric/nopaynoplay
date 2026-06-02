@@ -149,6 +149,19 @@
         .npnp-flash { padding:8px 14px; border-radius:4px; background:var(--npnp-ok); color:#fff; font-weight:600; margin-bottom:12px; display:none; }
         .npnp-flash.error { background:var(--npnp-danger); }
         .npnp-flash.show { display:block; }
+
+        /* Keyboard focus visibility (tabs, panels, dialog). */
+        .npnp-tab-btn:focus-visible { outline:2px solid var(--npnp-accent); outline-offset:-2px; border-radius:4px 4px 0 0; }
+        .npnp-tab-panel:focus { outline:none; }
+        .npnp-modal:focus { outline:none; }
+        .npnp-modal-backdrop { animation:npnpAdminFade .15s ease-out; }
+        @keyframes npnpAdminFade { from { opacity:0; } to { opacity:1; } }
+
+        /* Respect the OS "reduce motion" setting. */
+        @media (prefers-reduced-motion: reduce) {
+            .npnp-stat, .npnp-table tbody tr, .npnp-modal-backdrop,
+            #NoPayNoPlayConfigPage [is="emby-button"].button-alt { transition:none !important; animation:none !important; }
+        }
     </style>
 
     <div data-role="content">
@@ -229,9 +242,11 @@
                         </div>
                     </div>
 
-                    <button is="emby-button" type="submit" class="raised button-submit block">
-                        <span data-i18n="admin.settings.save">Save</span>
-                    </button>
+                    <div class="npnp-save-bar" style="position:sticky;bottom:0;background:var(--npnp-modal-bg,var(--theme-body-background-color,#202020));padding:12px 0;margin-top:8px;border-top:1px solid var(--npnp-border);z-index:5;">
+                        <button is="emby-button" type="submit" class="raised button-submit block">
+                            <span data-i18n="admin.settings.save">Save</span>
+                        </button>
+                    </div>
                 </form>
             </section>
 
@@ -399,9 +414,12 @@
             <section id="npnpTab-test" class="npnp-tab-panel">
                 <div class="npnp-section">
                     <h3 data-i18n="admin.test.title">Banner test mode</h3>
-                    <p data-i18n="admin.test.help" style="opacity:.8;">
-                        Open Jellyfin in another tab with the URL parameter ?npnpTest=STATE to preview banners without changing real data. In test mode the "I just paid" button, the promo redeem and the dashboard notification are all simulated locally.
-                    </p>
+                    <details style="margin-bottom:12px;">
+                        <summary style="cursor:pointer;font-weight:600;font-size:13px;opacity:.85;" data-i18n="admin.test.helpTitle">How does test mode work?</summary>
+                        <p data-i18n="admin.test.help" style="opacity:.8;margin-top:8px;">
+                            Open Jellyfin in another tab with the URL parameter ?npnpTest=STATE to preview banners without changing real data. In test mode the "I just paid" button, the promo redeem and the dashboard notification are all simulated locally.
+                        </p>
+                    </details>
                     <div class="npnp-grid-2">
                         <div class="inputContainer">
                             <label for="npnpTestState" data-i18n="admin.test.state">Force state</label>

@@ -13,8 +13,10 @@ on:
         required: true
         default: '10.11.9.0'
 
+# Single shared group (not per-ref) so two close releases queue instead of racing
+# the manifest commit/push on main.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-manifest
   cancel-in-progress: false
 
 env:
@@ -32,34 +34,45 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           fetch-depth: 0
 
       - name: Resolve version
         id: ver
+        env:
+          # Pass user-controlled workflow_dispatch inputs through the environment
+          # instead of interpolating them straight into the shell, then validate the
+          # format strictly so a crafted "version" can't inject shell commands.
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_ABI: ${{ inputs.target_abi }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            VERSION="${{ inputs.version }}"
-            ABI="${{ inputs.target_abi }}"
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            VERSION="$INPUT_VERSION"
+            ABI="$INPUT_ABI"
           else
             VERSION="${GITHUB_REF#refs/tags/v}"
             # Source of truth: src/meta.json. Falls back to 10.11.9.0 if absent.
             ABI=$(jq -r '.targetAbi' src/meta.json 2>/dev/null || echo '10.11.9.0')
             [[ -z "$ABI" || "$ABI" == "null" ]] && ABI='10.11.9.0'
           fi
+          # Strict X.Y.Z.W validation — rejects anything with shell metacharacters.
+          [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || { echo "Invalid version: $VERSION" >&2; exit 1; }
+          [[ "$ABI" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || { echo "Invalid ABI: $ABI" >&2; exit 1; }
           {
             echo "version=$VERSION"
             echo "abi=$ABI"
           } >> "$GITHUB_OUTPUT"
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
         with:
           dotnet-version: 9.0.x
 
       - name: Cache NuGet
-        uses: actions/cache@v5
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
         with:
           path: ~/.nuget/packages
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
@@ -166,7 +179,7 @@ jobs:
 
       - name: Create GitHub Release
         id: gh_release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           name: NoPayNoPlay ${{ steps.ver.outputs.version }}
@@ -183,16 +196,32 @@ jobs:
 
       - name: Commit manifest
         if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
           git checkout main
           git add manifest.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: publish ${{ steps.ver.outputs.version }} in manifest [skip ci]"
-            git push origin HEAD:main
+          if git diff --cached --quiet; then
+            echo "manifest.json unchanged; nothing to commit"
+            exit 0
           fi
+          git commit -m "chore: publish ${VERSION} in manifest [skip ci]"
+          # Resilient push: if another release landed on main first, rebase and retry
+          # so neither manifest entry is lost (the singleton concurrency group makes
+          # this rare, but this is the safety net).
+          for attempt in 1 2 3 4 5; do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            echo "push rejected (attempt ${attempt}); rebasing onto origin/main"
+            git pull --rebase origin main
+          done
+          echo "manifest push failed after retries" >&2
+          exit 1
 
       - name: Job summary
         run: |

@@ -143,6 +143,7 @@
 
   "common.deletedUser": "(excluído)",
   "common.close": "Fechar",
+  "common.loading": "A carregar…",
   "admin.status.ftMissing": "Plugin File Transformation não detectado — a interface do usuário (botão no cabeçalho, banner, modal) só aparecerá após instalação e reinício do servidor.",
   "admin.status.ftOk": "Plugin File Transformation detectado — a interface do usuário está ativa.",
 
@@ -198,6 +199,7 @@
   "user.modal.promo.invalid": "Código inválido ou já utilizado.",
   "user.modal.method.paypal": "Pagar com PayPal",
   "user.modal.method.lydia": "Pagar com Lydia",
+  "user.modal.method.donateWith": "Doar via {method}",
   "user.toast.dismiss": "Fechar",
 
   "admin.tabs.promo": "Códigos promocionais",
@@ -220,11 +222,13 @@
   "admin.promo.col.uses": "Usos",
   "admin.promo.col.expires": "Expira",
   "admin.promo.col.actions": "Ações",
+  "admin.promo.empty": "Nenhum código promocional ainda.",
+  "admin.promo.col.created": "Criado em",
   "admin.promo.unlimited": "Ilimitado",
   "admin.promo.never": "Nunca",
   "admin.promo.created": "Código criado.",
   "admin.promo.duplicate": "Já existe um código com esse nome.",
-  "admin.promo.invalid": "Código inválido (3–32 letras, dígitos, _ ou -).",
+  "admin.promo.invalid": "Código inválido (6–32 letras, dígitos, _ ou -).",
   "admin.promo.deleted": "Código excluído.",
   "admin.promo.deleteConfirm": "Excluir este código? As resgates existentes são mantidos.",
 
