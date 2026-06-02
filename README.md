@@ -68,15 +68,6 @@ You self-host Jellyfin for your family / friends / housemates and you'd like the
 
 ### 🎬 Quick demo
 
-<p align="center">
-  <a href="docs/screenshots/demo.mp4">
-    <img src="https://img.shields.io/badge/%F0%9F%8E%AC-Watch%20demo-EA4AAA?style=for-the-badge" alt="Watch demo" />
-  </a>
-  <a href="https://github.com/alexisometric/nopaynoplay/issues/new?labels=enhancement&template=feature_request.yml">
-    <img src="https://img.shields.io/badge/%F0%9F%92%A1-Request%20feature-00A4DC?style=for-the-badge" alt="Request feature" />
-  </a>
-</p>
-
 ---
 
 ## 📦 Installation
@@ -180,7 +171,7 @@ flowchart LR
     B -->|New account| C[Free trial]
     B -->|Existing account| D[Check state]
 
-    E[Scheduled task<br/>every 12h] --> F{Evaluate states}
+    E["Scheduled task\nevery 12h"] --> F{Evaluate states}
     F -->|Warning window| G[Bell notification]
     F -->|Grace expired| H[UserPolicyEnforcer]
     H --> I[Save policy snapshot]
