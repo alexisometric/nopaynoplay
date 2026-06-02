@@ -179,7 +179,7 @@ flowchart LR
     H --> K[Stop active sessions]
 
     L[Admin records payment] --> B
-    M[User says "I just paid"] --> N[Pending claim]
+    M[User says I just paid] --> N[Pending claim]
     N -->|Admin confirms| B
     O[User redeems code] --> B
 
