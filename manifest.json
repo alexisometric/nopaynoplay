@@ -11,10 +11,10 @@
       {
         "version": "1.2.6.0",
         "changelog": "See release notes at https://github.com/alexisometric/nopaynoplay/releases/tag/v1.2.6.0",
-        "targetAbi": "10.11.9.0",
+        "targetAbi": "10.11.10.0",
         "sourceUrl": "https://github.com/alexisometric/nopaynoplay/releases/download/v1.2.6.0/nopaynoplay_1.2.6.0.zip",
-        "checksum": "ae110f3da4e4aa202adad2268e057006",
-        "timestamp": "2026-06-02T12:13:22Z"
+        "checksum": "ddf9508e2174bfe6f107366a41f17cb1",
+        "timestamp": "2026-06-02T12:28:38Z"
       },
       {
         "version": "1.2.5.0",
