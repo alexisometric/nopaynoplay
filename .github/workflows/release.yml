@@ -234,3 +234,22 @@ jobs:
             echo "- SHA256: \`${{ steps.sum.outputs.sha256 }}\`"
             echo "- URL: ${{ steps.gh_release.outputs.url }}"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # ── Optional social announcement ──────────────────────────────────────
+      # Uncomment and configure secrets to auto-tweet / toot every release.
+      #
+      # secrets required:
+      #   TWITTER_CONSUMER_KEY, TWITTER_CONSUMER_SECRET,
+      #   TWITTER_ACCESS_TOKEN, TWITTER_ACCESS_TOKEN_SECRET
+      #
+      # - name: Tweet release
+      #   uses: ethomson/send-tweet-action@v1
+      #   with:
+      #     status: >
+      #       🚀 NoPayNoPlay ${{ steps.ver.outputs.version }} is out!
+      #       Track manually-validated subscriptions in Jellyfin.
+      #       #jellyfin #plugin #opensource #selfhosted
+      #     consumer-key: ${{ secrets.TWITTER_CONSUMER_KEY }}
+      #     consumer-secret: ${{ secrets.TWITTER_CONSUMER_SECRET }}
+      #     access-token: ${{ secrets.TWITTER_ACCESS_TOKEN }}
+      #     access-token-secret: ${{ secrets.TWITTER_ACCESS_TOKEN_SECRET }}

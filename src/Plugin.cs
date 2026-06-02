@@ -145,7 +145,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             EmbeddedResourcePath = $"{GetType().Namespace}.Web.config.html",
             EnableInMainMenu = true,
             MenuSection = "server",
-            MenuIcon = "monetization_on"
+            MenuIcon = "payment"
         };
         yield return new PluginPageInfo
         {

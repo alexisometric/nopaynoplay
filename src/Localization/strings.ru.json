@@ -235,6 +235,7 @@
   "user.modal.section.tiers": "Выберите тариф",
   "user.modal.tier.popular": "Лучшее предложение",
   "user.modal.tier.perMonth": "{price} / мес.",
+  "user.modal.tier.save": "Сэкономьте {percent}%",
   "user.modal.tier.months": "{n} мес.",
   "user.modal.copyNote": "Копировать",
   "user.modal.copyNote.done": "Скопировано в буфер обмена.",

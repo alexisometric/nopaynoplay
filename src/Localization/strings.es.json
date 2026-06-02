@@ -235,6 +235,7 @@
   "user.modal.section.tiers": "Elige una formulario",
   "user.modal.tier.popular": "Mejor oferta",
   "user.modal.tier.perMonth": "{price} / mes",
+  "user.modal.tier.save": "Ahorra {percent}%",
   "user.modal.tier.months": "{n} mes(es)",
   "user.modal.copyNote": "Copiar",
   "user.modal.copyNote.done": "Copiado al portapapeles.",

@@ -235,6 +235,7 @@
   "user.modal.section.tiers": "Wähle ein Paket",
   "user.modal.tier.popular": "Bestes Angebot",
   "user.modal.tier.perMonth": "{price} / Monat",
+  "user.modal.tier.save": "Spare {percent}%",
   "user.modal.tier.months": "{n} Monat(e)",
   "user.modal.copyNote": "Kopieren",
   "user.modal.copyNote.done": "In die Zwischenablage kopiert.",

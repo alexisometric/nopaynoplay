@@ -263,12 +263,18 @@
         }
     }
 
-    // Shows a brief "Loading…" placeholder for lazy-loaded tabs, but only when the
-    // target is still empty — so revisiting a tab doesn't flicker its content.
+    // Shows a skeleton loading placeholder for lazy-loaded tabs.
+    // Only shows when the target is still empty to avoid flicker on revisit.
     function setBusy(page, sel) {
         var el = page.querySelector(sel);
-        if (el && !el.querySelector('table')) {
-            el.innerHTML = '<div class="npnp-empty">' + escapeHtml(t('common.loading', 'Loading…')) + '</div>';
+        if (el && !el.querySelector('table') && !el.querySelector('.npnp-skeleton')) {
+            el.innerHTML = '<div class="npnp-skeleton" aria-label="' + escapeHtml(t('common.loading', 'Loading…')) + '">'
+                + '<div class="npnp-skeleton-row"></div>'
+                + '<div class="npnp-skeleton-row"></div>'
+                + '<div class="npnp-skeleton-row"></div>'
+                + '<div class="npnp-skeleton-row"></div>'
+                + '<div class="npnp-skeleton-row"></div>'
+                + '</div>';
         }
     }
 
@@ -1267,6 +1273,9 @@
         if (tab === 'tiers') { loadTiers(page).then(function () { snapshotSavedState(); }); }
         if (tab === 'tags') { loadTags(page).then(function () { snapshotSavedState(); }); }
         if (tab === 'audit') loadAudit(page);
+        if (tab === 'settings') {
+            setTimeout(function () { bindThemePreview(page); }, 100);
+        }
     }
 
     function bindTabs(page) {
@@ -1541,10 +1550,13 @@
     function bindTestMode(page) {
         function refreshUrl() {
             var s = page.querySelector('#npnpTestState').value || 'warningSoon';
+            var theme = page.querySelector('#npnpTestTheme').value || '';
             var url = window.location.origin + '/web/index.html?npnpTest=' + encodeURIComponent(s);
+            if (theme) url += '&npnpTestTheme=' + encodeURIComponent(theme);
             page.querySelector('#npnpTestUrl').value = url;
         }
         page.querySelector('#npnpTestState').addEventListener('change', refreshUrl);
+        page.querySelector('#npnpTestTheme').addEventListener('change', refreshUrl);
         page.querySelector('#npnpTestPreview').addEventListener('click', function () {
             refreshUrl();
             window.open(page.querySelector('#npnpTestUrl').value, '_blank', 'noopener');
@@ -1556,6 +1568,40 @@
             flash(page, t('admin.test.copied', 'URL copied!'));
         });
         refreshUrl();
+    }
+
+    function bindThemePreview(page) {
+        function updateSwatches() {
+            var style = getComputedStyle(page.querySelector('#NoPayNoPlayConfigPage'));
+            var accent = style.getPropertyValue('--npnp-accent').trim() || '#00a4dc';
+            var surface1 = style.getPropertyValue('--npnp-surface-1').trim();
+            var border = style.getPropertyValue('--npnp-border').trim();
+            var textColor = style.getPropertyValue('color').trim();
+            var radius = style.getPropertyValue('--npnp-radius').trim();
+
+            var swAccent = page.querySelector('#npnpSwatchAccent');
+            if (swAccent) swAccent.style.background = accent;
+            var swSurface = page.querySelector('#npnpSwatchSurface');
+            if (swSurface) swSurface.style.background = surface1 || 'transparent';
+            var swBorder = page.querySelector('#npnpSwatchBorder');
+            if (swBorder) swBorder.style.background = border || 'transparent';
+            var swText = page.querySelector('#npnpSwatchText');
+            if (swText) swText.style.background = textColor;
+
+            var swRadius = page.querySelector('#npnpSwatchRadius');
+            if (swRadius) {
+                var px = parseFloat(radius);
+                swRadius.textContent = Math.round(px) + 'px';
+                swRadius.style.borderRadius = radius;
+            }
+        }
+        // Initial update + re-run on any style change (e.g. theme toggle)
+        updateSwatches();
+        // Observe for dynamic style changes
+        try {
+            var obs = new MutationObserver(updateSwatches);
+            obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+        } catch (_) {}
     }
 
     function bindFilters(page) {

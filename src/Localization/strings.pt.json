@@ -235,6 +235,7 @@
   "user.modal.section.tiers": "Escolha um plano",
   "user.modal.tier.popular": "Melhor oferta",
   "user.modal.tier.perMonth": "{price} / mês",
+  "user.modal.tier.save": "Economize {percent}%",
   "user.modal.tier.months": "{n} mês(es)",
   "user.modal.copyNote": "Copiar",
   "user.modal.copyNote.done": "Copiado para a área de transferência.",

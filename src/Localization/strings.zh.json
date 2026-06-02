@@ -235,6 +235,7 @@
   "user.modal.section.tiers": "选择套餐",
   "user.modal.tier.popular": "最佳选择",
   "user.modal.tier.perMonth": "{price} / 月",
+  "user.modal.tier.save": "节省 {percent}%",
   "user.modal.tier.months": "{n} 个月",
   "user.modal.copyNote": "复制",
   "user.modal.copyNote.done": "已复制到剪贴板。",

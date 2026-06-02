@@ -8,13 +8,38 @@
 
 *No pay, no play — without ever deleting the account.*
 
+[![Stars](https://img.shields.io/github/stars/alexisometric/nopaynoplay?style=social)](https://github.com/alexisometric/nopaynoplay/stargazers)
+[![Downloads](https://img.shields.io/github/downloads/alexisometric/nopaynoplay/total?color=success&logo=github)](https://github.com/alexisometric/nopaynoplay/releases)
 [![CI](https://github.com/alexisometric/nopaynoplay/actions/workflows/ci.yml/badge.svg)](https://github.com/alexisometric/nopaynoplay/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/alexisometric/nopaynoplay?display_name=tag&sort=semver)](https://github.com/alexisometric/nopaynoplay/releases/latest)
 [![Jellyfin](https://img.shields.io/badge/Jellyfin-10.11.x-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org)
+[![ElegantFin](https://img.shields.io/badge/ElegantFin-Ready-756fe2?logo=jellyfin&logoColor=white)](https://github.com/lscambo13/ElegantFin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
+[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](docs/DEVELOPMENT.md)
+
+<a href="https://ko-fi.com/alexisometric">
+  <img src="https://img.shields.io/badge/Support%20the%20plugin-%E2%98%95%20Buy%20me%20a%20coffee-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white" />
+</a>
 
 </div>
+
+<!-- Screenshots à ajouter ici -->
+
+---
+
+## 📋 Table of Contents
+
+- [What is it for?](#-what-is-it-for)
+- [Installation](#-installation)
+- [Quick start](#-quick-start)
+- [Features](#-features)
+- [How it works](#-how-it-works)
+- [User guide](#-user-guide)
+- [REST API](#-rest-api)
+- [Localization](#-localization)
+- [Development](#-development)
+- [Documentation](#-documentation)
+- [FAQ](#-faq)
 
 ---
 
@@ -24,83 +49,126 @@ You self-host Jellyfin for your family / friends / housemates and you'd like the
 
 **NoPayNoPlay** automates the tedious parts:
 
-- 📅 keeps track of who owes what and when,
-- 🔔 reminds users a few days before expiry (J-3 / J-1 / J0) via the Jellyfin notification bell,
-- 🚫 **disables playback** (but never the account) on expiry,
-- ✅ you validate payments manually when the money lands on PayPal / Lydia,
-- 🙋 users can declare **“I just paid”** — admins get a pending badge with one-click confirm/reject,
-- 🎁 **promo / referral codes** to grant free months,
-- 🆓 free 7-day trial on every new account,
-- 🛡️ manual exemption for family / VIP guests.
-
-It is designed to be **simple, transparent and reversible**: no external database, no outbound calls, everything lives in Jellyfin's standard XML configuration.
-
----
-
-## 🌍 Localization
-
-The plugin is **English-first** with a built-in i18n system.
-
-- Translation bundles are embedded JSON resources (`src/Localization/strings.{lang}.json`).
-- The active language is resolved from (in order): admin override (`UiCultureOverride` setting) → `?lang=` query → `Accept-Language` header → **Jellyfin server UI culture** → `en` fallback.
-- Bundled languages: **English** (`en`), **French** (`fr`), **Spanish** (`es`), **German** (`de`), **Italian** (`it`), **Portuguese** (`pt`), **Russian** (`ru`), **Chinese** (`zh`).
-- Adding a new language is just dropping a new `strings.{code}.json` next to the others and listing it as an `EmbeddedResource` in the csproj.
-
----
-
-## 🚀 Features
-
-| Admin side | User side |
+| What it does | How |
 |---|---|
-| Configuration page integrated into Jellyfin | 💳 button in the header opens a redesigned modal |
-| Members tab with color-coded dashboard | Banner on warning / grace / blocked, dismissible during the warning window |
-| "Record payment" button + transaction log (edit / delete) | Clickable PayPal.me / Lydia links with amount preview |
-| **Pending claim** badge with one-click confirm / reject | **“I just paid”** button (rate-limited to once / 30 min) |
-| **Promo / referral codes** (max uses, expiry, free months) | Promo redemption directly from the modal |
-| Activity tab + CSV export + bulk actions | In-app toasts for feedback (success / cooldown / error) |
-| "Exempt" / "Reset trial" / monthly stats | Account never deleted, only playback disabled |
-| Scheduled task every 12 h | Fine-grained Jellyfin bell notifications: J-3 / J-1 / J0 / grace expired |
-| Auto config backup (retention 10) | Anniversary day preserved across renewals |
-| Configurable price, currency, grace period, trial, warning days | Integer prices displayed without trailing `.00` |
-| **Subscription tiers** with highlighted “best deal” | Tier picker in the modal (1 / 3 / 6 / 12 months…) |
-| **Member tags** with per-tag price overrides | Donation invitation in the modal (paying *and* exempt users) |
-| **Audit log** (last 500 admin actions) | Reinforced compatibility banner if File Transformation plugin is missing |
-| **12-month inline revenue chart** on the Members tab | Inline **SVG bar chart** rendered without external libraries |
-| Public `/Public/Health` probe + hardened rate-limit on code redemption | Hash deeplink `#!/npnp` to open the modal directly |
-| 8-language i18n (en/fr/es/de/it/pt/ru/zh) + Jellyfin language follow | Full English / French / Spanish / German / Italian / Portuguese / Russian / Chinese support |
+| 📅 **Tracks subscriptions** | Automatically assigns a free trial on first sign-in and tracks expiry dates |
+| 🔔 **Reminds users** | Sends Jellyfin bell notifications at J-3, J-1, J0, and when grace expires |
+| 🚫 **Blocks playback** | Disables playback on expiry — **without deleting the account** |
+| ✅ **Manual payment validation** | You check PayPal/Lydia, then click "Record payment" in the admin panel |
+| 🙋 **Self-service** | Users click **"I just paid"** — admins get a pending badge to confirm or reject |
+| 🎁 **Promo / referral codes** | Grant free months via shareable codes with configurable limits and expiry |
+| 🆓 **Free trial** | Configurable trial days (default: 7) on every new account |
+| 🛡️ **Exemption** | Manual exemption for family, VIPs, or admins (admins are always exempt) |
 
-> ℹ️ Administrators are **always** automatically exempt.
+> **No external database. No outbound calls. No Stripe. No subscription to manage.**
+>
+> Everything lives in Jellyfin's standard XML configuration — simple, transparent, reversible.
 
 ---
 
-## 📦 Installation (recommended)
+### 🎬 Quick demo
 
-### 1. Add the repository in Jellyfin
+<p align="center">
+  <a href="docs/screenshots/demo.mp4">
+    <img src="https://img.shields.io/badge/%F0%9F%8E%AC-Watch%20demo-EA4AAA?style=for-the-badge" alt="Watch demo" />
+  </a>
+  <a href="https://github.com/alexisometric/nopaynoplay/issues/new?labels=enhancement&template=feature_request.yml">
+    <img src="https://img.shields.io/badge/%F0%9F%92%A1-Request%20feature-00A4DC?style=for-the-badge" alt="Request feature" />
+  </a>
+</p>
+
+---
+
+## 📦 Installation
+
+### Prerequisites
+
+| Requirement | Details |
+|---|---|
+| **Jellyfin** | Version 10.11.x or compatible |
+| **File Transformation** *(recommended)* | Required for the user UI (banner, modal, header button) — [install from GitHub](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) |
+
+### Recommended: via repository
 
 **Dashboard → Plugins → Repositories → ➕**
 
 | Field | Value |
 |---|---|
-| **Name** | `NoPayNoPlay` |
-| **URL** | `https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/manifest.json` |
+| **Repository Name** | `NoPayNoPlay` |
+| **Repository URL** | `https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/manifest.json` |
 
-### 2. Install the plugin
+Then go to **Catalog → NoPayNoPlay → Install**, restart Jellyfin, and install the [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) companion plugin.
 
-**Catalog → NoPayNoPlay → Install**, then restart Jellyfin.
+### Alternative: manual ZIP
 
-### 3. (Recommended) Install the companion plugin
+1. Download the latest release ZIP from the [releases page](https://github.com/alexisometric/nopaynoplay/releases)
+2. Extract to Jellyfin's `plugins/` directory
+3. Restart Jellyfin
 
-The user-facing UI (header button, banner, modal) is injected through [**File Transformation**](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) — the official mechanism to safely modify `index.html`. Without it, the plugin still works but the user UI does not appear.
+> 📖 **Full installation guide → [docs/INSTALL.md](docs/INSTALL.md)**
 
-### 4. Configure
+---
 
-**Dashboard → Plugins → NoPayNoPlay**:
+## 🚀 Quick start
 
-- monthly price, currency, grace days, trial days, warning days,
-- PayPal.me and Lydia links, free-form note,
-- **Members** tab (default) for per-user view + quick actions,
-- **Promo codes** tab to issue referral / promo codes,
-- **Activity** tab with CSV export and bulk operations.
+After installing and restarting Jellyfin:
+
+1. Go to **Dashboard → Plugins → NoPayNoPlay**
+2. Set your **monthly price** and **currency**
+3. Add your **PayPal.me** and/or **Lydia** links
+4. Configure **grace days**, **trial days**, and **warning window** to your preference
+5. Click **Save**
+6. *(Optional)* Go to the **Tiers** tab to create subscription packages
+7. *(Optional)* Go to the **Tags** tab to create member groups with custom pricing
+
+> ⚠️ The user UI (💳 button, banner, modal) requires the **File Transformation** plugin. Without it, only the server-side features (enforcement, notifications, admin dashboard) work.
+
+> 📖 **Full configuration reference → [docs/CONFIGURATION.md](docs/CONFIGURATION.md)**
+
+---
+
+## 🚀 Features
+
+### 👤 For admins
+
+| Feature | Description |
+|---|---|
+| **Members dashboard** | Color-coded member list with search, filters, sort, and pagination |
+| **Revenue stats** | Monthly revenue + 12-month inline SVG bar chart |
+| **Record payments** | One-click payment recording with transaction history (edit/delete) |
+| **Pending claims** | Badge when a user says "I just paid" — confirm or reject in one click |
+| **Bulk actions** | Select multiple users to pay, exempt, reset, or notify in batch |
+| **Promo codes** | Create codes with configurable months, max uses, and expiry |
+| **Subscription tiers** | Define packages (1/3/6/12 months) with automatic savings display |
+| **Member tags** | Group members with per-tag price overrides |
+| **Activity log** | Transaction history with date range filters and CSV export |
+| **Audit log** | Last 500 admin actions recorded with timestamp and details |
+| **Notifications** | Automated bell notifications at configurable milestones |
+| **Exemption** | Mark users as exempt (never blocked) |
+| **Auto-backup** | Configuration backed up automatically on every save (retention: 10) |
+| **Skeleton loading** | Animated shimmer placeholders while tables load |
+| **Live theme preview** | Settings page shows live swatches of detected colours |
+| **ElegantFin support** | Automatic adaptation (accent, radius, blur, glassmorphism) |
+| **Theme test selector** | Preview user UI with Jellyfin or ElegantFin theme via URL param |
+
+### 👤 For users
+
+| Feature | Description |
+|---|---|
+| **💳 Header button** | Opens the subscription modal from anywhere in Jellyfin |
+| **Subscription banner** | Sticky banner on warning, grace, and blocked states |
+| **Hero card** | Visual status with countdown and progress gauge |
+| **Tier picker** | Choose a plan with per-month savings shown |
+| **Payment links** | Clickable PayPal.me / Lydia with pre-filled amount |
+| **"I just paid"** | Notify the admin (rate-limited to once per 30 min) |
+| **Promo redemption** | Enter a code directly in the modal |
+| **Payment history** | Full transaction log with "Show all" expand |
+| **Notifications** | Bell notifications at J-3, J-1, J0, and grace expired |
+| **QR codes** | QR codes for payment links (vendored generator, no CDN) |
+| **Hash deeplink** | `#!/npnp` opens the modal directly |
+| **Test mode** | Preview any state with `?npnpTest=STATE` |
+
+> ℹ️ **Administrators are always automatically exempt from enforcement.**
 
 ---
 
@@ -108,136 +176,150 @@ The user-facing UI (header button, banner, modal) is injected through [**File Tr
 
 ```mermaid
 flowchart LR
-    A[User signs in] -->|Jellyfin event| B(SubscriptionService)
-    B -->|new account| C[7-day trial]
-    D[Scheduled task 12h] --> E{State}
-    E -->|warning| F[Notification bell]
-    E -->|expired + grace| G[UserPolicyEnforcer<br/>disables playback]
-    H[Admin records payment] --> B
-    B --> I[(Jellyfin XML config<br/>+ backups)]
+    A[User signs in] -->|Authentication event| B(SubscriptionService)
+    B -->|New account| C[Free trial]
+    B -->|Existing account| D[Check state]
+
+    E[Scheduled task<br/>every 12h] --> F{Evaluate states}
+    F -->|Warning window| G[Bell notification]
+    F -->|Grace expired| H[UserPolicyEnforcer]
+    H --> I[Save policy snapshot]
+    H --> J[Disable playback]
+    H --> K[Stop active sessions]
+
+    L[Admin records payment] --> B
+    M[User says "I just paid"] --> N[Pending claim]
+    N -->|Admin confirms| B
+    O[User redeems code] --> B
+
+    B --> P[(Jellyfin XML config)]
+    P -->|Auto-backup| Q[config/NoPayNoPlay.backups/]
 ```
 
-- **No external database.** Everything is serialized in the Jellyfin plugin XML configuration.
-- **Reversible.** Before blocking a user, their `UserPolicy` is snapshotted. Removing the block restores it as-is.
-- **Anti-spam.** Notifications are deduped per (state, milestone) so a user gets at most one J-3, J-1, J0 and grace-expired notice per cycle.
-- **No outbound calls.** All assets are served by the plugin itself — nothing reaches third-party services.
+### Subscription lifecycle
+
+```
+First sign-in → Free trial (default: 7 days)
+    ↓
+Ok ──(warning window)──→ WarningSoon ──(expired)──→ InGrace ──(grace over)──→ Blocked
+    │                                                                              │
+    └────────────────── Payment received ──────────────────────────────────────────┘
+```
+
+### Key design principles
+
+- **No external database** — everything is in Jellyfin's XML configuration
+- **Reversible** — policy snapshots are saved before blocking, restored as-is on unblock
+- **Anti-spam** — notifications are deduped per milestone, at most one per cycle
+- **No outbound calls** — all assets are served by the plugin itself
+- **Thread-safe** — all config mutations go through a static lock
+
+> 📖 **Full architecture documentation → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+
+---
+
+## 🙋 User guide
+
+If you're a **user** of this plugin (not an admin), here's what you need to know:
+
+| Topic | Summary |
+|---|---|
+| **Header button 💳** | Click to open your subscription modal |
+| **Banner** | Sticky bar appears when your subscription is about to expire or has expired |
+| **Paying** | Click PayPal/Lydia links in the modal, send the money, then click **"I just paid"** |
+| **Promo codes** | Enter a code in the modal to get free months |
+| **Notifications** | You'll get Jellyfin bell reminders at J-3, J-1, J0 |
+| **Blocked** | Playback stops but your account stays — pay to restore immediately |
+| **Deeplink** | `#!/npnp` opens the modal from any page |
+
+> 📖 **Full user guide → [docs/USER_GUIDE.md](docs/USER_GUIDE.md)**
 
 ---
 
 ## 🔌 REST API
 
-All routes live under `/NoPayNoPlay/`. Admin routes require `RequiresElevation`.
+All routes under `/NoPayNoPlay/`.
 
 | Method | URL | Auth | Description |
 |---|---|---|---|
-| `GET`    | `/NoPayNoPlay/Me` | user | Current user state, payment info and translation bundle |
-| `POST`   | `/NoPayNoPlay/Me/MarkPaid` | user | Declares a payment is incoming (rate-limited 30 min) |
-| `POST`   | `/NoPayNoPlay/Me/RedeemCode` | user | Redeems a promo / referral code |
-| `GET`    | `/NoPayNoPlay/Strings` | public | Active language + translation bundle |
-| `GET`    | `/NoPayNoPlay/Users` | admin | Enriched subscription list |
-| `POST`   | `/NoPayNoPlay/Users/{id}/Pay` | admin | Records a payment, extends expiry |
-| `POST`   | `/NoPayNoPlay/Users/{id}/ConfirmPending` | admin | Confirms a user's pending claim and records the payment |
-| `POST`   | `/NoPayNoPlay/Users/{id}/RejectPending` | admin | Rejects a pending claim |
-| `POST`   | `/NoPayNoPlay/Users/{id}/Exempt` | admin | Toggle exemption |
-| `POST`   | `/NoPayNoPlay/Users/{id}/Reset` | admin | Reset to a fresh trial |
-| `GET`    | `/NoPayNoPlay/PromoCodes` | admin | List promo codes |
-| `POST`   | `/NoPayNoPlay/PromoCodes` | admin | Create a promo code |
-| `DELETE` | `/NoPayNoPlay/PromoCodes/{id}` | admin | Delete a promo code |
-| `GET`    | `/NoPayNoPlay/Settings` | admin | Global settings |
-| `POST`   | `/NoPayNoPlay/Settings` | admin | Update settings |
-| `GET`    | `/NoPayNoPlay/Web/client.js` | public | Injected client script |
+| `GET` | `/NoPayNoPlay/Me` | user | Current user state, payment info, translations |
+| `POST` | `/NoPayNoPlay/Me/MarkPaid` | user | Declare a payment (30 min rate limit) |
+| `POST` | `/NoPayNoPlay/Me/RedeemCode` | user | Redeem a promo code |
+| `GET` | `/NoPayNoPlay/Strings` | public | Translation bundle |
+| `GET` | `/NoPayNoPlay/Users` | admin | Subscription list |
+| `POST` | `/NoPayNoPlay/Users/{id}/Pay` | admin | Record a payment |
+| `POST` | `/NoPayNoPlay/Users/{id}/ConfirmPending` | admin | Confirm pending claim |
+| `POST` | `/NoPayNoPlay/Users/{id}/RejectPending` | admin | Reject pending claim |
+| `POST` | `/NoPayNoPlay/Users/{id}/Exempt` | admin | Toggle exemption |
+| `POST` | `/NoPayNoPlay/Users/{id}/Reset` | admin | Reset to fresh trial |
+| `GET` | `/NoPayNoPlay/Users/Export.csv` | admin | Members CSV export |
+| `POST` | `/NoPayNoPlay/Users/BulkPay` | admin | Bulk record payment |
+| `GET` | `/NoPayNoPlay/Activity` | admin | Payment activity log |
+| `GET` | `/NoPayNoPlay/Activity/Export.csv` | admin | Activity CSV export |
+| `GET` | `/NoPayNoPlay/Stats` | admin | Revenue statistics |
+| `GET` | `/NoPayNoPlay/Settings` | admin | Global settings |
+| `POST` | `/NoPayNoPlay/Settings` | admin | Update settings |
+| `GET` | `/NoPayNoPlay/PromoCodes` | admin | List promo codes |
+| `POST` | `/NoPayNoPlay/PromoCodes` | admin | Create promo code |
+| `DELETE` | `/NoPayNoPlay/PromoCodes/{id}` | admin | Delete promo code |
+| `GET` | `/NoPayNoPlay/Status` | admin | Plugin runtime status |
+| `GET` | `/NoPayNoPlay/Health` | public | Health probe |
+| `GET` | `/NoPayNoPlay/Diagnostics` | admin | FT registration diagnostics |
+| `POST` | `/NoPayNoPlay/Diagnostics/Retry` | admin | Retry FT registration |
+
+> 📖 **Full API reference with request/response schemas → [docs/API.md](docs/API.md)**
+
+---
+
+## 🌍 Localization
+
+The plugin ships with **8 languages**:
+
+🇬🇧 English · 🇫🇷 French · 🇪🇸 Spanish · 🇩🇪 German · 🇮🇹 Italian · 🇵🇹 Portuguese · 🇷🇺 Russian · 🇨🇳 Chinese
+
+The active language is resolved from (in order):
+1. Admin override (`UiCultureOverride` setting)
+2. `?lang=` query parameter
+3. `Accept-Language` HTTP header
+4. Jellyfin server UI culture
+5. English fallback
+
+> Adding a new language: just drop a `strings.{code}.json` in `src/Localization/` and add an `EmbeddedResource` entry in the `.csproj`.
 
 ---
 
 ## 🛠️ Development
 
-### Prerequisites
-
-- .NET SDK **9.0+**
-- Jellyfin Server 10.11.x for local testing (Docker or native)
-
-### Build
-
 ```bash
+# Clone & restore
 git clone https://github.com/alexisometric/nopaynoplay.git
 cd nopaynoplay
 dotnet restore
+
+# Build
 dotnet build src/Jellyfin.Plugin.NoPayNoPlay.csproj -c Release
-```
 
-Output DLL: `src/bin/Release/net9.0/Jellyfin.Plugin.NoPayNoPlay.dll`
-
-### Tests
-
-```bash
+# Test
 dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj
+
+# Package
+./scripts/build.sh 1.2.7.0
 ```
 
-### Local packaging (Jellyfin zip)
-
-```bash
-./scripts/build.sh 1.1.0.0
-# -> artifacts/nopaynoplay_1.1.0.0.zip + .md5
-```
-
-### Structure
-
-```
-src/
-  ├─ Plugin.cs                   # BasePlugin<PluginConfiguration> entry point
-  ├─ PluginEntryPoint.cs         # File Transformation hook (reflection)
-  ├─ AuthenticationConsumer.cs   # IEventConsumer<AuthenticationResultEventArgs>
-  ├─ Configuration/              # PluginConfiguration, UserSubscription, ...
-  ├─ Localization/               # Localizer + strings.{lang}.json bundles
-  ├─ Services/                   # SubscriptionService, UserPolicyEnforcer
-  ├─ Api/                        # REST controllers
-  ├─ ScheduledTasks/             # EnforcementTask (12h)
-  └─ Web/                        # client.js, config.html, transformer
-tests/                           # xUnit
-scripts/                         # build.sh, update-manifest.sh
-.github/workflows/               # ci.yml, release.yml
-```
+> 📖 **Full development guide → [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**
 
 ---
 
-##  Reporting bugs / feature requests
+## 📚 Documentation
 
-Before opening an issue, please check it doesn't already exist in [Issues](https://github.com/alexisometric/nopaynoplay/issues).
-
-| Type | Link |
+| File | Description |
 |---|---|
-| 🐞 Bug | [Open a bug](https://github.com/alexisometric/nopaynoplay/issues/new?labels=bug&template=bug_report.yml) |
-| 💡 Feature | [Suggest an enhancement](https://github.com/alexisometric/nopaynoplay/issues/new?labels=enhancement&template=feature_request.yml) |
-| ❓ Question | [Start a discussion](https://github.com/alexisometric/nopaynoplay/discussions) |
-
-For a bug, please include:
-
-- Jellyfin and NoPayNoPlay versions,
-- relevant log (`<jellyfin-data>/log/jellyfin*.log`),
-- steps to reproduce.
-
----
-
-## 🤝 Contributing
-
-Contributions are very welcome! Standard workflow:
-
-1. Fork the repo
-2. Create a branch: `git checkout -b feat/my-cool-idea`
-3. Commit with [Conventional Commits](https://www.conventionalcommits.org/) messages: `feat:`, `fix:`, `docs:`, `chore:`, `test:`...
-4. Make sure `dotnet test` passes
-5. Open a Pull Request against `main` describing what changes and why
-
-Beginner-friendly tasks live under the [`good first issue`](https://github.com/alexisometric/nopaynoplay/labels/good%20first%20issue) label.
-
-### Style
-
-- C#: Microsoft conventions (4 spaces, `PascalCase`, `var` when the type is obvious)
-- JS / HTML / JSON / YAML: 2 spaces
-- Any new business logic must be covered by an xUnit test
-- All new user-facing strings must go through the `Localizer` (English bundle is the source of truth)
-
-See also [CONTRIBUTING.md](CONTRIBUTING.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+| **[docs/INSTALL.md](docs/INSTALL.md)** | Step-by-step installation guide (all methods, troubleshooting) |
+| **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** | Full admin configuration reference |
+| **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** | What users see and how to use it |
+| **[docs/API.md](docs/API.md)** | Complete REST API reference with schemas |
+| **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** | Architecture overview, state machine, design decisions |
+| **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)** | Build, test, package, and contribute |
 
 ---
 
@@ -293,6 +375,33 @@ If you find a vulnerability, **please do not open a public issue**. See [SECURIT
 
 ---
 
+## ☕ Support the project
+
+If NoPayNoPlay saves you time or helps you manage your server, consider supporting its development:
+
+<p align="center">
+  <a href="https://ko-fi.com/alexisometric">
+    <img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-%E2%98%95%20ko--fi.com%2Falexisometric-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" />
+  </a>
+  <a href="https://github.com/sponsors/alexisometric">
+    <img src="https://img.shields.io/badge/GitHub%20Sponsors-%E2%9D%A4%20Sponsor-EA4AAA?style=for-the-badge&logo=github&logoColor=white" />
+  </a>
+</p>
+
+**The best way to help is to ⭐ star the repo** — it takes one click and makes a huge difference in visibility!
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+- **Bug report** → open a [GitHub issue](https://github.com/alexisometric/nopaynoplay/issues)
+- **Feature request** → open a [GitHub issue](https://github.com/alexisometric/nopaynoplay/issues)
+- **Pull request** → fork, branch, commit, PR against `main`
+
+---
+
 ## 📄 License
 
 [MIT](LICENSE) © alexisometric
@@ -301,6 +410,15 @@ If you find a vulnerability, **please do not open a public issue**. See [SECURIT
 
 <div align="center">
 
-If this plugin saves you time, drop a ⭐ on the repo — it really helps!
+⭐ **If this plugin saves you time, drop a star on the repo — it really helps!** ⭐
+
+<br />
+
+<a href="https://github.com/alexisometric/nopaynoplay/stargazers">
+  <img src="https://img.shields.io/github/stars/alexisometric/nopaynoplay?style=social" />
+</a>
+<a href="https://twitter.com/intent/tweet?text=NoPayNoPlay%20-%20Jellyfin%20plugin%20for%20tracking%20manually-validated%20subscriptions&url=https://github.com/alexisometric/nopaynoplay">
+  <img src="https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Fgithub.com%2Falexisometric%2Fnopaynoplay" />
+</a>
 
 </div>

@@ -236,6 +236,7 @@
   "user.modal.section.tiers": "Choisissez votre formule",
   "user.modal.tier.popular": "Meilleure offre",
   "user.modal.tier.perMonth": "{price} / mois",
+  "user.modal.tier.save": "Économisez {percent}%",
   "user.modal.tier.months": "{n} mois",
   "user.modal.copyNote": "Copier",
   "user.modal.copyNote.done": "Copié dans le presse-papier.",
