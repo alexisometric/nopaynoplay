@@ -56,11 +56,11 @@ public class SubscriptionLogicTests
     }
 
     [Fact]
-    public void ApplyPayment_FirstPaymentAnchorsOnExpiryDayNotSignupDay()
+    public void ApplyPayment_AnchorsOnPaymentDay()
     {
         // Regression for the trial -> first-payment over-grant: the signup day (25)
         // differs from the trial-end day. The renewed expiry must anchor on the
-        // current expiry's day, NOT the signup day (which used to add free weeks).
+        // payment date's day (now.Day) — NOT the signup day, and NOT the expiry day.
         var cfg = Config(trial: 7);
         var svc = TestSupport.Service(cfg);
         var uid = Guid.NewGuid();
@@ -80,9 +80,10 @@ public class SubscriptionLogicTests
         svc.ApplyPayment(uid, 10m, "PayPal", 1, string.Empty);
 
         var sub = cfg.Subscriptions.Single(s => s.UserId == uid);
-        Assert.Equal(10, sub.ExpiryDate.Day);    // anchored on expiry day (fixed)
-        Assert.NotEqual(25, sub.ExpiryDate.Day);  // not the signup day (buggy variant)
-        Assert.Equal(SubscriptionService.ComputeNextExpiry(future, 1, future.Day), sub.ExpiryDate);
+        // Anchored on the payment date's day (now.Day), NOT the expiry day (10)
+        // and NOT the signup day (25).
+        Assert.Equal(now.Day, sub.ExpiryDate.Day);
+        Assert.Equal(SubscriptionService.ComputeNextExpiry(future, 1, now.Day), sub.ExpiryDate);
     }
 
     [Fact]

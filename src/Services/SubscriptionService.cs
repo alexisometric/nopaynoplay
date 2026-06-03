@@ -221,13 +221,11 @@ public class SubscriptionService
             else
             {
                 // Regular "current payment": extend from current expiry, or from now
-                // if the subscription has already lapsed. Anchor on baseDate's own
-                // day — NOT the signup day — so the trial -> first-payment transition
-                // neither over-grants (signup day later in the month than the trial
-                // end, which used to add up to ~3 free weeks) nor truncates (signup
-                // day earlier, which used to shave off up to ~1 paid week).
+                // if the subscription has already lapsed. Anchor on the payment date's
+                // own day (now.Day) so that paying on the 15th always extends to the
+                // 15th of the target month, regardless of the current expiry day.
                 DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
-                sub.ExpiryDate = ComputeNextExpiry(baseDate, months, baseDate.Day);
+                sub.ExpiryDate = ComputeNextExpiry(baseDate, months, now.Day);
             }
 
             sub.Transactions.Add(new TransactionEntry
@@ -244,7 +242,6 @@ public class SubscriptionService
             sub.HasPendingPaymentClaim = false;
             sub.PendingPaymentClaimAt = null;
             sub.PendingPaymentMethod = string.Empty;
-            _save();
             return sub;
         }
     }
@@ -256,7 +253,6 @@ public class SubscriptionService
         {
             UserSubscription sub = EnsureUserTracked(userId);
             sub.IsExempt = isExempt;
-            _save();
             return sub;
         }
     }
@@ -272,7 +268,6 @@ public class SubscriptionService
             sub.ExpiryDate = now.AddDays(Math.Max(0, Config.TrialDays));
             sub.LastNotifiedState = SubscriptionState.Ok;
             sub.LastNotificationKey = string.Empty;
-            _save();
             return sub;
         }
     }
@@ -322,31 +317,23 @@ public class SubscriptionService
     /// </summary>
     public DateTime RecomputeExpiry(UserSubscription sub)
     {
-        DateTime now = DateTime.UtcNow;
         DateTime expiry = sub.SubscriptionDate.AddDays(Math.Max(0, Config.TrialDays));
 
         var ordered = sub.Transactions.OrderBy(t => t.Date).ToList();
         foreach (var t in ordered)
         {
             int months = Math.Max(1, t.MonthsAdded);
-            bool isBackfill = (now - t.Date).TotalDays > 1.0;
-            if (isBackfill)
-            {
-                // Anchor on the transaction's own day for backfilled entries — see
-                // ApplyPayment for the rationale (avoids pulling the result earlier
-                // than t.Date + N months when signupDay < t.Date.Day).
-                int backfillAnchor = t.Date.Day;
-                DateTime candidate = ComputeNextExpiry(t.Date, months, backfillAnchor);
-                if (candidate > expiry) expiry = candidate;
-            }
-            else
-            {
-                // Anchor on baseDate's day (mirrors ApplyPayment) so replaying the
-                // history after an edit/delete reproduces the same expiry the live
-                // path produced — no drift between the two.
-                DateTime baseDate = expiry < now ? now : expiry;
-                expiry = ComputeNextExpiry(baseDate, months, baseDate.Day);
-            }
+            // Replay each transaction the same way ApplyPayment handles a regular
+            // (non-backfill) payment: extend from the current expiry, or from the
+            // transaction date if the user was lapsed at that point. Anchor on
+            // the transaction date's own day — mirrors now.Day from ApplyPayment.
+            //
+            // Using t.Date (not the current clock) makes the recompute deterministic:
+            // replaying the same history always yields the same expiry regardless
+            // of when RecomputeExpiry is called. The test at the time of payment
+            // (expiry < now → lapsed) is approximated by expiry < t.Date.
+            DateTime baseDate = expiry < t.Date ? t.Date : expiry;
+            expiry = ComputeNextExpiry(baseDate, months, t.Date.Day);
         }
 
         sub.ExpiryDate = expiry;
@@ -387,7 +374,6 @@ public class SubscriptionService
             }
 
             RecomputeExpiry(sub);
-            _save();
             return true;
         }
     }
@@ -404,7 +390,6 @@ public class SubscriptionService
             int removed = sub.Transactions.RemoveAll(t => t.Id == txId);
             if (removed == 0) return false;
             RecomputeExpiry(sub);
-            _save();
             return true;
         }
     }
@@ -426,7 +411,6 @@ public class SubscriptionService
             {
                 sub.PendingPaymentMethod = sub.PendingPaymentMethod.Substring(0, 50);
             }
-            _save();
             return true;
         }
     }
@@ -441,7 +425,6 @@ public class SubscriptionService
             sub.HasPendingPaymentClaim = false;
             sub.PendingPaymentClaimAt = null;
             sub.PendingPaymentMethod = string.Empty;
-            _save();
         }
     }
 
@@ -470,7 +453,7 @@ public class SubscriptionService
 
             int months = Math.Max(1, promo.MonthsGranted);
             DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
-            sub.ExpiryDate = ComputeNextExpiry(baseDate, months, baseDate.Day);
+            sub.ExpiryDate = ComputeNextExpiry(baseDate, months, now.Day);
             sub.RedeemedPromoCodeIds.Add(promo.Id);
             sub.LastNotifiedState = SubscriptionState.Ok;
             // Re-arm the per-milestone notification dedup so the next J-3/J-1/J0
@@ -487,7 +470,6 @@ public class SubscriptionService
             });
 
             promo.UsedCount++;
-            _save();
             return months;
         }
     }
@@ -542,7 +524,6 @@ public class SubscriptionService
                 normalized = string.Empty;
             }
             sub.Tag = normalized;
-            _save();
             return sub;
         }
     }

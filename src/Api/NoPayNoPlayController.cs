@@ -1079,6 +1079,7 @@ public class NoPayNoPlayController : ControllerBase
             _logger.LogWarning(ex, "NoPayNoPlay: failed to post 'I paid' admin activity for {UserId}", userId);
         }
 
+        _service.Save();
         return Ok(new { ok = true });
     }
 
@@ -1217,6 +1218,7 @@ public class NoPayNoPlayController : ControllerBase
         var sub = _service.EnsureUserTracked(userId);
         _service.Audit(ResolveActor(), "pending.reject", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty);
+        _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -1465,6 +1467,7 @@ public class NoPayNoPlayController : ControllerBase
         _service.Audit(ResolveActor(), "tag.assign", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
             "tag=" + (body.Tag ?? string.Empty));
+        _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }
 
