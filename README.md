@@ -17,10 +17,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](docs/DEVELOPMENT.md)
 
-<a href="https://ko-fi.com/alexisometric">
-  <img src="https://img.shields.io/badge/Support%20the%20plugin-%E2%98%95%20Buy%20me%20a%20coffee-FF5E5B?style=flat-square&logo=ko-fi&logoColor=white" />
-</a>
-
 </div>
 
 > **NoPayNoPlay** helps you split your Jellyfin server costs with your family, friends or housemates.
@@ -412,14 +408,11 @@ If you find a vulnerability, **please do not open a public issue**. See [SECURIT
 
 ---
 
-## ☕ Support the project
+## 💖 Support the project
 
 If NoPayNoPlay saves you time or helps you manage your server, consider supporting its development:
 
 <p align="center">
-  <a href="https://ko-fi.com/alexisometric">
-    <img src="https://img.shields.io/badge/Buy%20me%20a%20coffee-%E2%98%95%20ko--fi.com%2Falexisometric-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" />
-  </a>
   <a href="https://github.com/sponsors/alexisometric">
     <img src="https://img.shields.io/badge/GitHub%20Sponsors-%E2%9D%A4%20Sponsor-EA4AAA?style=for-the-badge&logo=github&logoColor=white" />
   </a>
