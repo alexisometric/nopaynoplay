@@ -254,7 +254,7 @@ CSV export of the activity log.
 
 ### `GET /NoPayNoPlay/Stats`
 
-Returns revenue statistics.
+Returns revenue statistics plus enriched dashboard data.
 
 **Response:**
 ```json
@@ -265,9 +265,24 @@ Returns revenue statistics.
   "transactionCount": 45,
   "currency": "EUR",
   "monthlyLabels": ["2025-06", "2025-07", ...],
-  "monthlyAmounts": [80, 95, ...]
+  "monthlyAmounts": [80, 95, ...],
+  "stateCounts": { "ok": 5, "warningSoon": 2, "inGrace": 1, "blocked": 1, "exempt": 2 },
+  "activeSubscribers": 7,
+  "pendingClaims": 1,
+  "expiringSoon": [
+    { "userId": "...", "username": "alice", "expiryDate": "2026-08-08T00:00:00Z", "daysLeft": 3 }
+  ],
+  "methodBreakdown": [
+    { "method": "PayPal", "count": 30, "amount": 300 }
+  ]
 }
 ```
+
+- `stateCounts` — member count per subscription state (non-admin users).
+- `activeSubscribers` — non-admin, non-exempt, non-blocked members.
+- `pendingClaims` — members waiting for admin confirmation of a payment claim.
+- `expiringSoon` — members whose subscription ends within 7 days (still playable).
+- `methodBreakdown` — payments aggregated per method (count + amount).
 
 ### `GET /NoPayNoPlay/Settings`
 

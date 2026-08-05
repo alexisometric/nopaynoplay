@@ -124,8 +124,9 @@ After installing and restarting Jellyfin:
 
 | Feature | Description |
 |---|---|
-| **Members dashboard** | Color-coded member list with search, filters, sort, and pagination |
-| **Revenue stats** | Monthly revenue + 12-month inline SVG bar chart |
+| **Members dashboard** | Members shown as **cards on every screen** (responsive grid: 4 columns on desktop → 1 on phones) with the same one-click actions |
+| **Enriched dashboard** | Attention cards (blocked, grace, expiring ≤7d, pending claims, active), **expiring-soon list**, **payment-method breakdown**, revenue stats + 12-month SVG chart |
+| **Search, filters, sort** | Search by name, filter by state / payment method, and a dedicated **sort control** (field + ascending/descending) |
 | **Record payments** | One-click payment recording with transaction history (edit/delete) |
 | **Pending claims** | Badge when a user says "I just paid" — confirm or reject in one click |
 | **Bulk actions** | Select multiple users to pay, exempt, reset, or notify in batch |
@@ -147,15 +148,15 @@ After installing and restarting Jellyfin:
 | Feature | Description |
 |---|---|
 | **💳 Header button** | Opens the subscription modal from anywhere in Jellyfin |
-| **Subscription banner** | Sticky banner on warning, grace, and blocked states |
-| **Hero card** | Visual status with countdown and progress gauge |
+| **Subscription banner** | Sticky banner on warning, grace, and blocked states with a **live countdown** |
+| **Hero card** | Visual status with a **live countdown** (days·hours·min·sec) and progress gauge |
 | **Tier picker** | Choose a plan with per-month savings shown |
-| **Payment links** | Clickable PayPal.me / Lydia with pre-filled amount |
+| **Payment links** | Clickable PayPal.me / Lydia with pre-filled amount + **"Copy payment link"** button on every card |
 | **"I just paid"** | Notify the admin (rate-limited to once per 30 min) |
 | **Promo redemption** | Enter a code directly in the modal |
 | **Payment history** | Full transaction log with "Show all" expand |
 | **Notifications** | Bell notifications at J-3, J-1, J0, and grace expired |
-| **QR codes** | QR codes for payment links (vendored generator, no CDN) |
+| **QR codes** | QR payment links on tablets & desktop (vendored generator, no CDN) — hidden on phones |
 | **Hash deeplink** | `#!/npnp` opens the modal directly |
 | **Test mode** | Preview any state with `?npnpTest=STATE` |
 
@@ -343,7 +344,7 @@ Yes. The price is read at the time a payment is recorded. Already-computed expir
 <details>
 <summary><b>Is it compatible with Jellyfin 10.10?</b></summary>
 
-No, the API has changed. This release targets Jellyfin **10.11.x** (`targetAbi` 10.11.9.0).
+No, the API has changed. This release targets Jellyfin **10.11.x** (`targetAbi` 10.11.11.0).
 </details>
 
 ---

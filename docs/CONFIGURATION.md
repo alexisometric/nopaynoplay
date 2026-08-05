@@ -45,6 +45,8 @@ A live preview section below the Appearance settings shows the detected theme co
 
 The swatches update automatically when the theme changes, giving admins immediate feedback on how the plugin adapts.
 
+When the **ElegantFin** theme is detected (it exposes `--accentColor`), the plugin switches to a translucent "glass" look for the user banner and modal: soft translucent surfaces, rounded corners and a `backdrop-filter: blur()` so they blend with ElegantFin's gradient background. Radii and blur tokens are inherited from the theme (`--smallRadius`, `--largeRadius`, `--blurDefault`, `--blurLarge`).
+
 ### Save
 
 The **sticky save button** at the bottom persists all settings immediately. Configuration backups are created automatically (retention: 10 backups) in `config/NoPayNoPlay.backups/`. The save bar adapts to ElegantFin with `--headerColor` and `backdrop-filter: blur()`.
@@ -67,6 +69,14 @@ Quick overview with clickable state counts:
 Four stat cards showing: revenue this month, last 12 months, all-time, and total transaction count.
 
 A 12-month inline **SVG bar chart** renders below the stats — no external libraries required.
+
+### Enriched dashboard
+
+Above the revenue stats, an attention row shows quick, colour-coded counters: **Blocked**, **Grace period**, **Expiring soon (7d)**, **Pending claims** and **Active subscribers**. Clicking a card filters the member list to that state.
+
+Two extra panels complete the overview:
+- **Expiring within 7 days** — members whose subscription ends soon, with the due date.
+- **Payment methods** — revenue split per method (PayPal / Lydia / bank / cash…).
 
 ### Filters & search
 
@@ -96,6 +106,14 @@ Each user row has action buttons:
 | 🔓/🔒 **Exempt** | Toggle free-access exemption |
 | 🔄 **Reset** | Reset the user to a fresh trial |
 | 🟡 **Pending claim** (badge) | Confirm or reject a user's "I just paid" declaration |
+
+### Mobile & responsive
+
+The members list is rendered as **cards on every screen** (not a table): each member is a card with the state, the key dates/amounts labelled, and the same action buttons in a 2-column grid. The cards form a **responsive grid** (1 column on phones, 2 on tablets, up to 4 on desktop).
+
+Since the column headers are gone, sorting is done via the **"Sort by"** control in the toolbar (field + ascending/descending toggle).
+
+On phones (≤720 px) the order is **action-first**: attention cards → filters → member cards → dashboard panels (stats/chart) at the bottom, and the summary chips are hidden to reduce scrolling.
 
 ### Tag selector
 

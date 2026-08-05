@@ -31,6 +31,8 @@ The modal shows:
 
 A **progress gauge** shows the remaining time visually.
 
+When you have an active deadline (up to date / expiring soon / grace), a **live countdown** (days · hours · min · sec) ticks in real time under the gauge and in the banner.
+
 ### Choose a Plan
 
 If the admin has configured subscription **tiers**, you'll see cards like:
@@ -47,6 +49,11 @@ Click a tier to select it — the payment buttons will update to the tier's amou
 **PayPal** and/or **Lydia** payment cards are shown with the amount pre-filled:
 - Click a card to open the payment link in a new tab
 - The amount is pre-filled in the URL (PayPal.me / Lydia)
+- Only the payment methods your admin actually configured are shown (e.g. PayPal only → no Lydia card or QR)
+
+**QR codes** are shown on tablets and desktop when at least one payment method is configured:
+- The QR encodes the exact payment link with the selected amount
+- QR codes are **hidden on phones**. Every payment card has a **"Copy payment link"** button (desktop and mobile) that copies the exact link with the amount of the plan you selected — paste it straight into PayPal or your banking app
 
 ### "I Just Paid" Button
 
@@ -89,6 +96,8 @@ Depending on your subscription state, a sticky banner appears at the top of the 
 | 🚫 **Blocked** | Red | "Playback blocked: subscription expired" | ❌ No |
 
 The **"Pay now"** button on the banner opens the subscription modal.
+
+When your subscription is expiring soon or in grace, the banner also shows a **live countdown** (e.g. `2d 14h 03m 12s`).
 
 ---
 
