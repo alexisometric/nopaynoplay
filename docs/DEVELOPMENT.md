@@ -66,7 +66,7 @@ dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj --filter "FullyQualif
 Example:
 
 ```bash
-./scripts/build.sh 1.2.7.0
+./scripts/build.sh 1.4.0.0
 ```
 
 This creates:
@@ -84,7 +84,7 @@ The ZIP contains the DLL and `meta.json`.
 Example:
 
 ```bash
-./scripts/update-manifest.sh 1.2.7.0 https://example.com/nopaynoplay_1.2.7.0.zip abc123...
+./scripts/update-manifest.sh 1.4.0.0 https://example.com/nopaynoplay_1.4.0.0.zip abc123...
 ```
 
 This updates `manifest.json` at the repository root.

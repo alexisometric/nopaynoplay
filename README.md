@@ -23,7 +23,10 @@
 
 </div>
 
-<!-- Screenshots à ajouter ici -->
+> **NoPayNoPlay** helps you split your Jellyfin server costs with your family, friends or housemates.
+> Each account gets a **free trial**, then needs to **pay once a month** — otherwise playback is paused
+> until the payment is recorded (**the account is never deleted**). You validate payments manually
+> (PayPal, Lydia…), users can click **"I just paid"**, and promo codes grant free months.
 
 ---
 
@@ -66,10 +69,6 @@ You self-host Jellyfin for your family / friends / housemates and you'd like the
 
 ---
 
-### 🎬 Quick demo
-
----
-
 ## 📦 Installation
 
 ### Prerequisites
@@ -79,24 +78,29 @@ You self-host Jellyfin for your family / friends / housemates and you'd like the
 | **Jellyfin** | Version 10.11.x or compatible |
 | **File Transformation** *(recommended)* | Required for the user UI (banner, modal, header button) — [install from GitHub](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) |
 
-### Recommended: via repository
+### Method 1 — from the plugin catalog *(recommended)*
 
-**Dashboard → Plugins → Repositories → ➕**
+1. In Jellyfin, go to **Dashboard → Plugins → Repositories → ➕**
+2. Add this repository:
 
-| Field | Value |
-|---|---|
-| **Repository Name** | `NoPayNoPlay` |
-| **Repository URL** | `https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/manifest.json` |
+   | Field | Value |
+   |---|---|
+   | **Repository Name** | `NoPayNoPlay` |
+   | **Repository URL** | `https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/manifest.json` |
 
-Then go to **Catalog → NoPayNoPlay → Install**, restart Jellyfin, and install the [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) companion plugin.
+3. Go to **Catalog → NoPayNoPlay → Install**
+4. Restart Jellyfin
+5. *(Recommended)* Install the [File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin — it powers the user UI (💳 button, banner, payment modal)
 
-### Alternative: manual ZIP
+### Method 2 — manual ZIP
 
-1. Download the latest release ZIP from the [releases page](https://github.com/alexisometric/nopaynoplay/releases)
-2. Extract to Jellyfin's `plugins/` directory
+1. Download the latest `nopaynoplay_*.zip` from the [releases page](https://github.com/alexisometric/nopaynoplay/releases)
+2. Extract the folder into Jellyfin's `plugins/` directory
 3. Restart Jellyfin
 
-> 📖 **Full installation guide → [docs/INSTALL.md](docs/INSTALL.md)**
+> 💡 **Why File Transformation?** NoPayNoPlay uses it to inject the user-facing UI (💳 button, banner, payment modal) into the Jellyfin web app. The plugin still works without it — enforcement, notifications and the admin dashboard all run server-side — but your users won't see the payment interface.
+>
+> 📖 **Full installation guide (all methods + troubleshooting) → [docs/INSTALL.md](docs/INSTALL.md)**
 
 ---
 
@@ -295,7 +299,7 @@ dotnet build src/Jellyfin.Plugin.NoPayNoPlay.csproj -c Release
 dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj
 
 # Package
-./scripts/build.sh 1.2.7.0
+./scripts/build.sh 1.4.0.0
 ```
 
 > 📖 **Full development guide → [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**
