@@ -67,6 +67,9 @@
   "admin.users.filter.all": "Todos os estados",
   "admin.users.filter.method": "Filtrar por método de pagamento",
   "admin.users.filter.allMethods": "Todos os métodos",
+  "admin.users.sort": "Ordenar por",
+  "admin.users.sort.asc": "Crescente",
+  "admin.users.sort.desc": "Decrescente",
   "admin.users.filter.noMethod": "Sem pagamento",
   "admin.users.empty": "Nenhum membro a exibir.",
   "admin.users.empty.filter": "Nenhum membro corresponde ao filtro.",
@@ -182,6 +185,12 @@
   "user.modal.summary.daysLeft": "{days} dia(s) restante(s)",
   "user.modal.summary.expiredAgo": "Expirada há {days} dia(s)",
   "user.modal.summary.dueOn": "Vence em {date}",
+  "user.countdown.label": "Tempo restante",
+  "user.countdown.expired": "Expirado",
+  "user.countdown.day": "d",
+  "user.countdown.hour": "h",
+  "user.countdown.min": "min",
+  "user.countdown.sec": "s",
   "user.modal.section.payment": "Como pagar",
   "user.modal.section.history": "Pagamentos recentes",
   "user.modal.section.promo": "Código promocional / indicação",
@@ -199,6 +208,7 @@
   "user.modal.promo.invalid": "Código inválido ou já utilizado.",
   "user.modal.method.paypal": "Pagar com PayPal",
   "user.modal.method.lydia": "Pagar com Lydia",
+  "user.modal.copyLink": "Copiar link de pagamento",
   "user.modal.method.donateWith": "Doar via {method}",
   "user.toast.dismiss": "Fechar",
 
@@ -303,5 +313,14 @@
   "admin.status.ftMissing.title": "Plugin File Transformation ausente",
   "admin.status.ftMissing.docs": "Instruções de instalação",
 
-  "admin.stats.chart.title": "Receita \u2014 últimos 12 meses"
+  "admin.stats.chart.title": "Receita \u2014 últimos 12 meses",
+  "admin.stats.active": "Assinantes ativos",
+  "admin.stats.expiringSoon": "Expirando (7d)",
+  "admin.stats.expiringSoon.title": "A expirar em 7 dias",
+  "admin.stats.expiringSoon.empty": "Nenhuma assinatura expira nos próximos 7 dias.",
+  "admin.stats.expiringSoon.days": "{n} dia(s)",
+  "admin.stats.pendingClaims": "Reivindicações pendentes",
+  "admin.stats.methods": "Métodos de pagamento",
+  "admin.stats.methods.empty": "Nenhum pagamento registrado.",
+  "admin.stats.methods.count": "{n} pagamento(s)"
 }

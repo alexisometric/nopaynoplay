@@ -67,6 +67,9 @@
   "admin.users.filter.all": "Все статусы",
   "admin.users.filter.method": "Фильтр по способу оплаты",
   "admin.users.filter.allMethods": "Все способы",
+  "admin.users.sort": "Сортировать по",
+  "admin.users.sort.asc": "По возрастанию",
+  "admin.users.sort.desc": "По убыванию",
   "admin.users.filter.noMethod": "Без оплаты",
   "admin.users.empty": "Нет участников для отображения.",
   "admin.users.empty.filter": "Ни один участник не подходит под фильтр.",
@@ -182,6 +185,12 @@
   "user.modal.summary.daysLeft": "Осталось {days} дн.",
   "user.modal.summary.expiredAgo": "Истекла {days} дн. назад",
   "user.modal.summary.dueOn": "Срок: {date}",
+  "user.countdown.label": "Осталось времени",
+  "user.countdown.expired": "Истёк",
+  "user.countdown.day": "д",
+  "user.countdown.hour": "ч",
+  "user.countdown.min": "м",
+  "user.countdown.sec": "с",
   "user.modal.section.payment": "Как оплатить",
   "user.modal.section.history": "Недавние платежи",
   "user.modal.section.promo": "Промокод / реферал",
@@ -199,6 +208,7 @@
   "user.modal.promo.invalid": "Недействительный или уже использованный код.",
   "user.modal.method.paypal": "Оплатить через PayPal",
   "user.modal.method.lydia": "Оплатить через Lydia",
+  "user.modal.copyLink": "Скопировать ссылку на оплату",
   "user.modal.method.donateWith": "Пожертвовать через {method}",
   "user.toast.dismiss": "Закрыть",
 
@@ -303,5 +313,14 @@
   "admin.status.ftMissing.title": "Плагин File Transformation отсутствует",
   "admin.status.ftMissing.docs": "Инструкция по установке",
 
-  "admin.stats.chart.title": "Доход \u2014 последние 12 месяцев"
+  "admin.stats.chart.title": "Доход \u2014 последние 12 месяцев",
+  "admin.stats.active": "Активные подписчики",
+  "admin.stats.expiringSoon": "Истекает (7д)",
+  "admin.stats.expiringSoon.title": "Истекает в течение 7 дней",
+  "admin.stats.expiringSoon.empty": "Ни одна подписка не истекает в ближайшие 7 дней.",
+  "admin.stats.expiringSoon.days": "{n} дн.",
+  "admin.stats.pendingClaims": "Ожидают подтверждения",
+  "admin.stats.methods": "Способы оплаты",
+  "admin.stats.methods.empty": "Платежей пока нет.",
+  "admin.stats.methods.count": "{n} платеж(а)"
 }

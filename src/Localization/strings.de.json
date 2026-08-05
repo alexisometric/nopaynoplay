@@ -67,6 +67,9 @@
   "admin.users.filter.all": "Alle Status",
   "admin.users.filter.method": "Nach Zahlart filtern",
   "admin.users.filter.allMethods": "Alle Methoden",
+  "admin.users.sort": "Sortieren nach",
+  "admin.users.sort.asc": "Aufsteigend",
+  "admin.users.sort.desc": "Absteigend",
   "admin.users.filter.noMethod": "Noch keine Zahlung",
   "admin.users.empty": "Keine Mitglieder anzuzeigen.",
   "admin.users.empty.filter": "Kein Mitglied entspricht dem Filter.",
@@ -182,6 +185,12 @@
   "user.modal.summary.daysLeft": "{days} Tag(e) übrig",
   "user.modal.summary.expiredAgo": "Vor {days} Tag(en) abgelaufen",
   "user.modal.summary.dueOn": "Fällig am {date}",
+  "user.countdown.label": "Verbleibende Zeit",
+  "user.countdown.expired": "Abgelaufen",
+  "user.countdown.day": "T",
+  "user.countdown.hour": "h",
+  "user.countdown.min": "min",
+  "user.countdown.sec": "s",
   "user.modal.section.payment": "So zahlst du",
   "user.modal.section.history": "Letzte Zahlungen",
   "user.modal.section.promo": "Promo / Empfehlungscode",
@@ -199,6 +208,7 @@
   "user.modal.promo.invalid": "Ungültiger oder bereits genutzter Code.",
   "user.modal.method.paypal": "Mit PayPal zahlen",
   "user.modal.method.lydia": "Mit Lydia zahlen",
+  "user.modal.copyLink": "Zahlungslink kopieren",
   "user.modal.method.donateWith": "Spenden über {method}",
   "user.toast.dismiss": "Schließen",
 
@@ -303,5 +313,14 @@
   "admin.status.ftMissing.title": "File-Transformation-Plugin fehlt",
   "admin.status.ftMissing.docs": "Installationsanleitung",
 
-  "admin.stats.chart.title": "Einnahmen \u2014 letzte 12 Monate"
+  "admin.stats.chart.title": "Einnahmen \u2014 letzte 12 Monate",
+  "admin.stats.active": "Aktive Abonnenten",
+  "admin.stats.expiringSoon": "Läuft bald ab (7T)",
+  "admin.stats.expiringSoon.title": "Endet innerhalb von 7 Tagen",
+  "admin.stats.expiringSoon.empty": "Kein Abonnement endet in den nächsten 7 Tagen.",
+  "admin.stats.expiringSoon.days": "{n} Tag(e)",
+  "admin.stats.pendingClaims": "Ausstehende Meldungen",
+  "admin.stats.methods": "Zahlungsmethoden",
+  "admin.stats.methods.empty": "Noch keine Zahlungen erfasst.",
+  "admin.stats.methods.count": "{n} Zahlung(en)"
 }

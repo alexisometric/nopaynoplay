@@ -67,6 +67,9 @@
   "admin.users.filter.all": "所有状态",
   "admin.users.filter.method": "按付款方式筛选",
   "admin.users.filter.allMethods": "所有方式",
+  "admin.users.sort": "排序方式",
+  "admin.users.sort.asc": "升序",
+  "admin.users.sort.desc": "降序",
   "admin.users.filter.noMethod": "尚未付款",
   "admin.users.empty": "没有可显示的成员。",
   "admin.users.empty.filter": "没有符合筛选条件的成员。",
@@ -182,6 +185,12 @@
   "user.modal.summary.daysLeft": "剩余 {days} 天",
   "user.modal.summary.expiredAgo": "已过期 {days} 天",
   "user.modal.summary.dueOn": "到期日：{date}",
+  "user.countdown.label": "剩余时间",
+  "user.countdown.expired": "已过期",
+  "user.countdown.day": "天",
+  "user.countdown.hour": "时",
+  "user.countdown.min": "分",
+  "user.countdown.sec": "秒",
   "user.modal.section.payment": "如何付款",
   "user.modal.section.history": "最近付款",
   "user.modal.section.promo": "促销码 / 推荐码",
@@ -199,6 +208,7 @@
   "user.modal.promo.invalid": "代码无效或已使用。",
   "user.modal.method.paypal": "用 PayPal 付款",
   "user.modal.method.lydia": "用 Lydia 付款",
+  "user.modal.copyLink": "复制付款链接",
   "user.modal.method.donateWith": "通过 {method} 捐赠",
   "user.toast.dismiss": "关闭",
 
@@ -303,5 +313,14 @@
   "admin.status.ftMissing.title": "缺少 File Transformation 插件",
   "admin.status.ftMissing.docs": "安装说明",
 
-  "admin.stats.chart.title": "收入 \u2014 最近 12 个月"
+  "admin.stats.chart.title": "收入 \u2014 最近 12 个月",
+  "admin.stats.active": "活跃订阅者",
+  "admin.stats.expiringSoon": "即将到期（7天）",
+  "admin.stats.expiringSoon.title": "7天内到期",
+  "admin.stats.expiringSoon.empty": "未来7天内没有订阅到期。",
+  "admin.stats.expiringSoon.days": "{n} 天",
+  "admin.stats.pendingClaims": "待确认",
+  "admin.stats.methods": "支付方式",
+  "admin.stats.methods.empty": "尚未记录任何付款。",
+  "admin.stats.methods.count": "{n} 笔"
 }
