@@ -133,6 +133,8 @@ docker run -d \
   jellyfin/jellyfin:10.11.0
 ```
 
+> 💡 **User UI note:** the plugin's user-facing UI (💳 button, banner, payment modal) is injected into the web app by the external **File Transformation** plugin. To test it locally, install File Transformation from its [releases page](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases), restart Jellyfin, and check **Dashboard → Plugins → NoPayNoPlay** for the green "File Transformation OK" badge. The admin dashboard works regardless of File Transformation.
+
 ---
 
 ## Adding a New Language
@@ -160,15 +162,25 @@ docker run -d \
 
 ## CI/CD
 
-| Workflow | File | Trigger |
-|---|---|---|
-| **CI** | `.github/workflows/ci.yml` | Push/PR to `main` |
-| **Release** | `.github/workflows/release.yml` | Tag push (v*) |
+The repository ships with a full CI/CD setup. All workflows are **pinned by commit SHA** and run under **Harden-Runner** for supply-chain security:
 
-CI runs:
-- `dotnet restore`
-- `dotnet build -c Release`
-- `dotnet test -c Release --no-build`
+| Workflow | Trigger | What it does |
+|---|---|---|
+| **CI** (`ci.yml`) | Push / PR to `main` (+ manual `workflow_dispatch`) | `restore` → `build -c Release -warnaserror` → `test -c Release --no-build`, plus `actionlint` on all workflows |
+| **Release** (`release.yml`) | Tag push `v*.*.*.*` **or** manual `workflow_dispatch` (version + `targetAbi`) | Builds and zips the plugin, computes checksums (MD5/SHA256/size), generates **human release notes** (version-diff link + one commit reference per change), creates the GitHub Release, then updates + validates `manifest.json` and commits it to `main` |
+| **Weekly release** (`weekly-release.yml`) | Cron (Mon 05:00 UTC) + manual `workflow_dispatch` | Bumps the version (patch/minor, keeping `<Version>`/`<FileVersion>`/`<AssemblyVersion>` aligned), then triggers the release pipeline automatically when there are new commits |
+| **CodeQL** (`codeql.yml`) | Push / PR on `src/**` + weekly cron | Static security analysis |
+| **Validate manifest** (`validate-manifest.yml`) | PR touching `manifest.json` + nightly cron | Re-checks `manifest.json` structure, GUID, and the real MD5 of published releases |
+| **Scorecard** (`scorecard.yml`) | Weekly cron + push to `main` | OSSF supply-chain score |
+| **Auto-merge** (`auto-merge.yml`) | Dependabot PR events + periodic sweep | Merges green Dependabot PRs automatically |
+
+> **Note:** CI builds with `-warnaserror`, so any compiler warning fails the build. Run `dotnet build -c Release -warnaserror` locally before pushing.
+
+### Release process (maintainers)
+
+1. A tag `vX.Y.Z.0` is pushed, **or** `release.yml` is triggered manually with a version and `targetAbi` (the weekly workflow does this automatically).
+2. The pipeline builds and zips the plugin, generates the release notes from Conventional Commits (version-diff link + commit references), and creates the GitHub Release.
+3. `manifest.json` is updated with the new entry, validated, and committed back to `main` as `chore: publish <ver> in manifest [skip ci]`.
 
 ---
 
