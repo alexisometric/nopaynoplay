@@ -125,8 +125,11 @@ jobs:
             COMPARE="https://github.com/${REPO}/commits/${TAG}"
           fi
 
-          # Collect commits as "<short-sha><TAB><subject>" lines.
-          mapfile -t COMMITS < <(git log --no-merges --pretty=format:'%h%x09%s' "$RANGE" 2>/dev/null || true)
+          # Collect commits as "\x1f<sha>\x1f<subject>\x1f<body>" records (NUL-separated
+          # via `git log -z`) so multi-line bodies survive parsing. Bodies let squash
+          # commits with a detailed message (e.g. the audit hardening) produce a rich,
+          # itemized changelog instead of a single generic bullet.
+          mapfile -d '' -t COMMITS < <(git log --no-merges -z --pretty=format:'%x1f%h%x1f%s%x1f%b' "$RANGE" 2>/dev/null || true)
 
           declare -A SECTIONS=(
             [feat]="### Features"
@@ -143,11 +146,11 @@ jobs:
 
           declare -A BUCKETS=()
           cc_re='^([a-z]+)(\([^)]+\))?!?:[[:space:]]*(.*)$'
-          for line in "${COMMITS[@]}"; do
-            [[ -z "$line" ]] && continue
-            sha="${line%%	*}"
-            subject="${line#*	}"
-            # Skip the auto manifest commit.
+          for rec in "${COMMITS[@]}"; do
+            [[ -z "$rec" ]] && continue
+            rec="${rec#$'\x1f'}"
+            IFS=$'\x1f' read -r sha subject body <<< "$rec"
+            # Skip the auto manifest commit (and any other [skip ci] commits).
             if [[ "$subject" == *"[skip ci]"* ]]; then continue; fi
             type="other"
             if [[ "$subject" =~ $cc_re ]]; then
@@ -159,6 +162,14 @@ jobs:
               fi
             fi
             BUCKETS[$type]+="- ${subject} (${sha})"$'\n'
+            # Append commit-body bullet points as sub-bullets for richer notes.
+            if [[ -n "$body" ]]; then
+              while IFS= read -r bline; do
+                if [[ "$bline" =~ ^[[:space:]]*[-*][[:space:]] ]]; then
+                  BUCKETS[$type]+="  ${bline}"$'\n'
+                fi
+              done <<< "$body"
+            fi
           done
 
           {
