@@ -38,6 +38,10 @@ msbuild.binlog
 *.pidb
 BenchmarkDotNet.Artifacts/
 
+# Python (scripts/validate-manifest.py)
+__pycache__/
+*.pyc
+
 # OS
 .DS_Store
 Thumbs.db

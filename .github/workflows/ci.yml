@@ -18,6 +18,7 @@ on:
       - '.github/PULL_REQUEST_TEMPLATE.md'
       - '.github/FUNDING.yml'
       - 'LICENSE'
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,6 +41,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Harden runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
       - name: Setup .NET
         uses: actions/setup-dotnet@9a946fdbd5fb07b82b2f5a4466058b876ab72bb2 # v5
         with:
@@ -56,10 +62,19 @@ jobs:
         run: dotnet restore Jellyfin.Plugin.NoPayNoPlay.sln
 
       - name: Build
-        run: dotnet build Jellyfin.Plugin.NoPayNoPlay.sln -c Release --no-restore
+        # -warnaserror enforces the project's zero-warning policy in CI.
+        run: dotnet build Jellyfin.Plugin.NoPayNoPlay.sln -c Release --no-restore -warnaserror
 
       - name: Test
         run: dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj -c Release --no-build --logger "trx;LogFileName=test-results.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-results
+          path: tests/TestResults/*.trx
+          retention-days: 14
 
       - name: Job summary
         if: always()
@@ -78,6 +93,12 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           fetch-depth: 1
+
+      - name: Harden runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
       - name: Lint workflows
         uses: docker://rhysd/actionlint@sha256:9d36088643581e728c969f35141f88139fec77280b2be23c1f66f8e40e1025e7 # v1.7.12
         with:

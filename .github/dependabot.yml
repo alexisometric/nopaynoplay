@@ -1,26 +1,47 @@
 version: 2
+
+# NOTE: labels are intentionally not set — Dependabot fails its update run when a
+# referenced label does not exist, and the repo has no `dependencies`/`tests`/`ci`
+# labels today. Add `labels:` back only after creating them in Settings > Labels.
 updates:
   - package-ecosystem: "nuget"
     directory: "/src"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "06:00"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
+    groups:
+      nuget-plugin:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
 
   - package-ecosystem: "nuget"
     directory: "/tests"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "06:30"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "tests"
+    groups:
+      nuget-tests:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    labels:
-      - "dependencies"
-      - "ci"
+      day: "monday"
+      time: "07:00"
+    open-pull-requests-limit: 10
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
