@@ -172,6 +172,14 @@ The repository ships with a full CI/CD setup. All workflows are **pinned by comm
 | **CodeQL** (`codeql.yml`) | Push / PR on `src/**` + weekly cron | Static security analysis |
 | **Validate manifest** (`validate-manifest.yml`) | PR touching `manifest.json` + nightly cron | Re-checks `manifest.json` structure, GUID, and the real MD5 of published releases |
 | **Scorecard** (`scorecard.yml`) | Weekly cron + push to `main` | OSSF supply-chain score |
+| **Dependency audit** (`dependency-audit.yml`) | Weekly cron (Tue 06:00 UTC) + manual | Fails on CVE'd / deprecated NuGet packages, reports outdated ones |
+| **Stale** (`stale.yml`) | Daily cron (01:30 UTC) + manual | Flags and closes inactive issues/PRs (Dependabot & `auto-merge` PRs exempt) |
+| **Version consistency** (`version-check.yml`) | Push/PR on version files + weekly cron + manual | Enforces csproj / meta.json / manifest.json version alignment |
+| **i18n parity** (`i18n-check.yml`) | Push/PR on `src/Localization` + manual | Fails on orphan keys, warns on untranslated keys |
+| **Labeler** (`labeler.yml`) | PR events | Auto-labels PRs by changed paths (`ci`, `tests`, `documentation`, `github_actions`) |
+| **PR title lint** (`pr-title-lint.yml`) | PR events | Enforces conventional-commit PR titles (Dependabot exempt) |
+| **Secret scan** (`secret-scan.yml`) | Push / PR + manual | Gitleaks secret scan |
+| **Link check** (`link-check.yml`) | Push on docs + weekly cron + manual | Lychee broken-link check on docs/README |
 | **Auto-merge** (`auto-merge.yml`) | Dependabot PR events + daily sweep (safety net, 00:00 UTC) | Merges green Dependabot PRs automatically |
 
 > **Note:** CI builds with `-warnaserror`, so any compiler warning fails the build. Run `dotnet build -c Release -warnaserror` locally before pushing.
