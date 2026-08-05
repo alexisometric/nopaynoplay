@@ -58,6 +58,9 @@ Desktop.ini
 jellyfin-config/
 jellyfin-cache/
 
+# Full-resolution screenshot originals (README uses the optimized JPEGs in docs/screenshots/)
+/screenshots/
+
 # AI / coding assistant local artifacts (not project-specific)
 .github/copilot-instructions.md
 .github/instructions/

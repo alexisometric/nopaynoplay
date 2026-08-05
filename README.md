@@ -35,6 +35,7 @@
 - [What is it for?](#-what-is-it-for)
 - [Installation](#-installation)
 - [Quick start](#-quick-start)
+- [Screenshots](#-screenshots)
 - [Features](#-features)
 - [How it works](#-how-it-works)
 - [User guide](#-user-guide)
@@ -122,7 +123,47 @@ After installing and restarting Jellyfin:
 
 ---
 
-## 🚀 Features
+## � Screenshots
+
+> Live captures from a real Jellyfin server (v10.11.11) — each user was signed in with their own account.
+
+### 👤 User experience
+
+The subscription banner is injected into each member's home screen; the **💳** header button opens the payment modal.
+
+| ⏰ Expiring soon | ⏳ Grace period | 🚫 Blocked |
+|---|---|---|
+| ![Tom Harris — expiring soon](docs/screenshots/user-tom-warningsoon-banner.jpg) | ![Lucas Moore — grace period](docs/screenshots/user-lucas-grace-banner.jpg) | ![Lea Wilson — playback blocked](docs/screenshots/user-lea-blocked-banner.jpg) |
+
+**The payment modal** — subscription status, tier plans (with the highlighted *best deal*), payment reference, promo code and payment history:
+
+| ⏰ Expiring soon | ⏳ Grace period | 🚫 Blocked | 🎉 Free access | ✅ Up to date |
+|---|---|---|---|---|
+| ![Tom — modal](docs/screenshots/user-tom-warningsoon-modal.jpg) | ![Lucas — modal](docs/screenshots/user-lucas-grace-modal.jpg) | ![Lea — modal](docs/screenshots/user-lea-blocked-modal.jpg) | ![Hugo — free access](docs/screenshots/user-hugo-exempt-modal.jpg) | ![Mary — up to date](docs/screenshots/user-mary-active-modal.jpg) |
+
+### 🛠️ Admin dashboard
+
+**Members** — 12-month revenue chart, attention cards and the member table:
+
+![Members dashboard](docs/screenshots/admin-members.jpg)
+
+**Configuration tabs:**
+
+| ⚙️ Settings | 🎁 Promo codes | 🗂️ Tiers |
+|---|---|---|
+| ![Settings](docs/screenshots/admin-settings.jpg) | ![Promo codes](docs/screenshots/admin-promo.jpg) | ![Tiers](docs/screenshots/admin-tiers.jpg) |
+
+| 🏷️ Tags | 📈 Activity | 🕵️ Audit log |
+|---|---|---|
+| ![Tags](docs/screenshots/admin-tags.jpg) | ![Activity](docs/screenshots/admin-activity.jpg) | ![Audit log](docs/screenshots/admin-audit.jpg) |
+
+| 🧪 Test mode | 🔬 Diagnostics |
+|---|---|
+| ![Test mode](docs/screenshots/admin-testmode.jpg) | ![Diagnostics](docs/screenshots/admin-diagnostics.jpg) |
+
+---
+
+## �🚀 Features
 
 ### 👤 For admins
 
