@@ -41,6 +41,13 @@ public class PaymentDto
     /// Future dates are clamped to "now".
     /// </summary>
     public DateTime? Date { get; set; }
+
+    /// <summary>
+    /// Optional idempotency key (generated per payment form) so a double-click or a browser
+    /// retry cannot record the same payment twice within the dedup window.
+    /// </summary>
+    [StringLength(64)]
+    public string? IdempotencyKey { get; set; }
 }
 
 /// <summary>Payload to toggle the exemption flag.</summary>
@@ -118,6 +125,13 @@ public class MeDto
     /// <summary>Translation strings for the resolved culture.</summary>
     public IReadOnlyDictionary<string, string> Strings { get; set; } =
         new Dictionary<string, string>();
+
+    /// <summary>
+    /// Stable hash of the <see cref="Strings"/> bundle for the resolved culture. The client
+    /// echoes it back via <c>?strings=</c>; when it matches, the server returns an empty
+    /// bundle so the few-KB translation payload is not re-sent on every refresh.
+    /// </summary>
+    public string StringsHash { get; set; } = string.Empty;
 
     /// <summary>Personal payment history (most recent first), without admin notes.</summary>
     public List<MeTransactionDto> Transactions { get; set; } = new();
@@ -408,8 +422,11 @@ public class NoPayNoPlayController : ControllerBase
             }
 
             liveUserIds.Add(u.Id);
-            _service.EnsureUserTracked(u.Id);
         }
+
+        // Track every live non-admin user in a single O(n) pass (no per-user linear
+        // scan) and without persisting on a plain read (GET must never write to disk).
+        _service.EnsureUsersTracked(liveUserIds);
 
         string culture = ResolveCulture();
         // Hide subscriptions whose Jellyfin user has been deleted; the orphaned
@@ -426,7 +443,7 @@ public class NoPayNoPlayController : ControllerBase
     [HttpGet("Activity")]
     [Authorize(Policy = Policies.RequiresElevation)]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<object> GetActivity()
+    public ActionResult<object> GetActivity([FromQuery] int limit = 0)
     {
         var adminIds = new HashSet<Guid>();
         var liveUserIds = new HashSet<Guid>();
@@ -441,21 +458,35 @@ public class NoPayNoPlayController : ControllerBase
             liveUserIds.Add(u.Id);
         }
 
-        var rows = Cfg.Subscriptions
+        var subs = Cfg.Subscriptions
             .Where(s => !adminIds.Contains(s.UserId) && liveUserIds.Contains(s.UserId))
-            .SelectMany(s => s.Transactions.Select(t => new
+            .ToList();
+        var rows = subs
+            .SelectMany(s =>
             {
-                t.Id,
-                UserId = s.UserId,
-                Username = _userManager.GetUserById(s.UserId)?.Username ?? "(deleted)",
-                t.Date,
-                t.Amount,
-                t.MonthsAdded,
-                t.Method,
-                t.AdminNote
-            }))
+                // Resolve the username once per subscription, not once per transaction
+                // (UserManager.GetUserById is a linear scan — O(users × tx) → O(users + tx)).
+                string username = _userManager.GetUserById(s.UserId)?.Username ?? "(deleted)";
+                return s.Transactions.Select(t => new
+                {
+                    t.Id,
+                    UserId = s.UserId,
+                    Username = username,
+                    t.Date,
+                    t.Amount,
+                    t.MonthsAdded,
+                    t.Method,
+                    t.AdminNote
+                });
+            })
             .OrderByDescending(t => t.Date)
             .ToList();
+
+        // Optional cap so the dashboard never receives a giant unbounded payload.
+        if (limit > 0 && rows.Count > limit)
+        {
+            rows = rows.Take(limit).ToList();
+        }
 
         return Ok(rows);
     }
@@ -475,6 +506,13 @@ public class NoPayNoPlayController : ControllerBase
             return NotFound();
         }
 
+        // Idempotent retry (double-click / browser retry): if this payment form's key was
+        // already recorded, return the current state instead of charging months twice.
+        if (IsIdempotencySeen(userId, body.IdempotencyKey))
+        {
+            return Ok(Project(_service.EnsureUserTracked(userId), ResolveCulture()));
+        }
+
         UserSubscription sub = _service.ApplyPayment(
             userId,
             Math.Max(0m, body.Amount),
@@ -485,10 +523,12 @@ public class NoPayNoPlayController : ControllerBase
 
         SubscriptionState state = _service.EvaluateState(sub);
         await ApplyEnforcementSafelyAsync(sub, state).ConfigureAwait(false);
-        _service.Save();
         _service.Audit(ResolveActor(), "payment.add", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
-            $"amount={body.Amount} months={body.MonthsAdded} method={body.Method}");
+            $"amount={body.Amount} months={body.MonthsAdded} method={body.Method}",
+            persist: false);
+        _service.Save();
+        MarkIdempotencySeen(userId, body.IdempotencyKey);
 
         return Ok(Project(sub, ResolveCulture()));
     }
@@ -510,10 +550,11 @@ public class NoPayNoPlayController : ControllerBase
 
         UserSubscription sub = _service.SetExempt(userId, body.IsExempt);
         await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
-        _service.Save();
         _service.Audit(ResolveActor(), "exempt.toggle", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
-            "isExempt=" + body.IsExempt);
+            "isExempt=" + body.IsExempt,
+            persist: false);
+        _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -529,9 +570,10 @@ public class NoPayNoPlayController : ControllerBase
 
         UserSubscription sub = _service.Reset(userId);
         await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
-        _service.Save();
         _service.Audit(ResolveActor(), "reset", userId,
-            _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty);
+            _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty,
+            persist: false);
+        _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -557,6 +599,7 @@ public class NoPayNoPlayController : ControllerBase
             cfg.GraceDays = Math.Clamp(body.GraceDays, 0, 365);
             cfg.TrialDays = Math.Clamp(body.TrialDays, 0, 365);
             cfg.WarningDaysBefore = Math.Clamp(body.WarningDaysBefore, 0, 90);
+            cfg.AuditLogMaxEntries = Math.Clamp(body.AuditLogMaxEntries, 50, 2000);
             cfg.PaypalMeUrl = SanitizeUrl(body.PaypalMeUrl);
             cfg.LydiaUrl = SanitizeUrl(body.LydiaUrl);
             cfg.CustomNote = Truncate(body.CustomNote, 1000);
@@ -650,9 +693,17 @@ public class NoPayNoPlayController : ControllerBase
             return Unauthorized();
         }
 
-        UserSubscription sub = _service.EnsureUserTracked(userId.Value);
+        UserSubscription sub = _service.EnsureUserTracked(userId.Value, persist: false);
         SubscriptionState state = _service.EvaluateState(sub);
         string culture = ResolveCulture();
+
+        // Translation bundle + hash. When the client echoes the current hash via
+        // ?strings=, skip re-sending the (few-KB) bundle on every refresh.
+        var bundle = _localizer.GetBundle(culture);
+        string stringsHash = ComputeStringsHash(bundle);
+        string? requestedHash = Request.Query.TryGetValue("strings", out var sv) ? sv.ToString() : null;
+        bool stringsUnchanged = !string.IsNullOrEmpty(requestedHash)
+            && string.Equals(requestedHash, stringsHash, StringComparison.Ordinal);
 
         // Administrators are always exempt from enforcement, but to let them preview
         // the user-facing modal we return sample data flagged with IsAdminPreview.
@@ -705,7 +756,8 @@ public class NoPayNoPlayController : ControllerBase
             WarningDaysBefore = Cfg.WarningDaysBefore,
             GraceDays = Cfg.GraceDays,
             Lang = culture,
-            Strings = _localizer.GetBundle(culture),
+            Strings = stringsUnchanged ? new Dictionary<string, string>() : bundle,
+            StringsHash = stringsHash,
             Transactions = transactions,
             IsAdminPreview = isAdmin,
             HasPendingPaymentClaim = sub.HasPendingPaymentClaim && !isAdmin,
@@ -1062,7 +1114,9 @@ public class NoPayNoPlayController : ControllerBase
         {
             string uname = _userManager.GetUserById(userId.Value)?.Username ?? string.Empty;
             string culture = ResolveCulture();
-            var tokens = new Dictionary<string, string?> { ["username"] = uname };
+            // The username is user-controlled and is rendered in the admin activity feed:
+            // HTML-encode it server-side so a crafted name cannot inject markup.
+            var tokens = new Dictionary<string, string?> { ["username"] = HtmlEncode(uname) };
             string overview = _localizer.Get("notif.markPaid.body", culture, tokens);
             await _activityManager.CreateAsync(new ActivityLog(
                 _localizer.Get("notif.markPaid.title", culture),
@@ -1114,7 +1168,9 @@ public class NoPayNoPlayController : ControllerBase
         int daysLeft = (int)Math.Ceiling((sub.ExpiryDate - DateTime.UtcNow).TotalDays);
         var tokens = new Dictionary<string, string?>
         {
-            ["username"] = username,
+            // HTML-encode the user-controlled username: it is rendered in the Jellyfin
+            // activity feed shown to administrators.
+            ["username"] = HtmlEncode(username),
             ["date"] = sub.ExpiryDate.ToString("yyyy-MM-dd"),
             ["days"] = Math.Max(0, daysLeft).ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
@@ -1150,7 +1206,8 @@ public class NoPayNoPlayController : ControllerBase
             _logger.LogWarning(ex, "NoPayNoPlay: failed to send reminder to {UserId}", userId);
         }
 
-        _service.Audit(ResolveActor(), "user.notify", userId, u.Username, sent ? "reminder sent" : "no reminder (state ok/exempt)");
+        _service.Audit(ResolveActor(), "user.notify", userId, u.Username, sent ? "reminder sent" : "no reminder (state ok/exempt)", persist: false);
+        _service.Save();
         return Ok(new { ok = true, sent });
     }
 
@@ -1179,7 +1236,8 @@ public class NoPayNoPlayController : ControllerBase
             }
         }
 
-        _service.Audit(ResolveActor(), "users.notify", null, string.Empty, "count=" + sent);
+        _service.Audit(ResolveActor(), "users.notify", null, string.Empty, "count=" + sent, persist: false);
+        _service.Save();
         return Ok(new { ok = true, sent });
     }
 
@@ -1193,6 +1251,12 @@ public class NoPayNoPlayController : ControllerBase
         if (body is null) return BadRequest();
         if (_userManager.GetUserById(userId) is null) return NotFound();
 
+        // Idempotent retry protection, same as Pay.
+        if (IsIdempotencySeen(userId, body.IdempotencyKey))
+        {
+            return Ok(Project(_service.EnsureUserTracked(userId), ResolveCulture()));
+        }
+
         UserSubscription sub = _service.ApplyPayment(
             userId,
             Math.Max(0m, body.Amount),
@@ -1201,10 +1265,12 @@ public class NoPayNoPlayController : ControllerBase
             body.Note ?? string.Empty,
             body.Date);
         await ApplyEnforcementSafelyAsync(sub, _service.EvaluateState(sub)).ConfigureAwait(false);
-        _service.Save();
         _service.Audit(ResolveActor(), "pending.confirm", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
-            $"amount={body.Amount} months={body.MonthsAdded}");
+            $"amount={body.Amount} months={body.MonthsAdded}",
+            persist: false);
+        _service.Save();
+        MarkIdempotencySeen(userId, body.IdempotencyKey);
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -1217,7 +1283,8 @@ public class NoPayNoPlayController : ControllerBase
         _service.ClearPendingClaim(userId);
         var sub = _service.EnsureUserTracked(userId);
         _service.Audit(ResolveActor(), "pending.reject", userId,
-            _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty);
+            _userManager.GetUserById(userId)?.Username ?? string.Empty, string.Empty,
+            persist: false);
         _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }
@@ -1248,6 +1315,13 @@ public class NoPayNoPlayController : ControllerBase
         _service.MutateConfig(cfg =>
         {
             if (cfg.PromoCodes.Any(p => string.Equals(p.Code, code, StringComparison.OrdinalIgnoreCase)))
+            {
+                duplicate = true;
+                return false;
+            }
+
+            // Bound the promo list so the XML config and redemption scans stay small.
+            if (cfg.PromoCodes.Count >= 500)
             {
                 duplicate = true;
                 return false;
@@ -1285,13 +1359,15 @@ public class NoPayNoPlayController : ControllerBase
         if (body is null || string.IsNullOrWhiteSpace(body.Code)) return BadRequest();
 
         string lockKey = "redeem-fail:" + userId.Value.ToString("N");
-        string clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        string clientIp = GetClientIp();
         string ipKey = "redeem-fail:ip:" + clientIp;
         const string globalKey = "redeem-fail:global";
 
         // Aggregated throttle: a per-user lockout alone can be sidestepped by
         // creating many accounts, so we also gate on a per-IP and a global failure
-        // budget that the per-user reset can't clear.
+        // budget that the per-user reset can't clear. The per-IP budget uses the real
+        // client IP (X-Forwarded-For when present) and is sized so a shared reverse
+        // proxy can't be turned into a server-wide lockout by a handful of mistakes.
         if (_rateLimiter.IsLocked(lockKey) || _rateLimiter.IsLocked(ipKey) || _rateLimiter.IsLocked(globalKey))
         {
             return StatusCode(StatusCodes.Status429TooManyRequests,
@@ -1309,12 +1385,13 @@ public class NoPayNoPlayController : ControllerBase
         int months = _service.RedeemPromoCode(userId.Value, body.Code);
         if (months <= 0)
         {
-            // Track failed attempts: 5/user, 20/IP, 100 global within the window all
-            // trigger a 15-minute lockout, defeating slow brute-force enumeration.
+            // Track failed attempts: 5/user, 100/IP, 500 global within the window all
+            // trigger a 15-minute lockout, defeating slow brute-force enumeration without
+            // letting one user's mistakes (or a shared NAT/proxy IP) lock the whole server.
             bool locked = _rateLimiter.RegisterFailureAndShouldLock(
                 lockKey, threshold: 5, lockout: TimeSpan.FromMinutes(15));
-            _rateLimiter.RegisterFailureAndShouldLock(ipKey, threshold: 20, lockout: TimeSpan.FromMinutes(15));
-            _rateLimiter.RegisterFailureAndShouldLock(globalKey, threshold: 100, lockout: TimeSpan.FromMinutes(15));
+            _rateLimiter.RegisterFailureAndShouldLock(ipKey, threshold: 100, lockout: TimeSpan.FromMinutes(15));
+            _rateLimiter.RegisterFailureAndShouldLock(globalKey, threshold: 500, lockout: TimeSpan.FromMinutes(15));
             return Ok(new { ok = false, locked });
         }
 
@@ -1354,6 +1431,87 @@ public class NoPayNoPlayController : ControllerBase
         }
 
         return null;
+    }
+
+    private static string HtmlEncode(string? value) =>
+        System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
+
+    /// <summary>
+    /// Best-effort client IP: prefers the first <c>X-Forwarded-For</c> entry (typical
+    /// behind a reverse proxy) so the per-IP promo budget applies to individual clients
+    /// rather than the shared proxy address, and falls back to the TCP peer.
+    /// </summary>
+    private string GetClientIp()
+    {
+        try
+        {
+            string? xff = Request.Headers["X-Forwarded-For"].ToString();
+            if (!string.IsNullOrWhiteSpace(xff))
+            {
+                string first = xff.Split(',')[0].Trim();
+                if (System.Net.IPAddress.TryParse(first, out _))
+                {
+                    return first;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // fall through to the TCP peer
+        }
+
+        return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    }
+
+    /// <summary>
+    /// Stable (process-local) FNV-1a hash of a translation bundle, used as a cache key
+    /// so the client can skip re-downloading the strings payload when it is unchanged.
+    /// Char-level hashing avoids relying on the randomized string hash.
+    /// </summary>
+    private static string ComputeStringsHash(IReadOnlyDictionary<string, string> bundle)
+    {
+        const uint fnvPrime = 16777619u;
+        uint h = 2166136261u;
+        foreach (var kv in bundle.OrderBy(k => k.Key, StringComparer.Ordinal))
+        {
+            foreach (char c in kv.Key) { h ^= c; h *= fnvPrime; }
+            h ^= 0x1f; h *= fnvPrime;
+            foreach (char c in kv.Value) { h ^= c; h *= fnvPrime; }
+            h ^= 0x1f; h *= fnvPrime;
+        }
+
+        return h.ToString("x8");
+    }
+
+    // --- Payment idempotency (double-click / browser-retry protection) ---
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _idempotencyKeys = new();
+
+    private bool IsIdempotencySeen(Guid userId, string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return false;
+        PruneIdempotency();
+        string k = userId.ToString("N") + ":" + key.Trim();
+        return _idempotencyKeys.TryGetValue(k, out var until) && until > DateTime.UtcNow;
+    }
+
+    private void MarkIdempotencySeen(Guid userId, string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key)) return;
+        _idempotencyKeys[userId.ToString("N") + ":" + key.Trim()] = DateTime.UtcNow.AddMinutes(5);
+    }
+
+    private static void PruneIdempotency()
+    {
+        if (_idempotencyKeys.Count < 512) return;
+        DateTime now = DateTime.UtcNow;
+        foreach (var kv in _idempotencyKeys)
+        {
+            if (kv.Value <= now)
+            {
+                _idempotencyKeys.TryRemove(kv.Key, out _);
+            }
+        }
     }
 
     private string ResolveActor()
@@ -1400,7 +1558,8 @@ public class NoPayNoPlayController : ControllerBase
         }
         _service.MutateConfig(cfg => { cfg.Tiers = sanitized; return true; });
         _service.Audit(ResolveActor(), "tiers.update", null, string.Empty,
-            "tiers=" + sanitized.Count);
+            "tiers=" + sanitized.Count, persist: false);
+        _service.Save();
         return Ok(Cfg.Tiers);
     }
 
@@ -1409,7 +1568,13 @@ public class NoPayNoPlayController : ControllerBase
     // ---------------------------------------------------------------------
 
     /// <summary>Lists every user tag.</summary>
+    /// <remarks>
+    /// Elevation-gated: tags carry the per-group <see cref="UserTag.MonthlyPriceOverride"/>
+    /// pricing model, which is business-sensitive and must not be readable by any
+    /// authenticated member.
+    /// </remarks>
     [HttpGet("Tags")]
+    [Authorize(Policy = Policies.RequiresElevation)]
     public ActionResult<IEnumerable<UserTag>> ListTags() => Ok(Cfg.Tags);
 
     /// <summary>Replaces the entire tag list (admin).</summary>
@@ -1443,7 +1608,8 @@ public class NoPayNoPlayController : ControllerBase
             .ToList();
         _service.MutateConfig(cfg => { cfg.Tags = sanitized; return true; });
         _service.Audit(ResolveActor(), "tags.update", null, string.Empty,
-            "tags=" + sanitized.Count);
+            "tags=" + sanitized.Count, persist: false);
+        _service.Save();
         return Ok(Cfg.Tags);
     }
 
@@ -1466,7 +1632,8 @@ public class NoPayNoPlayController : ControllerBase
         var sub = _service.SetTag(userId, body.Tag ?? string.Empty);
         _service.Audit(ResolveActor(), "tag.assign", userId,
             _userManager.GetUserById(userId)?.Username ?? string.Empty,
-            "tag=" + (body.Tag ?? string.Empty));
+            "tag=" + (body.Tag ?? string.Empty),
+            persist: false);
         _service.Save();
         return Ok(Project(sub, ResolveCulture()));
     }

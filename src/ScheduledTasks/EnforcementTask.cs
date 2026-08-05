@@ -89,24 +89,36 @@ public class EnforcementTask : IScheduledTask
         int done = 0;
         string culture = ServerCulture;
 
-        foreach (var user in users)
+        // Process users in bounded parallel batches: the DB writes (policy updates,
+        // activity inserts) are independent per user and the biggest cost, so serializing
+        // one awaited round-trip at a time makes a large run needlessly slow. Config
+        // mutations stay serialized by SubscriptionService's internal lock.
+        const int batchSize = 16;
+        for (int offset = 0; offset < users.Count; offset += batchSize)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            try
+            var batch = users.Skip(offset).Take(batchSize).ToList();
+            var tasks = batch.Select(user => Task.Run(async () =>
             {
-                UserSubscription sub = _subscriptionService.EnsureUserTracked(user.Id);
-                SubscriptionState state = _subscriptionService.EvaluateState(sub);
-                await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
-                await NotifyIfNeededAsync(sub, state, user.Username, culture).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "NoPayNoPlay: error processing user {UserId}", user.Id);
-            }
+                try
+                {
+                    UserSubscription sub = _subscriptionService.EnsureUserTracked(user.Id);
+                    SubscriptionState state = _subscriptionService.EvaluateState(sub);
+                    await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
+                    await NotifyIfNeededAsync(sub, state, user.Username, culture).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "NoPayNoPlay: error processing user {UserId}", user.Id);
+                }
+                finally
+                {
+                    int d = Interlocked.Increment(ref done);
+                    progress.Report(100.0 * d / Math.Max(1, total));
+                }
+            })).ToList();
 
-            done++;
-            progress.Report(100.0 * done / Math.Max(1, total));
+            await Task.WhenAll(tasks).ConfigureAwait(false);
         }
 
         // Drop subscription records whose Jellyfin user has since been deleted so
@@ -124,11 +136,9 @@ public class EnforcementTask : IScheduledTask
     {
         if (state == SubscriptionState.Exempt || state == SubscriptionState.Ok)
         {
-            sub.LastNotifiedState = state;
-            // Clear the milestone key so the dedup is fully re-armed for the next
-            // warning/grace cycle (belt-and-suspenders alongside the resets done on
-            // payment / promo / reset).
-            sub.LastNotificationKey = string.Empty;
+            // Update the dedup markers under the config lock so we never race the
+            // admin/user endpoints (which mutate the same subscription under the lock).
+            _subscriptionService.UpdateNotificationState(sub, state, string.Empty);
             return;
         }
 
@@ -175,7 +185,9 @@ public class EnforcementTask : IScheduledTask
 
         var tokens = new Dictionary<string, string?>
         {
-            ["username"] = username,
+            // HTML-encode the user-controlled username: it is rendered in the Jellyfin
+            // activity feed shown to administrators.
+            ["username"] = System.Net.WebUtility.HtmlEncode(username),
             ["date"] = sub.ExpiryDate.ToString("yyyy-MM-dd"),
             ["days"] = Math.Max(0, daysLeft).ToString(System.Globalization.CultureInfo.InvariantCulture)
         };
@@ -204,7 +216,7 @@ public class EnforcementTask : IScheduledTask
             _logger.LogWarning(ex, "NoPayNoPlay: failed to create notification activity");
         }
 
-        sub.LastNotifiedState = state;
-        sub.LastNotificationKey = dedupKey;
+        // Persist the dedup markers under the config lock (see comment on the Ok/Exempt branch).
+        _subscriptionService.UpdateNotificationState(sub, state, dedupKey);
     }
 }

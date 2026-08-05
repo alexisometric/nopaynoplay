@@ -42,6 +42,12 @@ public class SubscriptionService
 
     private PluginConfiguration Config => _configAccessor();
 
+    /// <summary>Maximum number of transactions kept per user (bounds XML size and serialization cost).</summary>
+    private const int MaxTransactionsPerUser = 500;
+
+    /// <summary>Maximum number of distinct promo codes remembered per user (bounds XML size).</summary>
+    private const int MaxRedeemedCodesPerUser = 200;
+
     /// <summary>
     /// Runs <paramref name="mutator"/> under the same lock that guards every
     /// subscription mutation and persists when it returns <c>true</c>. Lets the
@@ -65,6 +71,17 @@ public class SubscriptionService
     /// </summary>
     public UserSubscription EnsureUserTracked(Guid userId)
     {
+        return EnsureUserTracked(userId, persist: true);
+    }
+
+    /// <summary>
+    /// Returns or creates the subscription for a user. When <paramref name="persist"/> is
+    /// <c>false</c>, a newly created record is only kept in memory — used by read-only
+    /// paths (GET /Me, GET /Users) so a plain read never triggers a config write or
+    /// backup. The record is persisted by the next real mutation.
+    /// </summary>
+    public UserSubscription EnsureUserTracked(Guid userId, bool persist)
+    {
         lock (_lock)
         {
             UserSubscription? sub = Config.Subscriptions.FirstOrDefault(s => s.UserId == userId);
@@ -85,12 +102,52 @@ public class SubscriptionService
                 LastNotifiedState = SubscriptionState.Ok
             };
             Config.Subscriptions.Add(sub);
-            _save();
-            _logger.LogInformation(
-                "NoPayNoPlay: started tracking new user {UserId}, trial expires {Expiry:o}",
-                userId,
-                sub.ExpiryDate);
+            if (persist)
+            {
+                _save();
+                _logger.LogInformation(
+                    "NoPayNoPlay: started tracking new user {UserId}, trial expires {Expiry:o}",
+                    userId,
+                    sub.ExpiryDate);
+            }
+
             return sub;
+        }
+    }
+
+    /// <summary>
+    /// Ensures every listed user has a tracked subscription in a single O(n) pass
+    /// (instead of one linear scan per user). Persists once when at least one new
+    /// record was created.
+    /// </summary>
+    public void EnsureUsersTracked(IEnumerable<Guid> userIds)
+    {
+        lock (_lock)
+        {
+            var existing = new HashSet<Guid>(Config.Subscriptions.Select(s => s.UserId));
+            DateTime now = DateTime.UtcNow;
+            bool changed = false;
+            foreach (Guid userId in userIds)
+            {
+                if (existing.Add(userId))
+                {
+                    Config.Subscriptions.Add(new UserSubscription
+                    {
+                        UserId = userId,
+                        SubscriptionDate = now,
+                        ExpiryDate = now.AddDays(Math.Max(0, Config.TrialDays)),
+                        IsExempt = false,
+                        IsBlocked = false,
+                        LastNotifiedState = SubscriptionState.Ok
+                    });
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                _save();
+            }
         }
     }
 
@@ -236,6 +293,13 @@ public class SubscriptionService
                 Method = method ?? string.Empty,
                 AdminNote = note ?? string.Empty
             });
+            // Bound the history: cap per-user transactions so the XML config and every
+            // full serialization stay predictable for long-lived members.
+            if (sub.Transactions.Count > MaxTransactionsPerUser)
+            {
+                sub.Transactions.RemoveRange(0, sub.Transactions.Count - MaxTransactionsPerUser);
+            }
+
             sub.LastNotifiedState = SubscriptionState.Ok;
             sub.LastNotificationKey = string.Empty;
             // Confirming a payment naturally resolves any prior self-service claim.
@@ -455,6 +519,11 @@ public class SubscriptionService
             DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
             sub.ExpiryDate = ComputeNextExpiry(baseDate, months, now.Day);
             sub.RedeemedPromoCodeIds.Add(promo.Id);
+            if (sub.RedeemedPromoCodeIds.Count > MaxRedeemedCodesPerUser)
+            {
+                sub.RedeemedPromoCodeIds.RemoveRange(0, sub.RedeemedPromoCodeIds.Count - MaxRedeemedCodesPerUser);
+            }
+
             sub.LastNotifiedState = SubscriptionState.Ok;
             // Re-arm the per-milestone notification dedup so the next J-3/J-1/J0
             // reminder fires for the renewed cycle.
@@ -468,6 +537,11 @@ public class SubscriptionService
                 Method = "Promo:" + promo.Code,
                 AdminNote = "Redeemed promo code"
             });
+            // Keep the per-user transaction list bounded.
+            if (sub.Transactions.Count > MaxTransactionsPerUser)
+            {
+                sub.Transactions.RemoveRange(0, sub.Transactions.Count - MaxTransactionsPerUser);
+            }
 
             promo.UsedCount++;
             return months;
@@ -529,19 +603,45 @@ public class SubscriptionService
     }
 
     /// <summary>
-    /// Appends an entry to the in-memory audit log, evicting the oldest entries
-    /// once the configured cap is reached.
+    /// Updates the per-user notification dedup markers under the config lock so the
+    /// scheduled task cannot race the admin/user endpoints (which mutate the same
+    /// subscription under the lock and serialize it via <see cref="Save"/>).
     /// </summary>
-    public void Audit(string actor, string action, Guid? targetUserId, string targetUsername, string details)
+    public void UpdateNotificationState(UserSubscription sub, SubscriptionState state, string notificationKey)
+    {
+        lock (_lock)
+        {
+            sub.LastNotifiedState = state;
+            sub.LastNotificationKey = notificationKey ?? string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Appends an entry to the in-memory audit log, evicting the oldest entries
+    /// once the configured cap is reached. Control characters are stripped from
+    /// user/admin-entered fields so a forged newline can never corrupt the log or
+    /// produce misleading log lines.
+    /// </summary>
+    /// <param name="actor">Actor label (admin username or "system").</param>
+    /// <param name="action">Machine-readable action key (e.g. "payment.add").</param>
+    /// <param name="targetUserId">Optional affected user id.</param>
+    /// <param name="targetUsername">Optional affected username (control chars stripped).</param>
+    /// <param name="details">Free-form details (truncated to 500 chars, control chars stripped).</param>
+    /// <param name="persist">
+    /// When <c>false</c>, the entry is added in memory only and the caller is
+    /// expected to persist with a single <see cref="Save"/> afterwards — used to
+    /// avoid double XML serialization + double backup on the same request.
+    /// </param>
+    public void Audit(string actor, string action, Guid? targetUserId, string targetUsername, string details, bool persist = true)
     {
         lock (_lock)
         {
             if (string.IsNullOrEmpty(action)) return;
-            string trimmedDetails = details ?? string.Empty;
+            string trimmedDetails = StripControlChars(details ?? string.Empty);
             if (trimmedDetails.Length > 500) trimmedDetails = trimmedDetails.Substring(0, 500);
-            string trimmedActor = (actor ?? string.Empty);
+            string trimmedActor = StripControlChars(actor ?? string.Empty);
             if (trimmedActor.Length > 64) trimmedActor = trimmedActor.Substring(0, 64);
-            string trimmedUsername = (targetUsername ?? string.Empty);
+            string trimmedUsername = StripControlChars(targetUsername ?? string.Empty);
             if (trimmedUsername.Length > 128) trimmedUsername = trimmedUsername.Substring(0, 128);
 
             Config.AuditLog.Add(new AuditLogEntry
@@ -559,7 +659,31 @@ public class SubscriptionService
             {
                 Config.AuditLog.RemoveRange(0, Config.AuditLog.Count - cap);
             }
-            _save();
+
+            if (persist)
+            {
+                _save();
+            }
         }
+    }
+
+    /// <summary>
+    /// Removes control characters (CR/LF and other C0 controls) from a string while
+    /// keeping printable characters and tabs, so admin-entered fields cannot inject
+    /// fake log lines or break the audit UI.
+    /// </summary>
+    private static string StripControlChars(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        var sb = new System.Text.StringBuilder(value.Length);
+        foreach (char c in value)
+        {
+            if (c == '\t' || (c >= 0x20 && c != 0x7f))
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
     }
 }

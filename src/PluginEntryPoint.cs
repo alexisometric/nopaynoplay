@@ -117,9 +117,28 @@ public class PluginEntryPoint : IHostedService
 
             diag.MatchingAssemblies = matches;
 
-            Assembly? ftAssembly = AssemblyLoadContext.All
-                .SelectMany(ctx => ctx.Assemblies)
-                .FirstOrDefault(a => a.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface") != null);
+            // Find the FT assembly, stopping at the first candidate that exposes the
+            // PluginInterface type. Scanning every assembly twice (once for inventory,
+            // once for the type) is the heaviest single startup cost, so the type scan
+            // short-circuits on the first match.
+            Assembly? ftAssembly = null;
+            foreach (var ctx in AssemblyLoadContext.All)
+            {
+                foreach (var a in ctx.Assemblies)
+                {
+                    if (a.FullName?.Contains(".FileTransformation", StringComparison.OrdinalIgnoreCase) == true
+                        && a.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface") != null)
+                    {
+                        ftAssembly = a;
+                        break;
+                    }
+                }
+
+                if (ftAssembly != null)
+                {
+                    break;
+                }
+            }
 
             if (ftAssembly == null)
             {

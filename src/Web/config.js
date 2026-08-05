@@ -15,6 +15,8 @@
         activityFilter: '',
         activityFrom: '',
         activityTo: '',
+        activityPage: 1,
+        activityPageSize: 100,
         selected: {},
         stats: null,
         diagnostics: null,
@@ -107,6 +109,31 @@
         flash._timer = setTimeout(function () { el.classList.remove('show'); }, 3500);
     }
 
+    // Replaces a lazy-loaded container with an error state + flash message so a
+    // failed load never leaves an infinite skeleton or a misleading "empty" table.
+    function showLoadError(page, selector, message) {
+        var el = page.querySelector(selector);
+        if (el && !el.querySelector('table')) {
+            el.innerHTML = '<div class="npnp-empty">' + escapeHtml(message) + '</div>';
+        }
+        flash(page, message, true);
+    }
+
+    // Disables/enables a submit button while an AJAX request is in flight to
+    // prevent double-submission (e.g. recording a payment twice).
+    function setBusyButton(btn, busy) {
+        if (!btn) return;
+        if (busy) {
+            if (!btn.hasAttribute('data-npnp-disabled')) {
+                btn.setAttribute('data-npnp-disabled', btn.disabled ? '1' : '');
+            }
+            btn.disabled = true;
+        } else {
+            btn.disabled = btn.getAttribute('data-npnp-disabled') === '1';
+            btn.removeAttribute('data-npnp-disabled');
+        }
+    }
+
     function fillCultureSelect(page) {
         var sel = page.querySelector('#npnpUiCulture');
         if (!sel) return;
@@ -137,6 +164,8 @@
             fillCultureSelect(page);
             var ui = page.querySelector('#npnpUiCulture');
             if (ui) ui.value = cfg.UiCultureOverride || '';
+        }).catch(function () {
+            flash(page, t('admin.settings.loadError', 'Failed to load settings.'), true);
         });
     }
 
@@ -162,23 +191,52 @@
     }
 
     // Client-side validation for settings fields that the server may silently sanitize.
+    // Returns the list of invalid field ids and renders an inline error under each one.
+    function clearFieldErrors(page) {
+        page.querySelectorAll('.npnp-field-error').forEach(function (el) { el.remove(); });
+        page.querySelectorAll('.npnp-input-invalid').forEach(function (el) { el.classList.remove('npnp-input-invalid'); });
+    }
+
+    function setFieldError(page, input, message) {
+        if (!input) return;
+        input.classList.add('npnp-input-invalid');
+        var container = input.parentNode;
+        var existing = container.querySelector('.npnp-field-error');
+        if (existing) {
+            existing.textContent = message;
+        } else {
+            var err = document.createElement('div');
+            err.className = 'npnp-field-error';
+            err.textContent = message;
+            container.appendChild(err);
+        }
+    }
+
     function validateSettingsFields(page) {
-        var warnings = [];
+        var errors = [];
+        var price = parseFloat(page.querySelector('#npnpPrice').value || '0');
+        var grace = parseInt(page.querySelector('#npnpGrace').value || '0', 10);
+        var trial = parseInt(page.querySelector('#npnpTrial').value || '0', 10);
+        var warning = parseInt(page.querySelector('#npnpWarning').value || '0', 10);
         var paypal = (page.querySelector('#npnpPaypal').value || '').trim();
         var lydia = (page.querySelector('#npnpLydia').value || '').trim();
-        var email = (page.querySelector('#npnpContactEmail') ? page.querySelector('#npnpContactEmail').value : '') || '';
-        var emailTrimmed = email.trim();
+        var email = ((page.querySelector('#npnpContactEmail') ? page.querySelector('#npnpContactEmail').value : '') || '').trim();
+        var rangeMsg = t('admin.settings.validation.range', 'Out of range.');
 
-        if (paypal && !/^https?:\/\//i.test(paypal)) {
-            warnings.push(t('admin.settings.validation.url', 'PayPal link must start with http:// or https://'));
+        function check(input, bad, msg) {
+            if (bad) {
+                setFieldError(page, page.querySelector(input), msg);
+                errors.push(input);
+            }
         }
-        if (lydia && !/^https?:\/\//i.test(lydia)) {
-            warnings.push(t('admin.settings.validation.url', 'Lydia link must start with http:// or https://'));
-        }
-        if (emailTrimmed && !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(emailTrimmed)) {
-            warnings.push(t('admin.settings.validation.email', 'Contact email does not look valid.'));
-        }
-        return warnings;
+        check('#npnpPrice', !isFinite(price) || price < 0 || price > 100000, rangeMsg);
+        check('#npnpGrace', !isFinite(grace) || grace < 0 || grace > 365, rangeMsg);
+        check('#npnpTrial', !isFinite(trial) || trial < 0 || trial > 365, rangeMsg);
+        check('#npnpWarning', !isFinite(warning) || warning < 0 || warning > 90, rangeMsg);
+        check('#npnpPaypal', !!(paypal && !/^https?:\/\//i.test(paypal)), t('admin.settings.validation.url', 'Must start with http:// or https://'));
+        check('#npnpLydia', !!(lydia && !/^https?:\/\//i.test(lydia)), t('admin.settings.validation.url', 'Must start with http:// or https://'));
+        check('#npnpContactEmail', !!(email && !/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email)), t('admin.settings.validation.email', 'Contact email does not look valid.'));
+        return errors;
     }
 
     function loadUsers(page) {
@@ -192,6 +250,8 @@
             state.selected = keep;
             renderUsers(page);
             return loadStats(page);
+        }).catch(function () {
+            showLoadError(page, '#npnpUsersTable', t('admin.users.loadError', 'Failed to load members.'));
         });
     }
 
@@ -243,7 +303,7 @@
                 return '<g><title>' + escapeHtml(title) + '</title>'
                     + '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1)
                     + '" width="' + barW.toFixed(1) + '" height="' + bh.toFixed(1)
-                    + '" rx="2" fill="#00a4dc" opacity="' + (v > 0 ? 0.85 : 0.25) + '"></rect>'
+                    + '" rx="2" fill="var(--npnp-accent, #00a4dc)" opacity="' + (v > 0 ? 0.85 : 0.25) + '"></rect>'
                     + '<text x="' + (x + barW / 2).toFixed(1) + '" y="' + (h - 8)
                     + '" text-anchor="middle" font-size="10" fill="currentColor" opacity=".7">'
                     + escapeHtml(lbl) + '</text>'
@@ -285,6 +345,8 @@
         }).then(function (rows) {
             state.activity = rows || [];
             renderActivity(page);
+        }).catch(function () {
+            showLoadError(page, '#npnpActivityTable', t('admin.activity.loadError', 'Failed to load activity.'));
         });
     }
 
@@ -322,8 +384,13 @@
                 var btn = el.querySelector('#npnpStatusRetry');
                 if (btn) {
                     btn.addEventListener('click', function () {
-                        api().ajax({ type: 'POST', url: api().getUrl('NoPayNoPlay/Diagnostics/Retry') })
-                            .then(function () { return loadStatus(page); });
+                        setBusyButton(btn, true);
+                        api().ajax({ type: 'POST', url: api().getUrl('NoPayNoPlay/RetryRegistration'), dataType: 'json' })
+                            .then(function () { return loadStatus(page); })
+                            .catch(function () {
+                                flash(page, t('admin.diag.retry.ko', 'Registration failed — see notes below.'), true);
+                            })
+                            .finally(function () { setBusyButton(btn, false); });
                     });
                 }
             }
@@ -395,14 +462,31 @@
             + '</table>';
     }
 
+    // Cached Intl formatters: instantiating one per row per render is expensive on
+    // large tables (hundreds of allocations per render).
+    var _dateFmt = null;
+    var _dateTimeFmt = null;
+    var _fmtLang = '';
+    function ensureFormatters() {
+        var lang = i18n.lang || 'en';
+        if (_fmtLang === lang) return;
+        _fmtLang = lang;
+        _dateFmt = new Intl.DateTimeFormat(lang, { day: '2-digit', month: '2-digit', year: 'numeric' });
+        _dateTimeFmt = new Intl.DateTimeFormat(lang, { dateStyle: 'short', timeStyle: 'short' });
+    }
+
     function formatDate(iso) {
-        try { return new Intl.DateTimeFormat(i18n.lang || 'en', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)); }
-        catch (_) { return iso; }
+        try {
+            ensureFormatters();
+            return _dateFmt.format(new Date(iso));
+        } catch (_) { return iso; }
     }
 
     function formatDateTime(iso) {
-        try { return new Intl.DateTimeFormat(i18n.lang || 'en', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso)); }
-        catch (_) { return iso; }
+        try {
+            ensureFormatters();
+            return _dateTimeFmt.format(new Date(iso));
+        } catch (_) { return iso; }
     }
 
     function stateLabel(stateName, isExempt) {
@@ -498,6 +582,22 @@
         return '<span class="npnp-sort-arrow">' + (state.sortDir > 0 ? '▲' : '▼') + '</span>';
     }
 
+    // Makes a sortable <th> keyboard-accessible (tabindex + role + Enter/Space) and
+    // keeps aria-sort accurate for assistive tech. onActivate runs on click or key.
+    function bindSortableHeader(th, sortKey, sortDir, onActivate) {
+        th.setAttribute('tabindex', '0');
+        th.setAttribute('role', 'button');
+        th.setAttribute('aria-sort', th.getAttribute('data-sort') === sortKey
+            ? (sortDir > 0 ? 'ascending' : 'descending')
+            : 'none');
+        th.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onActivate();
+            }
+        });
+    }
+
     function renderSummary(page) {
         var counts = { Ok: 0, WarningSoon: 0, InGrace: 0, Blocked: 0, Exempt: 0 };
         state.users.forEach(function (u) {
@@ -548,19 +648,19 @@
         var start = (state.page - 1) * state.pageSize;
         var rows = allRows.slice(start, start + state.pageSize);
 
-        var selectAllLabel = escapeHtml(t('admin.users.selectAll', 'Select all'));
+        var selectAllLabel = escapeHtml(t('admin.users.selectAllPage', 'Select all on this page'));
         var html = '<table class="npnp-table">'
             + '<thead><tr>'
             + '<th class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" id="npnpSelectAll" aria-label="' + selectAllLabel + '" /><span></span></label></th>'
-            + '<th data-sort="Username">' + escapeHtml(t('admin.users.col.user', 'User')) + arrowFor('Username') + '</th>'
-            + '<th data-sort="State">' + escapeHtml(t('admin.users.col.state', 'State')) + arrowFor('State') + '</th>'
-            + '<th data-sort="ExpiryDate">' + escapeHtml(t('admin.users.col.expiry', 'Expiry')) + arrowFor('ExpiryDate') + '</th>'
-            + '<th data-sort="DaysLeft">' + escapeHtml(t('admin.users.col.daysLeft', 'Days left')) + arrowFor('DaysLeft') + '</th>'
-            + '<th data-sort="LastPayment">' + escapeHtml(t('admin.users.col.lastPayment', 'Last payment')) + arrowFor('LastPayment') + '</th>'
-            + '<th data-sort="LastMethod">' + escapeHtml(t('admin.users.col.lastMethod', 'Last method')) + arrowFor('LastMethod') + '</th>'
-            + '<th data-sort="TotalPaid">' + escapeHtml(t('admin.users.col.totalPaid', 'Total paid')) + arrowFor('TotalPaid') + '</th>'
-            + '<th data-sort="Tag">' + escapeHtml(t('admin.users.col.tag', 'Tag')) + arrowFor('Tag') + '</th>'
-            + '<th>' + escapeHtml(t('admin.users.col.actions', 'Actions')) + '</th>'
+            + '<th class="col-user" data-sort="Username">' + escapeHtml(t('admin.users.col.user', 'User')) + arrowFor('Username') + '</th>'
+            + '<th class="col-state" data-sort="State">' + escapeHtml(t('admin.users.col.state', 'State')) + arrowFor('State') + '</th>'
+            + '<th class="col-expiry" data-sort="ExpiryDate">' + escapeHtml(t('admin.users.col.expiry', 'Expiry')) + arrowFor('ExpiryDate') + '</th>'
+            + '<th class="col-days" data-sort="DaysLeft">' + escapeHtml(t('admin.users.col.daysLeft', 'Days left')) + arrowFor('DaysLeft') + '</th>'
+            + '<th class="col-payment" data-sort="LastPayment">' + escapeHtml(t('admin.users.col.lastPayment', 'Last payment')) + arrowFor('LastPayment') + '</th>'
+            + '<th class="col-method" data-sort="LastMethod">' + escapeHtml(t('admin.users.col.lastMethod', 'Last method')) + arrowFor('LastMethod') + '</th>'
+            + '<th class="col-total" data-sort="TotalPaid">' + escapeHtml(t('admin.users.col.totalPaid', 'Total paid')) + arrowFor('TotalPaid') + '</th>'
+            + '<th class="col-tag" data-sort="Tag">' + escapeHtml(t('admin.users.col.tag', 'Tag')) + arrowFor('Tag') + '</th>'
+            + '<th class="col-actions">' + escapeHtml(t('admin.users.col.actions', 'Actions')) + '</th>'
             + '</tr></thead><tbody>';
 
         rows.forEach(function (u) {
@@ -575,7 +675,7 @@
             var checked = state.selected[u.UserId] ? ' checked' : '';
 
             var pendingBadge = u.HasPendingPaymentClaim
-                ? '<span class="npnp-state-pill" style="background:#f39c12;margin-left:6px;" title="'
+                ? '<span class="npnp-state-pill" style="--c:#f39c12;margin-left:6px;" title="'
                     + escapeHtml(format(t('admin.users.pending.tooltip',
                         'User declared payment on {date} via {method}'),
                         { date: formatDate(u.PendingPaymentClaimAt), method: u.PendingPaymentMethod || '—' }))
@@ -583,7 +683,7 @@
                 : '';
 
             var arrearsBadge = (u.ArrearsMonths && u.ArrearsMonths > 0)
-                ? '<span class="npnp-state-pill" style="background:#e74c3c;margin-left:6px;">'
+                ? '<span class="npnp-state-pill" style="--c:#e74c3c;margin-left:6px;">'
                     + escapeHtml(format(t('admin.users.arrears.badge', '{n}m late'), { n: u.ArrearsMonths }))
                     + '</span>'
                 : '';
@@ -613,15 +713,15 @@
             var rowCheckLabel = escapeHtml(format(t('admin.users.selectRow', 'Select {username}'), { username: u.Username }));
             html += '<tr data-userid="' + escapeHtml(u.UserId) + '">'
                 + '<td class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-rowcheck"' + checked + ' aria-label="' + rowCheckLabel + '" /><span></span></label></td>'
-                + '<td>' + escapeHtml(u.Username) + '</td>'
-                + '<td><span class="npnp-state-pill" style="background:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + arrearsBadge + '</td>'
-                + '<td>' + escapeHtml(u.IsExempt ? '—' : formatDate(u.ExpiryDate)) + '</td>'
-                + '<td>' + escapeHtml(u.IsExempt ? '—' : String(u.DaysLeft)) + '</td>'
-                + '<td>' + escapeHtml(lastLabel) + '</td>'
-                + '<td>' + escapeHtml(lastMethod) + '</td>'
-                + '<td>' + escapeHtml(totalPaidStr) + '</td>'
-                + '<td>' + tagCell + '</td>'
-                + '<td><div class="npnp-actions">'
+                + '<td class="col-user">' + escapeHtml(u.Username) + '</td>'
+                + '<td class="col-state"><span class="npnp-state-pill" style="--c:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + arrearsBadge + '</td>'
+                + '<td class="col-expiry">' + escapeHtml(u.IsExempt ? '—' : formatDate(u.ExpiryDate)) + '</td>'
+                + '<td class="col-days">' + escapeHtml(u.IsExempt ? '—' : String(u.DaysLeft)) + '</td>'
+                + '<td class="col-payment">' + escapeHtml(lastLabel) + '</td>'
+                + '<td class="col-method">' + escapeHtml(lastMethod) + '</td>'
+                + '<td class="col-total">' + escapeHtml(totalPaidStr) + '</td>'
+                + '<td class="col-tag">' + tagCell + '</td>'
+                + '<td class="col-actions"><div class="npnp-actions">'
                 + pendingActions
                 + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span></button>'
                 + '<button is="emby-button" type="button" class="raised npnp-history" title="' + escapeHtml(t('admin.users.action.history', 'History')) + '"><span class="material-icons" aria-hidden="true">history</span></button>'
@@ -685,7 +785,7 @@
         });
 
         container.querySelectorAll('th[data-sort]').forEach(function (th) {
-            th.addEventListener('click', function () {
+            function activate() {
                 var key = th.getAttribute('data-sort');
                 if (state.sortKey === key) {
                     state.sortDir = -state.sortDir;
@@ -695,7 +795,9 @@
                 }
                 state.page = 1;
                 renderUsers(page);
-            });
+            }
+            bindSortableHeader(th, state.sortKey, state.sortDir, activate);
+            th.addEventListener('click', activate);
         });
 
         container.querySelectorAll('tr[data-userid]').forEach(function (tr) {
@@ -801,6 +903,15 @@
             container.innerHTML = '<div class="npnp-empty">' + escapeHtml(t('admin.activity.empty', 'No activity yet.')) + '</div>';
             return;
         }
+
+        // Client-side pagination: the server returns the full history, but rendering
+        // every row at once stalls the main thread on large installs.
+        var totalPages = Math.max(1, Math.ceil(rows.length / state.activityPageSize));
+        if (state.activityPage < 1) state.activityPage = 1;
+        if (state.activityPage > totalPages) state.activityPage = totalPages;
+        var start = (state.activityPage - 1) * state.activityPageSize;
+        var pageRows = rows.slice(start, start + state.activityPageSize);
+
         var html = '<table class="npnp-table">'
             + '<thead><tr>'
             + '<th data-sort="Date">' + escapeHtml(t('admin.activity.col.date', 'Date')) + actArrow('Date') + '</th>'
@@ -810,7 +921,7 @@
             + '<th data-sort="MonthsAdded">' + escapeHtml(t('admin.activity.col.months', 'Months')) + actArrow('MonthsAdded') + '</th>'
             + '<th>' + escapeHtml(t('admin.activity.col.note', 'Note')) + '</th>'
             + '</tr></thead><tbody>';
-        rows.forEach(function (r) {
+        pageRows.forEach(function (r) {
             html += '<tr>'
                 + '<td>' + escapeHtml(formatDateTime(r.Date)) + '</td>'
                 + '<td>' + escapeHtml(r.Username || '') + '</td>'
@@ -821,11 +932,30 @@
                 + '</tr>';
         });
         html += '</tbody></table>';
+
+        if (totalPages > 1) {
+            html += '<div class="npnp-pagination" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-top:12px;font-size:13px;">'
+                + '<button is="emby-button" type="button" class="button-alt npnp-act-prev"' + (state.activityPage <= 1 ? ' disabled' : '') + ' aria-label="' + escapeHtml(t('admin.pagination.prev', 'Previous page')) + '">'
+                + '<span class="material-icons" aria-hidden="true">chevron_left</span></button>'
+                + '<span style="opacity:.8;">' + escapeHtml(format(t('admin.pagination.info', 'Page {page} of {total}'), { page: state.activityPage, total: totalPages })) + '</span>'
+                + '<button is="emby-button" type="button" class="button-alt npnp-act-next"' + (state.activityPage >= totalPages ? ' disabled' : '') + ' aria-label="' + escapeHtml(t('admin.pagination.next', 'Next page')) + '">'
+                + '<span class="material-icons" aria-hidden="true">chevron_right</span></button>'
+                + '</div>';
+        }
         container.innerHTML = html;
 
-        // Bind sort on activity table headers.
+        var prevBtn = container.querySelector('.npnp-act-prev');
+        var nextBtn = container.querySelector('.npnp-act-next');
+        if (prevBtn) prevBtn.addEventListener('click', function () {
+            if (state.activityPage > 1) { state.activityPage--; renderActivity(page); }
+        });
+        if (nextBtn) nextBtn.addEventListener('click', function () {
+            if (state.activityPage < totalPages) { state.activityPage++; renderActivity(page); }
+        });
+
+        // Bind sort on activity table headers (keyboard-accessible + aria-sort).
         container.querySelectorAll('th[data-sort]').forEach(function (th) {
-            th.addEventListener('click', function () {
+            function activate() {
                 var key = th.getAttribute('data-sort');
                 if (state.activitySortKey === key) {
                     state.activitySortDir = -(state.activitySortDir || -1);
@@ -834,11 +964,22 @@
                     state.activitySortDir = key === 'Date' ? -1 : 1;
                 }
                 renderActivity(page);
-            });
+            }
+            bindSortableHeader(th, state.activitySortKey || 'Date', state.activitySortDir || -1, activate);
+            th.addEventListener('click', activate);
         });
     }
 
     /* --- modals --- */
+
+    function uuid() {
+        if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+            var r = Math.random() * 16 | 0;
+            var v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
 
     function closeModal(page) {
         var root = page.querySelector('#npnpModalRoot');
@@ -847,11 +988,12 @@
 
     function buildModal(page, titleHtml, bodyHtml, footerHtml) {
         var root = page.querySelector('#npnpModalRoot');
+        var titleId = 'npnpModalTitle-' + Math.random().toString(36).slice(2, 10);
         root.innerHTML = ''
             + '<div class="npnp-modal-backdrop" data-npnp-backdrop>'
-            + '  <div class="npnp-modal" role="dialog" aria-modal="true" tabindex="-1">'
+            + '  <div class="npnp-modal" role="dialog" aria-modal="true" aria-labelledby="' + titleId + '" tabindex="-1">'
             + '    <button type="button" class="close" aria-label="' + escapeHtml(t('common.close', 'Close')) + '" data-npnp-close>&times;</button>'
-            + '    <h2>' + titleHtml + '</h2>'
+            + '    <h2 id="' + titleId + '">' + titleHtml + '</h2>'
             + '    <div>' + bodyHtml + '</div>'
             + (footerHtml ? '<div class="modal-actions">' + footerHtml + '</div>' : '')
             + '  </div>'
@@ -995,7 +1137,8 @@
             '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
             + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
-        modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
+        var confirmBtn = modal.querySelector('[data-npnp-confirm]');
+        confirmBtn.addEventListener('click', function () {
             var dv = modal.querySelector('#npnpEditTxDate').value;
             var payload = {
                 Amount: parseFloat(modal.querySelector('#npnpEditTxAmount').value || '0'),
@@ -1004,6 +1147,7 @@
                 Note: modal.querySelector('#npnpEditTxNote').value || '',
                 Date: dv ? (dv + 'T12:00:00Z') : null
             };
+            setBusyButton(confirmBtn, true);
             api().ajax({
                 type: 'PATCH',
                 url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Transactions/' + entry.Id),
@@ -1012,6 +1156,9 @@
             }).then(function () {
                 closeModal(page);
                 return loadUsers(page).then(function () { return loadActivity(page); });
+            }).catch(function () {
+                flash(page, t('admin.users.tx.error', 'Could not save the transaction.'), true);
+                setBusyButton(confirmBtn, false);
             });
         });
     }
@@ -1060,18 +1207,22 @@
 
         var modal = buildModal(page, escapeHtml(t('admin.payment.title', 'Record a payment')), body, footer);
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
-        modal.querySelector('[data-npnp-save]').addEventListener('click', function () {
+        var saveBtn = modal.querySelector('[data-npnp-save]');
+        saveBtn.addEventListener('click', function () {
             var dateVal = (modal.querySelector('#npnpPayDate').value || '').trim();
             var payload = {
                 Amount: parseFloat(modal.querySelector('#npnpPayAmount').value || '0'),
                 Method: modal.querySelector('#npnpPayMethod').value || 'Other',
                 MonthsAdded: parseInt(modal.querySelector('#npnpPayMonths').value || '1', 10),
-                Note: modal.querySelector('#npnpPayNote').value || ''
+                Note: modal.querySelector('#npnpPayNote').value || '',
+                // Idempotency key: a double-click or browser retry can't charge twice.
+                IdempotencyKey: uuid()
             };
             if (dateVal) {
                 // Send midday UTC to avoid timezone-related off-by-one when the server clamps to today.
                 payload.Date = dateVal + 'T12:00:00Z';
             }
+            setBusyButton(saveBtn, true);
             api().ajax({
                 type: 'POST',
                 url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + (fromPending ? '/ConfirmPending' : '/Pay')),
@@ -1081,6 +1232,9 @@
                 closeModal(page);
                 flash(page, t('admin.users.payment.saved', 'Payment recorded.'));
                 return Promise.all([loadUsers(page), loadActivity(page)]);
+            }).catch(function () {
+                flash(page, t('admin.users.payment.error', 'Could not record the payment. Please try again.'), true);
+                setBusyButton(saveBtn, false);
             });
         });
     }
@@ -1095,8 +1249,9 @@
             state.promoCodes = rows || [];
             renderPromoTable(page);
         }).catch(function () {
+            // Show an explicit error state — a failed fetch is NOT "no promo codes".
             state.promoCodes = [];
-            renderPromoTable(page);
+            showLoadError(page, '#npnpPromoTable', t('admin.promo.loadError', 'Failed to load promo codes.'));
         });
     }
 
@@ -1176,6 +1331,8 @@
             if (expiresVal) {
                 payload.ExpiresAt = expiresVal + 'T23:59:59Z';
             }
+            var submitBtn = form.querySelector('button[type="submit"]');
+            setBusyButton(submitBtn, true);
             api().ajax({
                 type: 'POST',
                 url: api().getUrl('NoPayNoPlay/PromoCodes'),
@@ -1193,7 +1350,7 @@
                     ? t('admin.promo.duplicate', 'A promo code with this name already exists.')
                     : t('admin.promo.invalid', 'Invalid promo code (use 6-32 chars, A-Z 0-9 _ -).');
                 flash(page, msg, true);
-            });
+            }).finally(function () { setBusyButton(submitBtn, false); });
             return false;
         });
     }
@@ -1247,7 +1404,7 @@
         state._savedTags = (state.tags || []).map(function (r) { return Object.assign({}, r); });
     }
 
-    function activateTab(page, tab, moveFocus) {
+    function activateTab(page, tab, moveFocus, skipLazyLoad) {
         // Warn before leaving tiers/tags tabs with unsaved edits.
         var currentActive = page.querySelector('.npnp-tab-panel.active');
         var currentTabId = currentActive ? currentActive.id.replace('npnpTab-', '') : '';
@@ -1267,14 +1424,18 @@
             p.classList.toggle('active', p.id === 'npnpTab-' + tab);
         });
         try { sessionStorage.setItem('npnpAdminTab', tab); } catch (_) {}
-        if (tab === 'activity') loadActivity(page);
-        if (tab === 'diagnostics') loadDiagnostics(page);
-        if (tab === 'promo') loadPromoCodes(page);
-        if (tab === 'tiers') { loadTiers(page).then(function () { snapshotSavedState(); }); }
-        if (tab === 'tags') { loadTags(page).then(function () { snapshotSavedState(); }); }
-        if (tab === 'audit') loadAudit(page);
-        if (tab === 'settings') {
-            setTimeout(function () { bindThemePreview(page); }, 100);
+        // skipLazyLoad lets the initial pageshow restore avoid re-fetching a tab that
+        // the page-load Promise.all is already loading (fixes the Activity double-fetch).
+        if (!skipLazyLoad) {
+            if (tab === 'activity') loadActivity(page);
+            if (tab === 'diagnostics') loadDiagnostics(page);
+            if (tab === 'promo') loadPromoCodes(page);
+            if (tab === 'tiers') { loadTiers(page).then(function () { snapshotSavedState(); }); }
+            if (tab === 'tags') { loadTags(page).then(function () { snapshotSavedState(); }); }
+            if (tab === 'audit') loadAudit(page);
+            if (tab === 'settings') {
+                setTimeout(function () { bindThemePreview(page); }, 100);
+            }
         }
     }
 
@@ -1311,11 +1472,12 @@
             });
         });
 
-        // Restore the last-used tab within the session (defaults to Members).
+        // Restore the last-used tab within the session (defaults to Members). The page-load
+        // Promise.all already loads Activity/Tags/etc., so skip re-fetching on restore.
         var saved = null;
         try { saved = sessionStorage.getItem('npnpAdminTab'); } catch (_) {}
         if (saved && page.querySelector('#npnpTab-' + saved)) {
-            activateTab(page, saved, false);
+            activateTab(page, saved, false, true);
         }
     }
 
@@ -1327,7 +1489,9 @@
         }).then(function (rows) {
             state.tiers = (rows || []).map(function (r) { return Object.assign({}, r); });
             renderTiers(page);
-        }).catch(function () {});
+        }).catch(function () {
+            showLoadError(page, '#npnpTiersTable', t('admin.tiers.loadError', 'Failed to load tiers.'));
+        });
     }
 
     function renderTiers(page) {
@@ -1415,7 +1579,9 @@
         }).then(function (rows) {
             state.tags = (rows || []).map(function (r) { return Object.assign({}, r); });
             renderTags(page);
-        }).catch(function () {});
+        }).catch(function () {
+            showLoadError(page, '#npnpTagsTable', t('admin.tags.loadError', 'Failed to load tags.'));
+        });
     }
 
     function renderTags(page) {
@@ -1517,7 +1683,9 @@
         }).then(function (rows) {
             state.audit = rows || [];
             renderAudit(page);
-        }).catch(function () {});
+        }).catch(function () {
+            showLoadError(page, '#npnpAuditTable', t('admin.audit.loadError', 'Failed to load the audit log.'));
+        });
     }
 
     function renderAudit(page) {
@@ -1570,6 +1738,9 @@
         refreshUrl();
     }
 
+    // Single shared observer so re-activating the Settings tab never leaks a new
+    // MutationObserver (previously one was created on every visit).
+    var _themeObserver = null;
     function bindThemePreview(page) {
         function updateSwatches() {
             var style = getComputedStyle(page.querySelector('#NoPayNoPlayConfigPage'));
@@ -1595,12 +1766,13 @@
                 swRadius.style.borderRadius = radius;
             }
         }
-        // Initial update + re-run on any style change (e.g. theme toggle)
+        // Initial update + re-run on any style change (e.g. theme toggle).
         updateSwatches();
-        // Observe for dynamic style changes
         try {
-            var obs = new MutationObserver(updateSwatches);
-            obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+            if (!_themeObserver) {
+                _themeObserver = new MutationObserver(updateSwatches);
+                _themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
+            }
         } catch (_) {}
     }
 
@@ -1652,18 +1824,25 @@
                 renderUsers(page);
             });
         }
+        var activityDebounce = null;
         page.querySelector('#npnpActivitySearch').addEventListener('input', function (e) {
             state.activityFilter = e.target.value || '';
-            renderActivity(page);
+            state.activityPage = 1;
+            // Debounce like the members search: rebuilding the table per keystroke
+            // is wasteful on large histories.
+            clearTimeout(activityDebounce);
+            activityDebounce = setTimeout(function () { renderActivity(page); }, 200);
         });
         var fromEl = page.querySelector('#npnpActivityFrom');
         if (fromEl) fromEl.addEventListener('change', function (e) {
             state.activityFrom = e.target.value || '';
+            state.activityPage = 1;
             renderActivity(page);
         });
         var toEl = page.querySelector('#npnpActivityTo');
         if (toEl) toEl.addEventListener('change', function (e) {
             state.activityTo = e.target.value || '';
+            state.activityPage = 1;
             renderActivity(page);
         });
 
@@ -1732,11 +1911,19 @@
                 var u = state.users.find(function (x) { return x.UserId === id; });
                 return u && !u.IsExempt;
             });
+            var btn = bar.querySelector('#npnpBulkExempt');
+            setBusyButton(btn, true);
             api().ajax({
                 type: 'POST', url: api().getUrl('NoPayNoPlay/Users/BulkExempt'),
                 data: JSON.stringify({ UserIds: ids, IsExempt: anyNotExempt }),
                 contentType: 'application/json'
-            }).then(function () { state.selected = {}; return loadUsers(page); });
+            }).then(function (res) {
+                state.selected = {};
+                flashBulkPartial(page, res, ids);
+                return loadUsers(page);
+            }).catch(function () {
+                flash(page, t('admin.users.bulk.error', 'Bulk operation failed. Please try again.'), true);
+            }).finally(function () { setBusyButton(btn, false); });
         });
         bar.querySelector('#npnpBulkReset').addEventListener('click', function () {
             var ids = selectedIds();
@@ -1745,18 +1932,49 @@
                 t('admin.users.action.reset', 'Reset trial'),
                 t('admin.users.bulk.confirm.reset', 'Reset {n} member(s) back to a fresh trial?').replace('{n}', String(ids.length)),
                 function () {
+                    var btn = bar.querySelector('#npnpBulkReset');
+                    setBusyButton(btn, true);
                     api().ajax({
                         type: 'POST', url: api().getUrl('NoPayNoPlay/Users/BulkReset'),
                         data: JSON.stringify({ UserIds: ids }),
                         contentType: 'application/json'
-                    }).then(function () { state.selected = {}; return loadUsers(page); });
+                    }).then(function (res) {
+                        state.selected = {};
+                        flashBulkPartial(page, res, ids);
+                        return loadUsers(page);
+                    }).catch(function () {
+                        flash(page, t('admin.users.bulk.error', 'Bulk operation failed. Please try again.'), true);
+                    }).finally(function () { setBusyButton(btn, false); });
                 });
         });
+    }
+
+    // Surfaces a bulk operation's partial success (e.g. stale/deleted users skipped
+    // server-side) instead of silently pretending everything succeeded.
+    function flashBulkPartial(page, res, ids) {
+        var processed = res && res.processed;
+        if (typeof processed === 'number' && processed !== ids.length) {
+            flash(page, format(t('admin.users.bulk.partial',
+                '{done} of {total} processed ({skipped} skipped).'),
+                { done: processed, total: ids.length, skipped: ids.length - processed }), true);
+        }
     }
 
     function openBulkPaymentModal(page, ids) {
         var defaultAmount = Number(state.settings.MonthlyPrice || 10).toFixed(2);
         var currency = state.settings.Currency || 'EUR';
+        // Localized method options (previously hardcoded English, unlike the single-payment modal).
+        var methods = [
+            ['PayPal', t('admin.payment.method.paypal', 'PayPal')],
+            ['Lydia', t('admin.payment.method.lydia', 'Lydia')],
+            ['Bank', t('admin.payment.method.bank', 'Bank transfer')],
+            ['Cash', t('admin.payment.method.cash', 'Cash')],
+            ['Other', t('admin.payment.method.other', 'Other')]
+        ];
+        var optionsHtml = methods.map(function (m) {
+            return '<option value="' + escapeHtml(m[0]) + '">' + escapeHtml(m[1]) + '</option>';
+        }).join('');
+
         var body = ''
             + '<form id="npnpBulkPayForm">'
             + '<p>' + escapeHtml(t('admin.users.bulk.pay.intro', 'Recording the same payment for {n} member(s).').replace('{n}', String(ids.length))) + '</p>'
@@ -1765,9 +1983,7 @@
             + '<div class="inputContainer"><label for="npnpBulkMonths">' + escapeHtml(t('admin.payment.months', 'Months')) + '</label>'
             + '<input is="emby-input" id="npnpBulkMonths" type="number" min="1" max="60" value="1" /></div>'
             + '<div class="inputContainer"><label for="npnpBulkMethod">' + escapeHtml(t('admin.payment.method', 'Method')) + '</label>'
-            + '<select is="emby-select" id="npnpBulkMethod">'
-            + '<option value="PayPal">PayPal</option><option value="Lydia">Lydia</option><option value="Bank">Bank</option><option value="Cash">Cash</option><option value="Other">Other</option>'
-            + '</select></div>'
+            + '<select is="emby-select" id="npnpBulkMethod">' + optionsHtml + '</select></div>'
             + '</form>';
         var modal = buildModal(page,
             escapeHtml(t('admin.users.bulk.pay', 'Record payment')),
@@ -1775,7 +1991,8 @@
             '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
             + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
-        modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
+        var confirmBtn = modal.querySelector('[data-npnp-confirm]');
+        confirmBtn.addEventListener('click', function () {
             var payload = {
                 UserIds: ids,
                 Amount: parseFloat(modal.querySelector('#npnpBulkAmount').value || '0'),
@@ -1783,13 +2000,24 @@
                 Method: modal.querySelector('#npnpBulkMethod').value || 'Other',
                 Note: ''
             };
+            setBusyButton(confirmBtn, true);
             api().ajax({
                 type: 'POST', url: api().getUrl('NoPayNoPlay/Users/BulkPay'),
                 data: JSON.stringify(payload), contentType: 'application/json'
-            }).then(function () {
+            }).then(function (res) {
                 closeModal(page);
                 state.selected = {};
+                // Surface partial failures (stale/deleted users are skipped server-side).
+                var processed = res && res.processed;
+                if (typeof processed === 'number' && processed !== ids.length) {
+                    flash(page, format(t('admin.users.bulk.partial',
+                        '{done} of {total} processed ({skipped} skipped).'),
+                        { done: processed, total: ids.length, skipped: ids.length - processed }), true);
+                }
                 return Promise.all([loadUsers(page), loadActivity(page)]);
+            }).catch(function () {
+                flash(page, t('admin.users.bulk.error', 'Bulk payment failed. Please try again.'), true);
+                setBusyButton(confirmBtn, false);
             });
         });
     }
@@ -1853,23 +2081,29 @@
 
         page.querySelector('#npnpSettingsForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            var warnings = validateSettingsFields(page);
-            if (warnings.length) {
-                flash(page, warnings.join(' '), true);
+            clearFieldErrors(page);
+            var errors = validateSettingsFields(page);
+            if (errors.length) {
+                flash(page, t('admin.settings.validation.inline', 'Please correct the highlighted fields.'), true);
                 return false;
             }
+            var saveBtn = page.querySelector('#npnpSettingsForm button[type="submit"]');
+            setBusyButton(saveBtn, true);
             Dashboard.showLoadingMsg();
             saveSettings(page).then(function () {
                 Dashboard.hideLoadingMsg();
                 Dashboard.processPluginConfigurationUpdateResult();
                 flash(page, t('admin.settings.saved', 'Settings saved.'));
                 // Reload strings/users in case the language override changed.
-                loadStrings().then(function () {
+                return loadStrings().then(function () {
                     applyStaticI18n(page);
                     renderUsers(page);
                     renderActivity(page);
                 });
-            });
+            }).catch(function () {
+                Dashboard.hideLoadingMsg();
+                flash(page, t('admin.settings.saveError', 'Could not save settings. Please try again.'), true);
+            }).finally(function () { setBusyButton(saveBtn, false); });
             return false;
         });
     });

@@ -17,6 +17,24 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo ">> Build $VERSION (ABI $TARGET_ABI)"
 
+# Cache-buster for the admin dashboard script: bake the version into the config.html
+# <script src> before compiling (the file is restored on exit so the working tree
+# stays clean). Without this, admins can run a stale config.js after an update.
+CONFIG_HTML="$ROOT/src/Web/config.html"
+CONFIG_HTML_ORIG="$(mktemp)"
+cp -f "$CONFIG_HTML" "$CONFIG_HTML_ORIG"
+python3 - "$VERSION" "$CONFIG_HTML" <<'PY'
+import sys
+version, path = sys.argv[1], sys.argv[2]
+text = open(path, encoding="utf-8").read()
+text = text.replace(
+    '<script src="configurationpage?name=NoPayNoPlayJs" defer></script>',
+    '<script src="configurationpage?name=NoPayNoPlayJs&v=' + version + '" defer></script>')
+open(path, "w", encoding="utf-8").write(text)
+PY
+restore_config() { cp -f "$CONFIG_HTML_ORIG" "$CONFIG_HTML"; rm -f "$CONFIG_HTML_ORIG"; }
+trap 'rm -rf "$WORK_DIR"; restore_config' EXIT INT TERM
+
 dotnet restore src/Jellyfin.Plugin.NoPayNoPlay.csproj
 dotnet build src/Jellyfin.Plugin.NoPayNoPlay.csproj \
     -c Release \

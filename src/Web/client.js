@@ -95,7 +95,32 @@
     function fetchMe() {
         var api = getApiClient();
         if (!api) return Promise.reject(new Error('ApiClient unavailable'));
-        return api.ajax({ type: 'GET', url: api.getUrl('NoPayNoPlay/Me'), dataType: 'json' });
+        var url = api.getUrl('NoPayNoPlay/Me');
+        // Forward the page's ?lang= so the documented query-string override actually
+        // reaches the server (the Localizer reads ?lang on the API request).
+        var lang = getLangParam();
+        if (lang) url += (url.indexOf('?') >= 0 ? '&' : '?') + 'lang=' + encodeURIComponent(lang);
+        // Ask the server to skip re-sending the translation bundle when unchanged.
+        if (lastData && lastData.stringsHash && lastData.strings) {
+            url += (url.indexOf('?') >= 0 ? '&' : '?') + 'strings=' + encodeURIComponent(lastData.stringsHash);
+        }
+        return api.ajax({ type: 'GET', url: url, dataType: 'json' }).then(function (raw) {
+            // When the server reports the strings bundle is unchanged (empty object),
+            // keep our cached copy instead of blanking the translations.
+            if (raw && raw.stringsHash && raw.strings && typeof raw.strings === 'object'
+                && Object.keys(raw.strings).length === 0
+                && lastData && lastData.stringsHash === raw.stringsHash && lastData.strings) {
+                raw.strings = lastData.strings;
+            }
+            return raw;
+        });
+    }
+
+    function getLangParam() {
+        try {
+            var qs = new URLSearchParams(window.location.search);
+            return qs.get('lang') || '';
+        } catch (_) { return ''; }
     }
 
     function postJson(path, body) {
@@ -124,6 +149,10 @@
     }
 
     function applyTestOverride(data) {
+        // Test mode is an admin preview tool: a regular member must never be able to
+        // spoof their banner state via a URL parameter (cosmetic spoof, but it hides
+        // the only visible payment CTA and generates bogus support tickets).
+        if (!data || !data.isAdmin) return data;
         var forced = getTestStateOverride();
         if (!forced) return data;
         var clone = Object.assign({}, data);
@@ -191,11 +220,24 @@
         return fallback;
     }
 
-    // Plural helper. Picks `${key}.one` for n===1, otherwise `${key}.other`.
-    // Falls back to `${key}` when no plural form is registered. Substitutes
-    // {n} with the count.
+    // Plural helper. Uses Intl.PluralRules when available so the correct CLDR
+    // category (.one/.few/.many/.other) is picked for the resolved language —
+    // Russian and other 3-form languages are otherwise wrong. Falls back to
+    // `${key}` when no plural form is registered. Substitutes {n} with the count.
+    var _pluralRules = null;
+    function pluralSuffix(lang, n) {
+        try {
+            if (!_pluralRules || _pluralRules.resolvedOptions().locale !== (lang || 'en')) {
+                _pluralRules = new Intl.PluralRules(lang || 'en');
+            }
+            var cat = _pluralRules.select(n);
+            return '.' + cat;
+        } catch (_) {
+            return Number(n) === 1 ? '.one' : '.other';
+        }
+    }
     function tp(data, key, n, fallback) {
-        var suffix = (Number(n) === 1) ? '.one' : '.other';
+        var suffix = pluralSuffix(data && data.lang, Number(n));
         var v = t(data, key + suffix, null);
         if (v === null) v = t(data, key, fallback);
         return String(v).replace(/\{n\}/g, String(n));
@@ -297,6 +339,46 @@
         } catch (_) { return ''; }
     }
 
+    // Lazily load the vendored QR generator (qrcode.js) once, so no external CDN is
+    // ever contacted and the script isn't fetched for users who never open the modal.
+    var _qrLibPromise = null;
+    function loadQrLib() {
+        if (window.qrcode) return Promise.resolve();
+        if (_qrLibPromise) return _qrLibPromise;
+        _qrLibPromise = new Promise(function (resolve) {
+            var s = document.createElement('script');
+            s.src = '/NoPayNoPlay/Web/qrcode.js';
+            s.async = true;
+            s.onload = function () { resolve(); };
+            // QR is an enhancement; if it fails to load the payment cards still link.
+            s.onerror = function () { resolve(); };
+            document.head.appendChild(s);
+        });
+        return _qrLibPromise;
+    }
+
+    // Fills the QR boxes in the open modal with scannable codes for the current
+    // payment selection (recomputed when the user picks a different tier).
+    function renderQrCodes(data, amount, currency) {
+        var cards = document.querySelectorAll('.npnp-qr-card[data-qr-method]');
+        if (!cards.length) return;
+        loadQrLib().then(function () {
+            cards.forEach(function (card) {
+                var method = card.getAttribute('data-qr-method');
+                var base = method === 'paypal' ? data.paypalMeUrl : data.lydiaUrl;
+                var box = card.querySelector('.npnp-qr-box');
+                if (!box) return;
+                var finalUrl = base ? buildPaymentUrl(method, base, amount, currency) : '';
+                if (finalUrl && window.qrcode) {
+                    box.innerHTML = qrSvg(finalUrl, 120);
+                } else {
+                    box.innerHTML = '<span style="font-size:12px;opacity:.7;">'
+                        + escapeHtml(t(data, 'user.modal.qr.fallback', 'QR unavailable \u2014 copy the link above.')) + '</span>';
+                }
+            });
+        });
+    }
+
     function ensureStyles() {
         if (document.getElementById('npnp-styles')) return;
         applyTestThemeOverride();
@@ -376,11 +458,10 @@
             + '.npnp-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);'
             + 'z-index:10000;display:flex;align-items:center;justify-content:center;'
             + 'backdrop-filter:var(--blurLarge,var(--npnp-blur));-webkit-backdrop-filter:var(--blurLarge,var(--npnp-blur));'
-            + 'background:var(--headerColor,rgba(0,0,0,.35));'
             + 'animation:npnpFade .15s ease-out;}'
             + '@keyframes npnpFade{from{opacity:0}to{opacity:1}}'
             + '@keyframes npnpSlide{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}'
-            + '.npnp-modal{background:var(--headerColor,var(--npnp-bg));color:var(--npnp-fg);padding:0;border-radius:var(--npnp-large-radius);'
+            + '.npnp-modal{background:var(--npnp-bg,var(--headerColor));color:var(--npnp-fg);padding:0;border-radius:var(--npnp-large-radius);'
             + 'width:min(600px,94vw);max-height:90vh;overflow:auto;'
             + 'font:14px/1.5 system-ui,-apple-system,sans-serif;'
             + 'border:var(--defaultBorder,1px solid var(--npnp-border));'
@@ -388,7 +469,7 @@
             + '@media (max-width:600px){.npnp-modal{border-radius:calc(var(--npnp-large-radius) * 0.7);width:98vw;max-height:94vh;}}'
             + '@media (max-width:480px){.npnp-modal{border-radius:0;width:100vw;max-height:100dvh;border:0;}}'
             + '.npnp-modal-header{padding:18px 22px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
-            + 'position:sticky;top:0;z-index:3;background:var(--headerColor,var(--npnp-bg));border-bottom:var(--defaultBorder,1px solid var(--npnp-border));}'
+            + 'position:sticky;top:0;z-index:3;background:var(--npnp-bg,var(--headerColor));border-bottom:var(--defaultBorder,1px solid var(--npnp-border));}'
             + '.npnp-modal-header h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.2px;}'
             + '.npnp-modal-header .close{background:none;border:none;color:inherit;'
             + 'font-size:22px;line-height:1;cursor:pointer;opacity:.6;padding:6px 8px;border-radius:var(--npnp-radius);'
@@ -444,9 +525,10 @@
             + '.npnp-hero-gauge{height:5px;border-radius:999px;margin-top:9px;overflow:hidden;'
             + 'background:color-mix(in srgb,var(--npnp-fg,currentColor) 14%,transparent);}'
             + '.npnp-hero-gauge>span{display:block;height:100%;border-radius:999px;}'
-            // Tier savings chip.
+            // Tier savings chip. Text is darkened so it stays readable on light themes.
             + '.npnp-tier-save{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;'
-            + 'padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--npnp-ok) 22%,transparent);color:var(--npnp-ok);}'
+            + 'padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--npnp-ok) 22%,transparent);'
+            + 'color:color-mix(in srgb,var(--npnp-ok) 55%,#000 45%);}'
             // Payment reference.
             + '.npnp-ref-row{display:flex;align-items:center;gap:10px;margin-top:12px;'
             + 'background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:var(--npnp-radius);padding:10px 12px;}'
@@ -459,6 +541,8 @@
             + '.npnp-qr-grid{display:flex;flex-wrap:wrap;gap:14px;}'
             + '@media (max-width:480px){.npnp-qr-grid{justify-content:center;gap:10px;}}'
             + '.npnp-qr-card{display:flex;flex-direction:column;align-items:center;gap:6px;}'
+            + '.npnp-qr-box{display:flex;align-items:center;justify-content:center;min-height:132px;'
+            + 'background:#fff;border:1px solid var(--npnp-border);border-radius:var(--npnp-radius);padding:6px;}'
             + '.npnp-qr-card .npnp-qr{border-radius:var(--npnp-radius);display:block;}'
             + '.npnp-qr-label{font-size:12px;font-weight:600;opacity:.85;}'
             // Collapsible history rows.
@@ -546,6 +630,13 @@
             + '.npnp-pay-card:focus-visible,.npnp-modal-header .close:focus-visible,'
             + '.npnp-promo-row input:focus-visible{outline:2px solid var(--npnp-accent);outline-offset:2px;}'
             + '.npnp-modal:focus{outline:none;}'
+            // Generous touch targets on coarse-pointer devices (WCAG 2.5.5).
+            + '@media (hover:none) and (pointer:coarse){'
+            + '.npnp-header-btn{min-width:44px;min-height:44px;padding:0;}'
+            + '#npnp-banner button{min-height:44px;}'
+            + '.npnp-mini-btn{min-height:44px;padding-top:0;padding-bottom:0;display:inline-flex;align-items:center;justify-content:center;}'
+            + '.npnp-pay-card{min-height:44px;}'
+            + '}'
             // Respect the OS "reduce motion" setting.
             + '@media (prefers-reduced-motion:reduce){'
             + '.npnp-modal-backdrop,.npnp-modal,.npnp-toast,#npnp-banner{animation:none !important;}'
@@ -598,6 +689,10 @@
     function closeModal() {
         var m = document.getElementById('npnp-modal-backdrop');
         if (m) m.parentNode.removeChild(m);
+        // Restore interactivity on the page behind the (now closed) dialog.
+        Array.prototype.forEach.call(document.body.children, function (el) {
+            if (el.hasAttribute('inert')) el.removeAttribute('inert');
+        });
     }
 
     // ----- Modal -----
@@ -814,6 +909,47 @@
                 + '<div class="npnp-pay-grid">' + cards + '</div>'
             : '';
 
+        // QR codes: scannable payment links (feature was previously dead code — the
+        // generator is now loaded lazily and wired into the modal).
+        var qrSection = '';
+        if (!isExempt && cards) {
+            var qrCards = '';
+            if (data.paypalMeUrl) {
+                qrCards += '<div class="npnp-qr-card" data-qr-method="paypal">'
+                    + '<div class="npnp-qr-box"></div>'
+                    + '<span class="npnp-qr-label">' + escapeHtml(t(data, 'user.modal.method.paypal', 'Pay with PayPal')) + '</span>'
+                    + '</div>';
+            }
+            if (data.lydiaUrl) {
+                qrCards += '<div class="npnp-qr-card" data-qr-method="lydia">'
+                    + '<div class="npnp-qr-box"></div>'
+                    + '<span class="npnp-qr-label">' + escapeHtml(t(data, 'user.modal.method.lydia', 'Pay with Lydia')) + '</span>'
+                    + '</div>';
+            }
+            if (qrCards) {
+                qrSection = '<h3>' + escapeHtml(t(data, 'user.modal.qr.title', 'Or scan this QR code')) + '</h3>'
+                    + '<div class="npnp-qr-grid">' + qrCards + '</div>';
+            }
+        }
+
+        // Payment reference: copyable username so the member can annotate their
+        // bank transfer / PayPal payment (previously defined CSS that was never used).
+        var refRow = '';
+        if (data.username) {
+            refRow = '<h3>' + escapeHtml(t(data, 'user.modal.section.reference', 'Payment reference')) + '</h3>'
+                + '<div class="npnp-ref-row">'
+                + '<div class="npnp-ref-text">'
+                + '<span class="npnp-ref-label">' + escapeHtml(t(data, 'user.modal.reference.label', 'Your payment reference')) + '</span>'
+                + '<span class="npnp-ref-code">' + escapeHtml(data.username) + '</span>'
+                + '<span class="npnp-ref-hint">' + escapeHtml(t(data, 'user.modal.reference.hint', 'Add this reference to your payment so the admin can match it.')) + '</span>'
+                + '</div>'
+                + '<button type="button" class="npnp-mini-btn" id="npnp-copy-ref">'
+                + '<span class="material-icons" aria-hidden="true" style="font-size:14px;vertical-align:middle;">content_copy</span> '
+                + escapeHtml(t(data, 'user.modal.copyNote', 'Copy'))
+                + '</button>'
+                + '</div>';
+        }
+
         // Donation note: shown to every user with at least one configured payment
         // URL, encouraging voluntary contributions to keep the server running.
         var donateNote = '';
@@ -902,8 +1038,10 @@
             +        pendingBlock
             +        (isExempt ? '' : renderTiers(data))
             +        paySection
+            +        qrSection
             +        donateNote
             +        (iPaidBtn ? '<div style="margin-top:14px;">' + iPaidBtn + '</div>' : '')
+            +        refRow
             +        note
             +        contactRow
             +        promoSection
@@ -915,6 +1053,15 @@
         var wrap = document.createElement('div');
         wrap.innerHTML = html;
         document.body.appendChild(wrap.firstElementChild);
+
+        // Make the rest of the page inert while the dialog is open so keyboard focus
+        // and assistive tech cannot reach background content (aria-modal alone is
+        // inconsistently honoured by screen readers).
+        Array.prototype.forEach.call(document.body.children, function (el) {
+            if (el.id === 'npnp-modal-backdrop') return;
+            if (el.hasAttribute('inert')) return;
+            el.setAttribute('inert', '');
+        });
 
         var backdrop = document.getElementById('npnp-modal-backdrop');
         backdrop.addEventListener('click', function (e) {
@@ -1008,6 +1155,8 @@
                     if (amt) amt.textContent = pretty;
                 }
             );
+            // Keep the QR codes in sync with the chosen amount.
+            renderQrCodes(data, amount, currency);
         }
         // Apply the highlight tier amount immediately so the cards open with
         // the correct value even before the user clicks a tier. Never for exempt
@@ -1015,6 +1164,9 @@
         if (defaultTier && !isExempt) {
             updatePaymentCards(selectedTierAmount, data.currency || 'EUR');
         }
+
+        // Render the scannable QR codes for the initially selected tier.
+        renderQrCodes(data, selectedTierAmount, data.currency || 'EUR');
 
         // Copy IBAN / custom note button.
         var copyBtn = document.getElementById('npnp-copy-note');
@@ -1048,6 +1200,16 @@
                 }
             });
         }
+        // Copy the payment reference (username) to the clipboard.
+        var refCopyBtn = document.getElementById('npnp-copy-ref');
+        if (refCopyBtn) {
+            refCopyBtn.addEventListener('click', function () {
+                copyToClipboard(data.username || '',
+                    t(data, 'user.modal.copyNote.done', 'Copied to clipboard.'),
+                    t(data, 'user.modal.copyNote.fail', 'Copy failed.'),
+                    t(data, 'user.toast.dismiss', 'Dismiss'));
+            });
+        }
         var iPaid = document.getElementById('npnp-i-paid');
         if (iPaid) {
             iPaid.addEventListener('click', function () {
@@ -1071,6 +1233,10 @@
                     return;
                 }
 
+                // Feedback while the request is in flight on slow networks.
+                var originalHtml = iPaid.innerHTML;
+                iPaid.innerHTML = escapeHtml(t(data, 'user.modal.sending', 'Sending\u2026'));
+
                 postJson('Me/MarkPaid', { method: '' }).then(function () {
                     toast(t(data, 'user.modal.markPaid.success',
                         'Thanks! Admin has been notified.'), 'success',
@@ -1078,11 +1244,17 @@
                     closeModal();
                     refresh();
                 }).catch(function (err) {
-                    var msg = (err && err.status === 429)
-                        ? t(data, 'user.modal.markPaid.cooldown', 'Already sent. Try again later.')
-                        : t(data, 'user.modal.markPaid.cooldown', 'Already sent.');
-                    toast(msg, 'warn', t(data, 'user.toast.dismiss', 'Dismiss'));
+                    // Distinguish a real rate-limit (429) from a transport/server error
+                    // instead of telling the user their payment was recorded either way.
+                    var isRate = !!(err && err.status === 429);
+                    var key = isRate ? 'user.modal.markPaid.rateLimited' : 'user.modal.markPaid.error';
+                    var fallback = isRate
+                        ? 'You already declared a payment recently. Try again later.'
+                        : 'Something went wrong. Please try again.';
+                    toast(t(data, key, fallback), isRate ? 'warn' : 'error',
+                        t(data, 'user.toast.dismiss', 'Dismiss'));
                     iPaid.disabled = false;
+                    iPaid.innerHTML = originalHtml;
                 });
             });
         }
@@ -1105,21 +1277,25 @@
                         redeem.disabled = false;
                         return;
                     }
-                    toast(format(t(data, 'user.modal.promo.success',
-                        'Code applied: {months} month(s) added.'),
-                        { months: 1 }) + ' '
+                    toast(tp(data, 'user.modal.promo.success', 1,
+                        format(t(data, 'user.modal.promo.success',
+                            'Code applied: {months} month(s) added.'), { months: 1 })) + ' '
                         + t(data, 'user.modal.testBadge', 'Test mode'),
                         'success', t(data, 'user.toast.dismiss', 'Dismiss'));
                     closeModal();
                     return;
                 }
 
+                // Feedback while the request is in flight on slow networks.
+                var redeemOriginalHtml = redeem.innerHTML;
+                redeem.innerHTML = escapeHtml(t(data, 'user.modal.sending', 'Sending\u2026'));
+
                 postJson('Me/RedeemCode', { code: code }).then(function (res) {
                     var r = normalizeKeys(res || {});
                     if (r.ok) {
-                        toast(format(t(data, 'user.modal.promo.success',
-                            'Code applied: {months} month(s) added.'),
-                            { months: r.monthsAdded || 0 }), 'success',
+                        toast(tp(data, 'user.modal.promo.success', r.monthsAdded || 0,
+                            format(t(data, 'user.modal.promo.success',
+                                'Code applied: {months} month(s) added.'), { months: r.monthsAdded || 0 })), 'success',
                             t(data, 'user.toast.dismiss', 'Dismiss'));
                         closeModal();
                         refresh();
@@ -1128,12 +1304,26 @@
                             'Invalid or already-used code.'), 'error',
                             t(data, 'user.toast.dismiss', 'Dismiss'));
                         redeem.disabled = false;
+                        redeem.innerHTML = redeemOriginalHtml;
                     }
-                }).catch(function () {
-                    toast(t(data, 'user.modal.promo.invalid',
-                        'Invalid or already-used code.'), 'error',
+                }).catch(function (err) {
+                    // 429 = rate-limited (locked = brute-force lockout, otherwise the
+                    // 5 s floor); anything else is a network/server error. Never report
+                    // these as "invalid code" — that is misleading.
+                    var isRate = !!(err && err.status === 429);
+                    var locked = !!(err && ((err.data && err.data.locked) || err.locked));
+                    var key = isRate
+                        ? (locked ? 'user.modal.promo.locked' : 'user.modal.promo.rateLimited')
+                        : 'user.modal.promo.network';
+                    var fallback = isRate
+                        ? (locked
+                            ? 'Too many attempts. Please wait and try again later.'
+                            : 'Please wait a moment before trying again.')
+                        : 'Network error. Check your connection and try again.';
+                    toast(t(data, key, fallback), isRate ? 'warn' : 'error',
                         t(data, 'user.toast.dismiss', 'Dismiss'));
                     redeem.disabled = false;
+                    redeem.innerHTML = redeemOriginalHtml;
                 });
             });
 
@@ -1148,10 +1338,66 @@
     }
 
     // ----- Banner -----
+    // Darken the semantic state colour just enough that white banner text clears
+    // WCAG AA (4.5:1) on every state while keeping the colour recognisable.
+    function bannerBackground(state) {
+        var c = STATE_COLORS[state] || '#e67e22';
+        var darken = { WarningSoon: 35, InGrace: 30, Blocked: 10 }[state] || 20;
+        return 'linear-gradient(90deg,color-mix(in srgb,' + c + ' 100%,#000 ' + darken
+            + '%),color-mix(in srgb,' + c + ' 100%,#000 ' + (darken + 8) + '%))';
+    }
+
+    function bannerTitle(data) {
+        var titleKey = 'user.banner.' + lcfirst(data.state) + '.short';
+        var titleFallbacks = {
+            warningSoon: 'Your subscription expires in {days} day(s).',
+            inGrace: 'Your subscription has expired \u2014 grace period.',
+            blocked: 'Playback blocked: subscription expired.'
+        };
+        if (data.state === 'WarningSoon') {
+            var dl = Math.max(0, Number(data.daysLeft || 0));
+            // Use plural forms so "1 day" doesn't render as "1 day(s)".
+            return tp(data, 'user.banner.warningSoon', dl,
+                format(t(data, titleKey, titleFallbacks.warningSoon), { days: dl }));
+        }
+        return format(t(data, titleKey, titleFallbacks[lcfirst(data.state)]), {
+            days: Math.max(0, Number(data.daysLeft || 0)),
+            date: formatDate(data.expiryDate, data.lang)
+        });
+    }
+
+    // Refresh an already-visible banner in place (same state) so the slide-in
+    // animation doesn't replay on every page navigation / 5-min refresh.
+    function updateBannerContent(banner, data) {
+        banner.setAttribute('data-state', data.state);
+        banner.style.background = bannerBackground(data.state);
+        var titleEl = banner.querySelector('.npnp-banner-title');
+        if (titleEl) {
+            var badge = titleEl.querySelector('.npnp-test-badge');
+            titleEl.textContent = '';
+            if (badge) titleEl.appendChild(badge);
+            titleEl.appendChild(document.createTextNode(bannerTitle(data)));
+        }
+        var subEl = banner.querySelector('.npnp-banner-sub');
+        if (subEl) {
+            subEl.textContent = format(t(data, 'user.modal.summary.dueOn', 'Due on {date}'),
+                { date: formatDate(data.expiryDate, data.lang) });
+        }
+    }
+
+    // True while the video player page is open: the banner would otherwise sit over
+    // the playback chrome. Blocked users can't play anyway, so hiding it there loses
+    // nothing important.
+    function isPlayerPage() {
+        return !!(document.querySelector('.videoOsdPage')
+            || document.querySelector('.videoPlayer')
+            || document.querySelector('.videoOsd'));
+    }
+
     function ensureBanner(data) {
         var existing = document.getElementById('npnp-banner');
         var needBanner = data.state === 'WarningSoon' || data.state === 'InGrace' || data.state === 'Blocked';
-        if (!needBanner) {
+        if (!needBanner || isPlayerPage()) {
             if (existing) existing.parentNode.removeChild(existing);
             document.body.classList.remove('npnp-has-banner');
             document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
@@ -1167,28 +1413,24 @@
         }
 
         ensureStyles();
+        // Same state already visible: update text/colours in place (no animation flash).
+        if (existing && existing.getAttribute('data-state') === data.state) {
+            updateBannerContent(existing, data);
+            positionBanner();
+            return;
+        }
         if (existing) existing.parentNode.removeChild(existing);
 
-        var titleKey = 'user.banner.' + lcfirst(data.state) + '.short';
-        var titleFallbacks = {
-            warningSoon: 'Your subscription expires in {days} day(s).',
-            inGrace: 'Your subscription has expired — grace period.',
-            blocked: 'Playback blocked: subscription expired.'
-        };
-        var title = format(t(data, titleKey, titleFallbacks[lcfirst(data.state)]), {
-            days: Math.max(0, Number(data.daysLeft || 0)),
-            date: formatDate(data.expiryDate, data.lang)
-        });
+        var title = bannerTitle(data);
         var sub = format(t(data, 'user.modal.summary.dueOn', 'Due on {date}'),
             { date: formatDate(data.expiryDate, data.lang) });
 
         var banner = document.createElement('div');
         banner.id = 'npnp-banner';
+        banner.setAttribute('data-state', data.state);
         // Urgent states (expired) are announced assertively; the soft warning is polite.
         banner.setAttribute('role', data.state === 'WarningSoon' ? 'status' : 'alert');
-        banner.style.background = 'linear-gradient(90deg,'
-            + (STATE_COLORS[data.state] || '#e67e22') + ','
-            + (STATE_COLORS[data.state] || '#e67e22') + 'cc)';
+        banner.style.background = bannerBackground(data.state);
         var bannerIcons = { WarningSoon: 'schedule', InGrace: 'warning', Blocked: 'block' };
         var bannerIcon = '<span class="material-icons npnp-banner-icon" aria-hidden="true">'
             + (bannerIcons[data.state] || 'info') + '</span>';
@@ -1273,6 +1515,8 @@
     }
 
     var lastData = null;
+    var _meInFlight = null;
+    var _lastMeErrorShownAt = 0;
 
     // Render a Jellyfin-style activity-log preview toast that mirrors the
     // notification the EnforcementTask would post for the simulated state.
@@ -1309,7 +1553,10 @@
     }
 
     function refresh() {
-        return fetchMe().then(function (raw) {
+        // Coalesce concurrent refreshes (viewshow + interval + post-action) so we never
+        // issue overlapping /Me calls.
+        if (_meInFlight) return _meInFlight;
+        _meInFlight = fetchMe().then(function (raw) {
             var normalized = normalizeMe(raw);
             var data = applyTestOverride(normalized);
             lastData = data;
@@ -1324,22 +1571,35 @@
             }
             ensureHeaderButton(data);
             ensureBanner(data);
-        }).catch(function () {});
-    }
-
-    function tick() {
-        if (lastData) {
-            ensureHeaderButton(lastData);
-            if (document.getElementById('npnp-banner')) positionBanner();
-        }
+        }).catch(function (err) {
+            // Never fail silently: log and surface a lightweight, throttled notice.
+            console.error('NoPayNoPlay: failed to load subscription status', err);
+            var now = Date.now();
+            if (now - _lastMeErrorShownAt > 5 * 60 * 1000) {
+                _lastMeErrorShownAt = now;
+                toast(t(lastData || {}, 'user.modal.meError',
+                    'Could not load your subscription status. Please check your connection.'),
+                    'warn', t(lastData || {}, 'user.toast.dismiss', 'Dismiss'));
+            }
+        }).finally(function () { _meInFlight = null; });
+        return _meInFlight;
     }
 
     function onReady() {
         refresh();
-        setInterval(tick, 2000);
         setInterval(refresh, 5 * 60 * 1000);
         document.addEventListener('viewshow', refresh);
         window.addEventListener('resize', positionBanner);
+
+        // Re-position the banner when the Jellyfin header resizes (theme switch,
+        // responsive breakpoint) without polling layout every 2 seconds.
+        try {
+            var ro = new ResizeObserver(function () {
+                if (document.getElementById('npnp-banner')) positionBanner();
+            });
+            var headerEl = document.querySelector('.skinHeader');
+            if (headerEl) ro.observe(headerEl);
+        } catch (_) {}
 
         // Hash deep-link: opening Jellyfin with #!/npnp (or #npnp) auto-opens
         // the modal once data is loaded. Useful for bookmarks and emails.
@@ -1360,13 +1620,24 @@
         }
         window.addEventListener('hashchange', checkHashOpen);
         checkHashOpen();
-        try {
-            var mo = new MutationObserver(function () {
+
+        // Observe DOM changes but coalesce with requestAnimationFrame so the header
+        // button / banner work only runs once per frame, not on every single mutation
+        // Jellyfin's SPA makes.
+        var rafPending = false;
+        function onDomChange() {
+            if (rafPending) return;
+            rafPending = true;
+            requestAnimationFrame(function () {
+                rafPending = false;
                 if (lastData) {
                     ensureHeaderButton(lastData);
                     if (document.getElementById('npnp-banner')) positionBanner();
                 }
             });
+        }
+        try {
+            var mo = new MutationObserver(onDomChange);
             mo.observe(document.body, { childList: true, subtree: true });
         } catch (_) {}
     }
