@@ -19,7 +19,7 @@ Thanks for sending a pull request! Please make sure CI is green and the descript
 ## Checklist
 
 - [ ] Conventional Commits used in the commit messages
-- [ ] New user-facing strings added to `strings.en.json` (and mirrored in other bundles)
+- [ ] New user-facing strings added to `strings.en.json` (see CONTRIBUTING.md for the i18n policy)
 - [ ] New business logic covered by unit tests
 - [ ] Documentation / README updated if needed
 - [ ] No secrets, tokens or personal data committed

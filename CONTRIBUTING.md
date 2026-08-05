@@ -30,7 +30,8 @@ You will need:
 
 - **C#**: Microsoft conventions (4 spaces, `PascalCase`, `var` when type is obvious).
 - **JS / HTML / JSON / YAML**: 2 spaces.
-- Run `dotnet build -warnaserror` before pushing.
+- The repo enforces a **zero-warning** policy: CI builds with `-warnaserror`, so run
+  `dotnet build -warnaserror` locally before pushing.
 
 ## Tests
 
@@ -42,8 +43,11 @@ You will need:
 
 - The English bundle (`src/Localization/strings.en.json`) is the **source of truth**.
 - When adding a new user-facing string:
-  1. add the key to `strings.en.json`,
-  2. mirror it in every other bundle (`strings.fr.json`, …) — even if you copy the English value,
+  1. add the key to `strings.en.json` — thanks to the merged-bundle fallback in
+     `Localizer`, this alone makes the key available in every language;
+  2. mirror it in the other bundles (`strings.fr.json`, …) when you know the
+     translation — even copying the English value is acceptable and improves
+     native quality;
   3. consume it through the `Localizer` (server) or `data.strings[key]` / `data-i18n` (client).
 - New language? Add `strings.<code>.json` and register it as an `EmbeddedResource` in the csproj.
 

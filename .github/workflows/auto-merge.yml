@@ -1,0 +1,79 @@
+name: Auto-merge Dependabot
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+
+# `main` is not branch-protected, so this workflow is the ONLY gate before a merge:
+# it waits for every reported check and merges only when all of them pass. Major
+# dependency updates are skipped (manual review) unless explicitly labeled `auto-merge`.
+#
+# Security note: pull_request_target runs with write permissions in the base repo, but
+# this workflow never checks out or executes PR code — it only reads PR metadata and
+# calls the `gh` CLI (approve / checks / merge). Safe by construction.
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: >
+      !github.event.pull_request.draft &&
+      (github.event.pull_request.user.login == 'dependabot[bot]' ||
+       contains(github.event.pull_request.labels.*.name, 'auto-merge'))
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - name: Dependabot metadata
+        id: meta
+        if: github.event.pull_request.user.login == 'dependabot[bot]'
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+
+      # Major dependency bumps are a breaking-change decision — keep them human unless
+      # the PR was explicitly labeled `auto-merge` (override).
+      - name: Determine eligibility
+        id: elig
+        env:
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          AUTO_MERGE_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'auto-merge') }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$UPDATE_TYPE" && "$UPDATE_TYPE" == "version-update:semver-major" && "$AUTO_MERGE_LABEL" != "true" ]]; then
+            echo "::notice::Major version update (${UPDATE_TYPE}) — requires manual review, not auto-merging"
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "eligible=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Approve (Dependabot PRs)
+        if: steps.elig.outputs.eligible == 'true' && github.event.pull_request.user.login == 'dependabot[bot]'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr review "$PR" --approve
+
+      - name: Wait for checks and merge
+        if: steps.elig.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # main has no required checks, so wait for ALL reported checks (CI build+test,
+          # actionlint, CodeQL) and merge only when every one of them passed.
+          if ! gh pr checks "$PR" --watch --interval 15; then
+            echo "::error::One or more checks failed or timed out — not auto-merging"
+            exit 1
+          fi
+          gh pr merge "$PR" --squash --delete-branch
+          echo "::notice::Merged PR #$PR automatically"
