@@ -1,0 +1,31 @@
+name: Stale
+
+on:
+  # Daily hygiene: flags and closes issues/PRs with no activity. Dependabot and
+  # auto-merge-labelled PRs are exempt so dependency updates are never touched.
+  schedule:
+    - cron: '30 1 * * *'   # Tous les jours 01:30 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          days-before-pr-stale: 45
+          days-before-pr-close: 14
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: bug,enhancement,good first issue,help wanted,question
+          exempt-pr-labels: dependencies,auto-merge,github_actions
+          operations-per-run: 200
+          remove-stale-when-updated: true
