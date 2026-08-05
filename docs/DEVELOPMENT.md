@@ -172,7 +172,7 @@ The repository ships with a full CI/CD setup. All workflows are **pinned by comm
 | **CodeQL** (`codeql.yml`) | Push / PR on `src/**` + weekly cron | Static security analysis |
 | **Validate manifest** (`validate-manifest.yml`) | PR touching `manifest.json` + nightly cron | Re-checks `manifest.json` structure, GUID, and the real MD5 of published releases |
 | **Scorecard** (`scorecard.yml`) | Weekly cron + push to `main` | OSSF supply-chain score |
-| **Auto-merge** (`auto-merge.yml`) | Dependabot PR events + periodic sweep | Merges green Dependabot PRs automatically |
+| **Auto-merge** (`auto-merge.yml`) | Dependabot PR events + daily sweep (safety net, 00:00 UTC) | Merges green Dependabot PRs automatically |
 
 > **Note:** CI builds with `-warnaserror`, so any compiler warning fails the build. Run `dotnet build -c Release -warnaserror` locally before pushing.
 

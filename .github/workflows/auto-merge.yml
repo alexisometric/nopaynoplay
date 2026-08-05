@@ -3,10 +3,13 @@ name: Auto-merge Dependabot
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
-  # Periodic sweep: merges eligible PRs that were opened before the event path was
-  # live (or whose CI finished without a subsequent PR event) so nothing is missed.
+  # Daily sweep (safety net): merges eligible PRs that were opened before the event
+  # path was live (or whose CI finished without a subsequent PR event) so nothing is
+  # missed. The pull_request_target events above handle the normal flow in real time
+  # (waiting for checks before merging), so a daily fallback is enough — no need to
+  # poll every 30 minutes.
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '0 0 * * *'
 
 # `main` is not branch-protected, so this workflow is the ONLY gate before a merge:
 # it waits for every reported check and merges only when all of them pass. Major
