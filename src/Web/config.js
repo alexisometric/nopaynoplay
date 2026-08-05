@@ -820,10 +820,14 @@
             var pendingActions = u.HasPendingPaymentClaim
                 ? '<button is="emby-button" type="button" class="raised npnp-confirm-pending" title="'
                     + escapeHtml(t('admin.users.pending.confirm', 'Confirm payment'))
-                    + '"><span class="material-icons" aria-hidden="true">check_circle</span></button>'
+                    + '" aria-label="' + escapeHtml(t('admin.users.pending.confirm', 'Confirm payment'))
+                    + '"><span class="material-icons" aria-hidden="true">check_circle</span>'
+                    + '<span class="npnp-btn-label">' + escapeHtml(t('admin.users.pending.confirm', 'Confirm payment')) + '</span></button>'
                     + '<button is="emby-button" type="button" class="button-alt npnp-reject-pending npnp-danger" title="'
                     + escapeHtml(t('admin.users.pending.reject', 'Reject claim'))
-                    + '"><span class="material-icons" aria-hidden="true">cancel</span></button>'
+                    + '" aria-label="' + escapeHtml(t('admin.users.pending.reject', 'Reject claim'))
+                    + '"><span class="material-icons" aria-hidden="true">cancel</span>'
+                    + '<span class="npnp-btn-label">' + escapeHtml(t('admin.users.pending.reject', 'Reject claim')) + '</span></button>'
                 : '';
 
             var rowCheckLabel = escapeHtml(format(t('admin.users.selectRow', 'Select {username}'), { username: u.Username }));
@@ -839,10 +843,10 @@
                 + '<td class="col-tag" data-label="' + escapeHtml(t('admin.users.col.tag', 'Tag')) + '">' + tagCell + '</td>'
                 + '<td class="col-actions"><div class="npnp-actions">'
                 + pendingActions
-                + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span></button>'
-                + '<button is="emby-button" type="button" class="raised npnp-history" title="' + escapeHtml(t('admin.users.action.history', 'History')) + '"><span class="material-icons" aria-hidden="true">history</span></button>'
-                + '<button is="emby-button" type="button" class="raised npnp-exempt" title="' + escapeHtml(actExempt) + '"><span class="material-icons" aria-hidden="true">' + (u.IsExempt ? 'lock' : 'lock_open') + '</span></button>'
-                + '<button is="emby-button" type="button" class="raised npnp-reset npnp-danger" title="' + escapeHtml(t('admin.users.action.reset', 'Reset trial')) + '"><span class="material-icons" aria-hidden="true">restart_alt</span></button>'
+                + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '" aria-label="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span><span class="npnp-btn-label">' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '</span></button>'
+                + '<button is="emby-button" type="button" class="raised npnp-history" title="' + escapeHtml(t('admin.users.action.history', 'History')) + '" aria-label="' + escapeHtml(t('admin.users.action.history', 'History')) + '"><span class="material-icons" aria-hidden="true">history</span><span class="npnp-btn-label">' + escapeHtml(t('admin.users.action.history', 'History')) + '</span></button>'
+                + '<button is="emby-button" type="button" class="raised npnp-exempt" title="' + escapeHtml(actExempt) + '" aria-label="' + escapeHtml(actExempt) + '"><span class="material-icons" aria-hidden="true">' + (u.IsExempt ? 'lock' : 'lock_open') + '</span><span class="npnp-btn-label">' + escapeHtml(actExempt) + '</span></button>'
+                + '<button is="emby-button" type="button" class="raised npnp-reset npnp-danger" title="' + escapeHtml(t('admin.users.action.reset', 'Reset trial')) + '" aria-label="' + escapeHtml(t('admin.users.action.reset', 'Reset trial')) + '"><span class="material-icons" aria-hidden="true">restart_alt</span><span class="npnp-btn-label">' + escapeHtml(t('admin.users.action.reset', 'Reset trial')) + '</span></button>'
                 + '</div></td>'
                 + '</tr>';
         });
