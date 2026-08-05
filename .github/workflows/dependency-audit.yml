@@ -1,0 +1,47 @@
+name: Dependency audit
+
+on:
+  # Weekly supply-chain audit: CVE'd and deprecated NuGet packages fail, outdated
+  # ones are reported only. The fast `--vulnerable` gate also runs on every PR/push
+  # in ci.yml; this adds the deprecated + outdated sweep.
+  schedule:
+    - cron: '0 6 * * 2'   # Mardi 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Harden runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v5
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore Jellyfin.Plugin.NoPayNoPlay.sln
+
+      - name: Vulnerable packages (fails on any CVE)
+        run: dotnet list Jellyfin.Plugin.NoPayNoPlay.sln package --vulnerable --include-transitive --no-restore
+
+      - name: Deprecated packages (fails on any deprecated)
+        run: dotnet list Jellyfin.Plugin.NoPayNoPlay.sln package --deprecated --include-transitive --no-restore
+
+      - name: Outdated packages (informational)
+        run: dotnet list Jellyfin.Plugin.NoPayNoPlay.sln package --outdated --include-transitive --no-restore || true
