@@ -36,6 +36,7 @@
   "user.modal.testBadge": "测试模式",
   "user.modal.previewBadge": "管理员预览 — 示例数据",
   "user.banner.warningSoon": "您的订阅将于 {date} 到期（{days} 天后）。",
+  "user.banner.warningSoon.other": "您的订阅将在 {n} 天后到期。",
   "user.banner.inGrace": "订阅已于 {date} 到期 — 宽限期中。",
   "user.banner.blocked": "播放已停用：订阅已于 {date} 到期。",
 
@@ -93,11 +94,13 @@
   "admin.users.export": "导出 CSV",
   "admin.users.bulk.pay": "记录付款",
   "admin.users.bulk.pay.intro": "为 {n} 位成员记录相同的付款。",
+  "admin.users.bulk.pay.intro.other": "为 {n} 位成员记录相同的付款。",
   "admin.users.bulk.exempt": "切换免除",
   "admin.users.bulk.reset": "重置",
   "admin.users.bulk.clear": "清除选择",
   "admin.users.bulk.count": "已选 {n}",
   "admin.users.bulk.confirm.reset": "将 {n} 位成员重置为新的试用？",
+  "admin.users.bulk.confirm.reset.other": "将 {n} 位成员重置为新的试用？",
   "admin.users.tx.edit": "编辑",
   "admin.users.tx.delete": "删除",
   "admin.users.tx.confirm.delete": "删除此交易？到期日将被重新计算。",
@@ -205,6 +208,7 @@
   "user.modal.promo.placeholder": "输入代码…",
   "user.modal.promo.redeem": "兑换",
   "user.modal.promo.success": "代码已应用：增加 {months} 个月。",
+  "user.modal.promo.success.other": "代码已应用：增加 {n} 个月。",
   "user.modal.promo.invalid": "代码无效或已使用。",
   "user.modal.method.paypal": "用 PayPal 付款",
   "user.modal.method.lydia": "用 Lydia 付款",
@@ -319,8 +323,10 @@
   "admin.stats.expiringSoon.title": "7天内到期",
   "admin.stats.expiringSoon.empty": "未来7天内没有订阅到期。",
   "admin.stats.expiringSoon.days": "{n} 天",
+  "admin.stats.expiringSoon.days.other": "{n} 天",
   "admin.stats.pendingClaims": "待确认",
   "admin.stats.methods": "支付方式",
   "admin.stats.methods.empty": "尚未记录任何付款。",
-  "admin.stats.methods.count": "{n} 笔"
+  "admin.stats.methods.count": "{n} 笔",
+  "admin.stats.methods.count.other": "{n} 笔"
 }
