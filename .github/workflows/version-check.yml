@@ -36,13 +36,16 @@ jobs:
         with:
           egress-policy: audit
 
-      # On PRs the manifest legitimately lags a version bump (refreshed at release),
-      # so only enforce csproj + meta.json there. On main / schedule / dispatch the
-      # published manifest must match the current version too.
+      # The manifest legitimately lags a version bump on PRs AND on the main push
+      # that bumps the version: it is only refreshed by the release workflow once
+      # the release exists (a later [skip ci] commit). Requiring it on the bump
+      # push therefore always fails for a legitimate release. So csproj + meta.json
+      # are enforced on PR/push, and the published manifest is enforced by the
+      # Monday schedule and manual dispatch, which run outside the release window.
       - name: Check version consistency (csproj + meta.json)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
         run: python3 scripts/check-version-consistency.py
 
       - name: Check version consistency (incl. manifest)
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: python3 scripts/check-version-consistency.py --require-manifest
