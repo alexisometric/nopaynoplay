@@ -543,7 +543,7 @@
             + 'animation:npnpFade .15s ease-out;}'
             + '@keyframes npnpFade{from{opacity:0}to{opacity:1}}'
             + '@keyframes npnpSlide{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}'
-            + '.npnp-modal{background:var(--npnp-bg,var(--headerColor));color:var(--npnp-fg);padding:0;border-radius:var(--npnp-large-radius);'
+            + '.npnp-modal{background:var(--npnp-bg,var(--headerColor,#1a1a1a));color:var(--npnp-fg);padding:0;border-radius:var(--npnp-large-radius);'
             + 'width:min(600px,94vw);max-height:90vh;overflow:auto;'
             + 'font:14px/1.5 var(--npnp-font,system-ui,-apple-system,sans-serif);'
             + 'border:var(--defaultBorder,1px solid var(--npnp-border));'
@@ -558,7 +558,7 @@
             + '.npnp-modal::-webkit-scrollbar-thumb{background:color-mix(in srgb,currentColor 25%,transparent);border-radius:999px;}'
             + '.npnp-modal::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,currentColor 38%,transparent);}'
             + '.npnp-modal-header{padding:18px 22px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
-            + 'position:sticky;top:0;z-index:3;background:var(--npnp-bg,var(--headerColor));border-bottom:var(--defaultBorder,1px solid var(--npnp-border));}'
+            + 'position:sticky;top:0;z-index:3;background:var(--npnp-bg,var(--headerColor,#1a1a1a));border-bottom:var(--defaultBorder,1px solid var(--npnp-border));}'
             + '.npnp-modal-header h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.2px;}'
             + '.npnp-modal-header .close{background:none;border:none;color:inherit;'
             + 'font-size:22px;line-height:1;cursor:pointer;opacity:.6;padding:6px 8px;border-radius:var(--npnp-radius);'
@@ -765,6 +765,45 @@
         // ElegantFin glass skin lives in its own <style> so it can be added or
         // removed at runtime (theme loads after the plugin, or admin test mode).
         applyEfSkin();
+        // ElegantFin (or any theme exposing --accentColor) may load AFTER the plugin
+        // (both are injected into index.html). Watch for new style/link nodes so the
+        // glass skin is applied the moment the theme appears — otherwise the modal
+        // would keep its solid fallback (or worse, a transparent one) until refresh.
+        watchEfTheme();
+    }
+
+    // Re-applies the ElegantFin skin when theme CSS arrives late. Debounced, and
+    // also polled briefly in case the theme sets --accentColor inline on :root
+    // without inserting a new node.
+    var _efWatchTimer = null;
+    var _efWatchInterval = null;
+    function watchEfTheme() {
+        if (_efWatchTimer) return;
+        _efWatchTimer = 1; // guard against double-start
+        function applySoon() {
+            clearTimeout(_efWatchTimer);
+            _efWatchTimer = setTimeout(function () { applyEfSkin(); }, 80);
+        }
+        try {
+            var mo = new MutationObserver(function (muts) {
+                for (var i = 0; i < muts.length; i++) {
+                    var nodes = muts[i].addedNodes;
+                    for (var j = 0; j < nodes.length; j++) {
+                        var n = nodes[j];
+                        if (n && n.nodeType === 1 && (n.tagName === 'STYLE' || n.tagName === 'LINK')) {
+                            applySoon();
+                            return;
+                        }
+                    }
+                }
+            });
+            mo.observe(document.head, { childList: true, subtree: true });
+        } catch (_) {}
+        // Poll briefly too (covers themes that mutate :root inline styles only).
+        _efWatchInterval = setInterval(function () { applyEfSkin(); }, 1500);
+        setTimeout(function () {
+            if (_efWatchInterval) { clearInterval(_efWatchInterval); _efWatchInterval = null; }
+        }, 45000);
     }
 
     // Applies (or removes) the ElegantFin "glass" skin. When ElegantFin is active
