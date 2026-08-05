@@ -1,0 +1,26 @@
+# Auto-labeler config — consumed by .github/workflows/labeler.yml (actions/labeler v7).
+# Format: label -> list of match objects (changed-files + globs).
+# Labels referenced here MUST exist in the repo (created via gh label).
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/workflows/**/*'
+          - '.github/labeler.yml'
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'tests/**/*'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**/*'
+          - '*.md'
+          - '.github/ISSUE_TEMPLATE/**/*'
+          - '.github/PULL_REQUEST_TEMPLATE.md'
+
+github_actions:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**/*'
