@@ -1793,6 +1793,11 @@
         // Coalesce concurrent refreshes (viewshow + interval + post-action) so we never
         // issue overlapping /Me calls.
         if (_meInFlight) return _meInFlight;
+        // Jellyfin's API client is not available yet (e.g. the login screen, or the
+        // SPA hasn't booted) — there is no session and nothing to display, so skip
+        // silently. The next viewshow / interval refresh picks the session up after
+        // login without the plugin ever shouting about a missing ApiClient.
+        if (!getApiClient()) return Promise.resolve();
         _meInFlight = fetchMe().then(function (raw) {
             var normalized = normalizeMe(raw);
             var data = applyTestOverride(normalized);
@@ -1811,6 +1816,13 @@
             ensureHeaderButton(data);
             ensureBanner(data);
         }).catch(function (err) {
+            // No valid session (login screen, expired session, 401) is not an error
+            // worth surfacing: there is no subscription to display. Only real
+            // failures (server unreachable, 5xx, unexpected) get a notice.
+            if (!err || err.status === 401 || err.statusCode === 401
+                || /ApiClient unavailable/.test(err.message || '')) {
+                return;
+            }
             // Never fail silently: log and surface a lightweight, throttled notice.
             console.error('NoPayNoPlay: failed to load subscription status', err);
             var now = Date.now();
