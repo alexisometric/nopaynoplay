@@ -6,8 +6,8 @@ Only the latest minor release on `main` is actively supported. Older releases ma
 
 | Version | Supported |
 |---|---|
-| 1.0.x | ✅ |
-| < 1.0 | ❌ |
+| 1.4.x (latest) | ✅ |
+| Older | ❌ |
 
 ## Reporting a vulnerability
 
