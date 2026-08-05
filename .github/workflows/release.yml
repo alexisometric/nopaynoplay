@@ -131,40 +131,50 @@ jobs:
           # itemized changelog instead of a single generic bullet.
           mapfile -d '' -t COMMITS < <(git log --no-merges -z --pretty=format:'%x1f%h%x1f%s%x1f%b' "$RANGE" 2>/dev/null || true)
 
-          # Human-friendly section headers: a few tasteful emojis, one per section —
-          # not per bullet, to stay clean and readable.
+          # User-facing sections only, so release notes stay human-readable: no
+          # commit hashes, no raw git-log dump. Internal housekeeping (docs, CI,
+          # build, tests, chores) is folded into a single short "Maintenance" note.
           declare -A SECTIONS=(
-            [feat]="### 🚀 Features"
+            [feat]="### ✨ New features"
             [fix]="### 🐛 Bug fixes"
-            [perf]="### ⚡ Performance"
+            [perf]="### ⚡ Improvements"
             [refactor]="### ♻️ Refactoring"
-            [docs]="### 📚 Documentation"
-            [test]="### ✅ Tests"
-            [build]="### 📦 Build"
-            [ci]="### 🤖 CI"
-            [chore]="### 🧹 Chores"
           )
-          ORDER=(feat fix perf refactor docs test build ci chore other)
+          ORDER=(feat fix perf refactor)
+
+          # Automatic version bumps, dependency bumps and manifest housekeeping are
+          # not user-facing — never surface them in the release notes.
+          skip_re='(^chore: bump version)|(^Bump the .* group)|(^chore\(deps\))|(\[skip ci\])|(publish .* in manifest)'
 
           declare -A BUCKETS=()
+          declare -a MAINT=()
           cc_re='^([a-z]+)(\([^)]+\))?!?:[[:space:]]*(.*)$'
           for rec in "${COMMITS[@]}"; do
             [[ -z "$rec" ]] && continue
             rec="${rec#$'\x1f'}"
             IFS=$'\x1f' read -r sha subject body <<< "$rec"
-            # Skip the auto manifest commit (and any other [skip ci] commits).
-            if [[ "$subject" == *"[skip ci]"* ]]; then continue; fi
+            [[ "$subject" =~ $skip_re ]] && continue
             type="other"
+            text="$subject"
             if [[ "$subject" =~ $cc_re ]]; then
               t="${BASH_REMATCH[1]}"
               rest="${BASH_REMATCH[3]}"
+              # Strip the "type(scope):" prefix from every bullet so the notes read
+              # like plain sentences, not git log lines.
+              text="$rest"
               if [[ -n "${SECTIONS[$t]:-}" ]]; then
                 type="$t"
-                subject="$rest"
               fi
             fi
-            BUCKETS[$type]+="- ${subject} (${sha})"$'\n'
-            # Append commit-body bullet points as sub-bullets for richer notes.
+            # Anything that is not a user-facing change (docs/ci/build/test/chore)
+            # goes into a single "Maintenance" note.
+            if [[ "$type" == "other" ]]; then
+              [[ -n "$text" ]] && MAINT+=("$text")
+              continue
+            fi
+            BUCKETS[$type]+="- ${text^}"$'\n'
+            # Keep the commit-body bullets for user-facing sections only; they add
+            # useful detail without leaking implementation internals.
             if [[ -n "$body" ]]; then
               while IFS= read -r bline; do
                 if [[ "$bline" =~ ^[[:space:]]*[-*][[:space:]] ]]; then
@@ -175,22 +185,27 @@ jobs:
           done
 
           {
-            echo "## What's changed"
+            echo "## What's new in NoPayNoPlay ${TAG#v}"
             echo
             any=0
             for t in "${ORDER[@]}"; do
               content="${BUCKETS[$t]:-}"
               [[ -z "$content" ]] && continue
               any=1
-              if [[ "$t" == "other" ]]; then
-                echo "### 🔧 Other"
-              else
-                echo "${SECTIONS[$t]}"
-              fi
+              echo "${SECTIONS[$t]}"
               echo
               printf '%s' "$content"
               echo
             done
+            if [[ ${#MAINT[@]} -gt 0 ]]; then
+              any=1
+              echo "### 🔧 Maintenance"
+              echo
+              for m in "${MAINT[@]}"; do
+                echo "- ${m}"
+              done
+              echo
+            fi
             if [[ $any -eq 0 ]]; then
               echo "_No notable changes._"
               echo
