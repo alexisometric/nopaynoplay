@@ -131,16 +131,18 @@ jobs:
           # itemized changelog instead of a single generic bullet.
           mapfile -d '' -t COMMITS < <(git log --no-merges -z --pretty=format:'%x1f%h%x1f%s%x1f%b' "$RANGE" 2>/dev/null || true)
 
+          # Human-friendly section headers: a few tasteful emojis, one per section —
+          # not per bullet, to stay clean and readable.
           declare -A SECTIONS=(
-            [feat]="### Features"
-            [fix]="### Bug fixes"
-            [perf]="### Performance"
-            [refactor]="### Refactoring"
-            [docs]="### Documentation"
-            [test]="### Tests"
-            [build]="### Build"
-            [ci]="### CI"
-            [chore]="### Chores"
+            [feat]="### 🚀 Features"
+            [fix]="### 🐛 Bug fixes"
+            [perf]="### ⚡ Performance"
+            [refactor]="### ♻️ Refactoring"
+            [docs]="### 📚 Documentation"
+            [test]="### ✅ Tests"
+            [build]="### 📦 Build"
+            [ci]="### 🤖 CI"
+            [chore]="### 🧹 Chores"
           )
           ORDER=(feat fix perf refactor docs test build ci chore other)
 
@@ -181,7 +183,7 @@ jobs:
               [[ -z "$content" ]] && continue
               any=1
               if [[ "$t" == "other" ]]; then
-                echo "### Other"
+                echo "### 🔧 Other"
               else
                 echo "${SECTIONS[$t]}"
               fi
