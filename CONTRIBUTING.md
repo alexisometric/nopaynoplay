@@ -21,6 +21,10 @@ You will need:
 - .NET SDK 9.0+
 - A local Jellyfin Server 10.11.x (Docker is the easiest)
 
+> 📖 For the full development guide — build & test details, packaging, local
+> Docker testing (including the File Transformation plugin for the user UI),
+> project structure and known gotchas — see **[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)**.
+
 ## Branches & commits
 
 - Branch off `main`: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`, `chore/<topic>`.
