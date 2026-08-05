@@ -195,7 +195,7 @@ The `WebTransformer` class registers a callback with the File Transformation plu
 
 1. Looks for `index.html` in the transformable files
 2. Only modifies payloads that look like HTML documents (`<!doctype html` or `<html` start) — avoids corrupting Webpack JS chunks
-3. Injects `<script defer src="/NoPayNoPlay/Web/client.js?v=VERSION">` before `</body>`
+3. Injects `<script defer src="/NoPayNoPlay/Web/client.js?v=HASH">` before `</body>` — `HASH` is a 12-hex **content hash** of the embedded `client.js` + `qrcode.js` (`WebAssetVersion`), not the assembly version, so even a hotfix that keeps the same version invalidates browser caches
 4. Strips previously injected scripts (cache-busting on update)
 5. Retries with back-off (3s→180s) if FT assembly isn't loaded yet
 
@@ -211,9 +211,9 @@ The `WebTransformer` class registers a callback with the File Transformation plu
 
 Culture resolution chain:
 1. Admin override (`UiCultureOverride` setting)
-2. `?lang=` query parameter
-3. `Accept-Language` HTTP header
-4. Jellyfin server UI culture
+2. `?lang=` query parameter (the web client forwards Jellyfin's active UI language)
+3. Jellyfin server UI culture
+4. `Accept-Language` HTTP header
 5. `en` fallback
 
 Plural support: `key.one` / `key.other` suffixes. Token substitution via `{token}` placeholders.

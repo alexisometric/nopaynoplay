@@ -75,6 +75,8 @@ This creates:
 
 The ZIP contains the DLL and `meta.json`.
 
+> **Cache-busting** : `build.sh` bakes a **content hash** (12 hex chars of `sha256sum`) of `src/Web/config.js` into the `configurationpage?name=NoPayNoPlayJs&v=` script tag in `config.html` before compiling (the file is restored on exit). The user-facing `client.js`/`qrcode.js` get the same treatment at runtime via `WebAssetVersion` (content hash of the embedded scripts), injected by `WebTransformer`. Using hashes instead of the plugin version means a hotfix that keeps the same version still invalidates stale browser caches.
+
 ### Update manifest
 
 ```bash

@@ -12,10 +12,10 @@ No authentication required.
 
 Returns the active translation bundle for the requesting client.
 
-**Culture resolution** (in order):
-1. `?lang=` query parameter
-2. `Accept-Language` header
-3. Jellyfin server UI culture
+**Culture resolution** (in order — the admin **Plugin language** setting overrides everything):
+1. `?lang=` query parameter (the web client forwards Jellyfin's active UI language)
+2. Jellyfin server UI culture
+3. `Accept-Language` header
 4. `en` (fallback)
 
 **Response:**

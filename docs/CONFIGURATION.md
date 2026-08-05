@@ -45,7 +45,7 @@ A live preview section below the Appearance settings shows the detected theme co
 
 The swatches update automatically when the theme changes, giving admins immediate feedback on how the plugin adapts.
 
-When the **ElegantFin** theme is detected (it exposes `--accentColor`), the plugin switches to a translucent "glass" look for the user banner and modal: soft translucent surfaces, rounded corners and a `backdrop-filter: blur()` so they blend with ElegantFin's gradient background. Radii and blur tokens are inherited from the theme (`--smallRadius`, `--largeRadius`, `--blurDefault`, `--blurLarge`).
+When the **ElegantFin** theme is detected (older builds expose `--accentColor`; newer builds v26+ — including when loaded through the KefinTweaks Skin Manager — expose `--activeColor`, `--blurLargest` and `--elegantFinFooterText`), the plugin switches to a translucent "glass" look for the user banner and modal: soft translucent surfaces, rounded corners and a `backdrop-filter: blur()` so they blend with ElegantFin's gradient background. Radii and blur tokens are inherited from the theme (`--smallRadius`, `--largeRadius`, `--blurDefault`, `--blurLarge`).
 
 ### Save
 
