@@ -165,9 +165,13 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
         try
         {
+            // ConfigurationFileName is "Jellyfin.Plugin.NoPayNoPlay.xml" — the same
+            // name BasePlugin<T> uses for ConfigurationFilePath. Using {Id}.xml here
+            // (Id is the assembly GUID) would look for a file that never exists, so
+            // the backup silently never ran.
             string configPath = Path.Combine(
                 _applicationPaths.PluginConfigurationsPath,
-                $"{Id}.xml");
+                ConfigurationFileName);
 
             if (!File.Exists(configPath))
             {
