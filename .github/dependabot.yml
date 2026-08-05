@@ -1,9 +1,8 @@
 version: 2
 
-# NOTE: labels are intentionally not set — Dependabot fails its update run when a
-# referenced label does not exist. Dependabot auto-creates its own labels
-# (`.NET`, `dependencies`, `github_actions`); `tests`/`ci` still don't exist, so
-# keep `labels:` unset until they are created in Settings > Labels.
+# NOTE: every label referenced below MUST exist in the repo or Dependabot fails its
+# update run. `dependencies`, `.NET` and `github_actions` are auto-created by
+# Dependabot; `tests` and `ci` were added manually. Never reference an unknown label.
 updates:
   - package-ecosystem: "nuget"
     directory: "/src"
@@ -11,6 +10,9 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "06:00"
+    labels:
+      - "dependencies"
+      - ".NET"
     open-pull-requests-limit: 5
     groups:
       nuget-plugin:
@@ -25,6 +27,9 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "06:30"
+    labels:
+      - "dependencies"
+      - "tests"
     open-pull-requests-limit: 5
     groups:
       nuget-tests:
@@ -39,6 +44,9 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "07:00"
+    labels:
+      - "github_actions"
+      - "ci"
     open-pull-requests-limit: 10
     groups:
       github-actions:
