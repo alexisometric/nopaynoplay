@@ -85,22 +85,33 @@ public sealed class Localizer
     }
 
     /// <summary>
-    /// Resolves a plural form. Looks up <c>{key}.one</c> when <paramref name="count"/> is 1
-    /// and <c>{key}.other</c> otherwise. Falls back to <paramref name="key"/> alone if
-    /// the plural variants are missing. Substitutes <c>{n}</c> with the count.
+    /// Resolves a plural form using CLDR plural categories for the culture
+    /// (<c>.one</c>/<c>.few</c>/<c>.many</c>/<c>.other</c>) instead of the naive
+    /// English two-form rule — Russian and other 3-form languages would otherwise
+    /// always fall back to <c>.other</c>. Falls back to <c>.other</c>, then to
+    /// <paramref name="key"/> alone, if the variants are missing. Substitutes
+    /// <c>{n}</c> with the count.
     /// </summary>
     public string GetPlural(string key, long count, string? culture = null)
     {
-        string suffix = count == 1 ? ".one" : ".other";
         var bundle = GetBundle(culture);
+        string suffix = PluralSuffix(culture, count);
         string template;
         if (bundle.TryGetValue(key + suffix, out var v) && !string.IsNullOrEmpty(v))
         {
             template = v;
         }
+        else if (bundle.TryGetValue(key + ".other", out var other) && !string.IsNullOrEmpty(other))
+        {
+            template = other;
+        }
         else if (_defaultBundle.TryGetValue(key + suffix, out var f) && !string.IsNullOrEmpty(f))
         {
             template = f;
+        }
+        else if (_defaultBundle.TryGetValue(key + ".other", out var fo) && !string.IsNullOrEmpty(fo))
+        {
+            template = fo;
         }
         else
         {
@@ -108,6 +119,37 @@ public sealed class Localizer
         }
 
         return template.Replace("{n}", count.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Maps a count to the CLDR plural category suffix for the base language.
+    /// Handles the Slavic/Baltic 3-form rule (one/few/many) and the Romance
+    /// 0-and-1-are-singular rule; everything else uses the English one/other split.
+    /// </summary>
+    private static string PluralSuffix(string? culture, long count)
+    {
+        string baseCode = (culture ?? "en").Split('-')[0].ToLowerInvariant();
+        long n = Math.Abs(count);
+        switch (baseCode)
+        {
+            case "ru":
+            case "uk":
+            case "be":
+            case "sr":
+            case "hr":
+            case "cs":
+            case "sk":
+            case "pl":
+                bool isTeen = n % 100 >= 11 && n % 100 <= 14;
+                if (!isTeen && n % 10 == 1) return ".one";
+                if (!isTeen && n % 10 >= 2 && n % 10 <= 4) return ".few";
+                return ".many";
+            case "fr":
+            case "pt":
+                return (count >= 0 && count <= 1) ? ".one" : ".other";
+            default:
+                return count == 1 ? ".one" : ".other";
+        }
     }
 
     /// <summary>

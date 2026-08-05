@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using Newtonsoft.Json.Linq;
 
 namespace Jellyfin.Plugin.NoPayNoPlay.Web;
@@ -17,6 +18,17 @@ namespace Jellyfin.Plugin.NoPayNoPlay.Web;
 /// </remarks>
 public static class WebTransformer
 {
+    // Hoisted + compiled so the strip step doesn't recompile the regex per request.
+    private static readonly System.Text.RegularExpressions.Regex ScriptTagRegex = new(
+        "<script[^>]*src=\"/NoPayNoPlay/Web/client\\.js[^\"]*\"[^>]*></script>\\s*",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        | System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    // Jellyfin's index.html is stable between updates: cache the transformed output
+    // keyed by (version + content hash) so we don't re-run the regex on every request.
+    private static readonly ConcurrentDictionary<string, string> _cache = new();
+    private const int MaxCacheEntries = 8;
+
     /// <summary>
     /// Returns the &lt;script&gt; tag to inject. The src URL embeds the plugin
     /// version as a cache-buster so updating the plugin invalidates browser
@@ -51,20 +63,33 @@ public static class WebTransformer
             return contents;
         }
 
+        string version = typeof(WebTransformer).Assembly.GetName().Version?.ToString() ?? "0";
+        string cacheKey = version + ":" + System.HashCode.Combine(contents.Length, contents);
+        if (_cache.TryGetValue(cacheKey, out var cached))
+        {
+            return cached;
+        }
+
         // Strip any previously injected NoPayNoPlay script tag (older version,
         // cached content, …) so we can re-emit a tag with the current version
         // suffix. This keeps the cache-buster effective across updates.
-        contents = System.Text.RegularExpressions.Regex.Replace(
-            contents,
-            "<script[^>]*src=\"/NoPayNoPlay/Web/client\\.js[^\"]*\"[^>]*></script>\\s*",
-            string.Empty,
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        contents = ScriptTagRegex.Replace(contents, string.Empty);
 
         string scriptTag = BuildScriptTag();
         int idx = contents.LastIndexOf("</body>", System.StringComparison.OrdinalIgnoreCase);
-        return idx >= 0
+        string result = idx >= 0
             ? contents.Insert(idx, scriptTag + "\n")
             : contents + scriptTag;
+
+        // Bounded cache (index.html is small and stable, so this clears at most once
+        // per server process / plugin version).
+        if (_cache.Count >= MaxCacheEntries)
+        {
+            _cache.Clear();
+        }
+
+        _cache[cacheKey] = result;
+        return result;
     }
 
     /// <summary>

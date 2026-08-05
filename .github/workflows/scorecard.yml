@@ -35,7 +35,11 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          # publish_results:true signs the result via Sigstore/Fulcio with an ambient
+          # OIDC token, which GitHub intermittently refuses ("invalid character 'u' …
+          # OIDC credentials") and turns the whole job red. The SARIF results are still
+          # uploaded to the Security tab below, so we keep publication off for reliability.
+          publish_results: false
 
       - name: Upload SARIF results
         uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4

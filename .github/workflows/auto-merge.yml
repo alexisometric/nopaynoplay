@@ -3,6 +3,10 @@ name: Auto-merge Dependabot
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
+  # Periodic sweep: merges eligible PRs that were opened before the event path was
+  # live (or whose CI finished without a subsequent PR event) so nothing is missed.
+  schedule:
+    - cron: '*/30 * * * *'
 
 # `main` is not branch-protected, so this workflow is the ONLY gate before a merge:
 # it waits for every reported check and merges only when all of them pass. Major
@@ -77,3 +81,39 @@ jobs:
           fi
           gh pr merge "$PR" --squash --delete-branch
           echo "::notice::Merged PR #$PR automatically"
+
+  # Scheduled safety net: merges eligible open PRs (Dependabot or `auto-merge` label)
+  # that are CLEAN (GitHub computed all checks passed + mergeable) but never received
+  # a pull_request_target event — e.g. opened just before this workflow went live.
+  sweep:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - name: Merge eligible PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mapfile -t PRS < <(gh pr list --state open --json number,title,author,labels,mergeStateStatus,isDraft \
+            --jq '.[] | select((.isDraft|not) and ((.author.login=="dependabot[bot]") or ([.labels[].name] | index("auto-merge")))) | "\(.number)\t\(.title)\t\(.mergeStateStatus)"')
+          for row in "${PRS[@]:-}"; do
+            [[ -z "$row" ]] && continue
+            IFS=$'\t' read -r NR TITLE MSTATUS <<< "$row"
+            # Only merge when GitHub reports the PR is CLEAN (no conflicts, all checks green).
+            [[ "$MSTATUS" == "CLEAN" ]] || { echo "#$NR: not CLEAN ($MSTATUS) — skip"; continue; }
+            # Best-effort major detection from the Dependabot title (non-group PRs only).
+            if [[ "$TITLE" =~ from\ ([0-9]+)\.[0-9]+\.[0-9]+\ to\ ([0-9]+)\.[0-9]+\.[0-9]+ ]]; then
+              BEFORE="${BASH_REMATCH[1]}"; AFTER="${BASH_REMATCH[2]}"
+              if [[ "$AFTER" != "$BEFORE" ]]; then
+                echo "#$NR: major bump ($BEFORE -> $AFTER) — skip (manual)"
+                continue
+              fi
+            fi
+            echo "#$NR: merging (sweep)"
+            gh pr merge "$NR" --squash --delete-branch
+          done
