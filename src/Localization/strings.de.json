@@ -12,6 +12,8 @@
   "notif.inGrace.body": "Das Abo von {username} ist abgelaufen; Kulanzfrist läuft.",
   "notif.blocked.title": "NoPayNoPlay: Wiedergabe gesperrt",
   "notif.blocked.body": "Das Abo von {username} ist abgelaufen: Wiedergabe deaktiviert.",
+  "notif.markPaid.title": "Zahlungsmeldung",
+  "notif.markPaid.body": "{username} hat eine Zahlung gemeldet — bestätigen oder ablehnen.",
 
   "state.ok": "Aktuell",
   "state.warningSoon": "Bald fällig",

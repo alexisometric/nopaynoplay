@@ -12,6 +12,8 @@
   "notif.inGrace.body": "La suscripción de {username} ha expirado; período de gracia en curso.",
   "notif.blocked.title": "NoPayNoPlay: reproducción bloqueada",
   "notif.blocked.body": "La suscripción de {username} ha expirado: reproducción desactivada.",
+  "notif.markPaid.title": "Reclamación de pago",
+  "notif.markPaid.body": "{username} dice que acaba de pagar — confirma o rechaza.",
 
   "state.ok": "Al día",
   "state.warningSoon": "Vence pronto",

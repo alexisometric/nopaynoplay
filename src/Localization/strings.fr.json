@@ -12,6 +12,8 @@
   "notif.inGrace.body": "L'abonnement de {username} a expiré ; période de grâce en cours.",
   "notif.blocked.title": "NoPayNoPlay : lecture bloquée",
   "notif.blocked.body": "L'abonnement de {username} est expiré : lecture désactivée.",
+  "notif.markPaid.title": "Paiement déclaré",
+  "notif.markPaid.body": "{username} vient de déclarer un paiement — à confirmer ou refuser.",
 
   "state.ok": "À jour",
   "state.warningSoon": "Échéance proche",

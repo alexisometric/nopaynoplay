@@ -12,6 +12,8 @@
   "notif.inGrace.body": "{username} 的订阅已到期，正处于宽限期。",
   "notif.blocked.title": "NoPayNoPlay：播放已阻止",
   "notif.blocked.body": "{username} 的订阅已到期：播放已停用。",
+  "notif.markPaid.title": "付款声明",
+  "notif.markPaid.body": "{username} 表示刚刚付款 — 请确认或拒绝。",
 
   "state.ok": "正常",
   "state.warningSoon": "即将到期",

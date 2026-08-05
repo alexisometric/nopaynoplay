@@ -12,6 +12,8 @@
   "notif.inGrace.body": "Подписка {username} истекла; идёт льготный период.",
   "notif.blocked.title": "NoPayNoPlay: воспроизведение заблокировано",
   "notif.blocked.body": "Подписка {username} истекла: воспроизведение отключено.",
+  "notif.markPaid.title": "Заявка на оплату",
+  "notif.markPaid.body": "{username} сообщает об оплате — подтвердите или отклоните.",
 
   "state.ok": "Активна",
   "state.warningSoon": "Скоро истекает",

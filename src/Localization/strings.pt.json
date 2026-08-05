@@ -12,6 +12,8 @@
   "notif.inGrace.body": "A assinatura de {username} expirou; período de tolerância em curso.",
   "notif.blocked.title": "NoPayNoPlay: reprodução bloqueada",
   "notif.blocked.body": "A assinatura de {username} expirou: reprodução desativada.",
+  "notif.markPaid.title": "Reivindicação de pagamento",
+  "notif.markPaid.body": "{username} diz que acabou de pagar — confirme ou rejeite.",
 
   "state.ok": "Em dia",
   "state.warningSoon": "Vence em breve",

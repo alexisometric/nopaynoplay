@@ -12,6 +12,8 @@
   "notif.inGrace.body": "{username}'s subscription has expired; grace period in progress.",
   "notif.blocked.title": "NoPayNoPlay: playback blocked",
   "notif.blocked.body": "{username}'s subscription has expired: playback disabled.",
+  "notif.markPaid.title": "Payment claim",
+  "notif.markPaid.body": "{username} says they just paid — confirm or reject it.",
 
   "state.ok": "Up to date",
   "state.warningSoon": "Expiring soon",

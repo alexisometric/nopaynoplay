@@ -12,6 +12,8 @@
   "notif.inGrace.body": "L'abbonamento di {username} è scaduto; periodo di tolleranza in corso.",
   "notif.blocked.title": "NoPayNoPlay: riproduzione bloccata",
   "notif.blocked.body": "L'abbonamento di {username} è scaduto: riproduzione disattivata.",
+  "notif.markPaid.title": "Richiesta di pagamento",
+  "notif.markPaid.body": "{username} dichiara di aver pagato — conferma o rifiuta.",
 
   "state.ok": "In regola",
   "state.warningSoon": "In scadenza",
