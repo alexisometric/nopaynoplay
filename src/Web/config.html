@@ -50,7 +50,7 @@
         .npnp-sort-row { display:flex; gap:8px; align-items:flex-end; flex:1 1 180px; min-width:150px; }
         .npnp-sort-row .inputContainer { flex:1; margin:0; min-width:0; }
         .npnp-sort-dir-wrap { display:flex; align-items:flex-end; padding-bottom:1px; }
-        .npnp-sort-dir { min-width:44px; min-height:36px; }
+        .npnp-sort-dir { min-width:44px; height:40px; min-height:40px; padding:0 10px; display:inline-flex; align-items:center; justify-content:center; }
 
         /* --- Tables --- */
         .npnp-table-wrap { overflow-x:auto; margin:0 -2px; }
@@ -86,37 +86,38 @@
             transition:border-color .15s, background .15s; }
         .npnp-stats-row .npnp-stat-card:hover { border-color:var(--npnp-border-strong); background:var(--npnp-surface-2); }
         .npnp-stats-row .npnp-stat-card .npnp-stat-num { font-size:1.5em; font-weight:700; display:block; letter-spacing:-.3px; }
-        .npnp-stats-row .npnp-stat-card .npnp-stat-lbl { opacity:.65; font-size:.8em; margin-top:2px; }
+        .npnp-stats-row .npnp-stat-card .npnp-stat-lbl { opacity:.75; font-size:.85em; margin-top:3px; }
 
         .npnp-revenue-chart { margin:0 0 16px; padding:12px 14px; background:var(--npnp-surface-1);
             border:1px solid var(--npnp-border); border-radius:var(--npnp-radius); }
         .npnp-revenue-chart:empty { display:none; }
-        .npnp-chart-title { font-size:12px; font-weight:600; margin-bottom:8px; opacity:.8; text-transform:uppercase; letter-spacing:.5px; }
+        .npnp-chart-title { font-size:12px; font-weight:600; margin-bottom:8px; opacity:.85; text-transform:uppercase; letter-spacing:.5px; }
 
         /* --- Enriched dashboard (attention + expiring soon + methods) --- */
         .npnp-attention-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
         .npnp-attention-card { flex:1 1 130px; min-width:118px; background:var(--npnp-surface-1); border:1px solid var(--npnp-border);
             border-left:4px solid var(--npnp-ok); border-radius:var(--npnp-radius); padding:12px 14px; cursor:pointer;
-            text-align:left; color:inherit; transition:transform .12s, border-color .15s, background .15s; }
+            text-align:left; color:inherit; transition:transform .12s, border-color .15s, background .15s;
+            display:flex; flex-direction:column; align-items:flex-start; justify-content:center; }
         .npnp-attention-card:hover { transform:translateY(-1px); background:var(--npnp-surface-2); border-color:var(--npnp-border-strong); }
         .npnp-attention-card .num { font-size:1.55em; font-weight:800; line-height:1.1; letter-spacing:-.3px; }
-        .npnp-attention-card .lbl { opacity:.72; font-size:.76em; margin-top:3px; font-weight:600; }
+        .npnp-attention-card .lbl { opacity:.8; font-size:.85em; margin-top:5px; font-weight:600; }
         .npnp-attention-card.alert { border-left-color:var(--npnp-danger); }
         .npnp-attention-card.warn { border-left-color:var(--npnp-warn); }
         .npnp-attention-card.accent { border-left-color:var(--npnp-accent); }
         .npnp-panel { background:var(--npnp-surface-1); border:1px solid var(--npnp-border); border-radius:var(--npnp-radius);
             padding:16px 18px; margin-bottom:14px; }
-        .npnp-panel h3 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; opacity:.75; }
+        .npnp-panel h3 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; opacity:.8; }
         .npnp-expiring-soon .row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 10px;
             border-radius:var(--npnp-radius); font-size:13px; }
         .npnp-expiring-soon .row:nth-child(odd) { background:var(--npnp-surface-2); }
         .npnp-expiring-soon .row .uname { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .npnp-expiring-soon .row .due { opacity:.72; font-size:.85em; font-variant-numeric:tabular-nums; white-space:nowrap; }
+        .npnp-expiring-soon .row .due { opacity:.8; font-size:.9em; font-variant-numeric:tabular-nums; white-space:nowrap; }
         .npnp-expiring-soon .empty { opacity:.55; font-style:italic; font-size:13px; padding:6px 2px; }
         .npnp-method-breakdown { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
         .npnp-method-card { background:var(--npnp-surface-2); border:1px solid var(--npnp-border); border-radius:var(--npnp-radius); padding:10px 12px; }
         .npnp-method-card .m-name { font-weight:700; font-size:13px; text-transform:capitalize; }
-        .npnp-method-card .m-count { opacity:.72; font-size:.78em; }
+        .npnp-method-card .m-count { opacity:.8; font-size:.85em; }
         .npnp-method-card .m-amount { font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; }
         .npnp-dash-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:14px; align-items:start; }
         @media (max-width:900px){ .npnp-dash-grid { grid-template-columns:minmax(0,1fr); } }
@@ -175,7 +176,7 @@
         .npnp-stat:hover { background:var(--npnp-surface-2); transform:translateY(-1px); }
         .npnp-stat.active { border-color:var(--c); background:var(--npnp-surface-2); }
         .npnp-stat-num { font-size:22px; font-weight:700; color:var(--c); line-height:1; }
-        .npnp-stat-lbl { font-size:11px; opacity:.7; text-transform:uppercase; letter-spacing:.5px; margin-top:4px; }
+        .npnp-stat-lbl { font-size:12px; opacity:.78; text-transform:uppercase; letter-spacing:.5px; margin-top:4px; }
 
         /* --- Status alert bar --- */
         .npnp-status { padding:10px 14px; border-radius:var(--npnp-radius); margin-bottom:14px; font-size:13px;
@@ -192,7 +193,7 @@
         /* --- Sections (settings / promo / tiers / tags / audit) --- */
         .npnp-section { background:var(--npnp-surface-1); border-radius:var(--npnp-radius); padding:18px; margin-bottom:18px;
             border:1px solid var(--npnp-border); }
-        .npnp-section h3 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; opacity:.75; }
+        .npnp-section h3 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; opacity:.8; }
         .npnp-section .inputContainer { display:block; margin:0 0 14px; }
         .npnp-section .inputContainer:last-child { margin-bottom:0; }
         .npnp-section .inputContainer > label { display:block; margin-bottom:5px; font-size:13px; opacity:.85; }
@@ -216,7 +217,7 @@
         /* --- Theme preview (live color swatches) --- */
         .npnp-theme-preview { display:flex; gap:10px; flex-wrap:wrap; }
         .npnp-theme-swatch { display:flex; flex-direction:column; align-items:center; gap:4px; min-width:70px; }
-        .npnp-swatch-label { font-size:11px; opacity:.7; text-transform:uppercase; letter-spacing:.4px; }
+        .npnp-swatch-label { font-size:12px; opacity:.75; text-transform:uppercase; letter-spacing:.4px; }
         .npnp-swatch-color { width:40px; height:40px; border-radius:var(--npnp-radius); border:2px solid var(--npnp-border-strong); display:block; }
         .npnp-swatch-radius { width:40px; height:40px; border-radius:var(--npnp-radius); border:2px solid var(--npnp-border-strong); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; background:var(--npnp-surface-1); }
         .npnp-theme-detect { font-size:12px; opacity:.65; margin-top:10px; display:flex; gap:12px; flex-wrap:wrap; }

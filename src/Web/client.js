@@ -453,7 +453,7 @@
                 if (finalUrl && window.qrcode) {
                     box.innerHTML = qrSvg(finalUrl, 120);
                 } else {
-                    box.innerHTML = '<span style="font-size:12px;opacity:.7;">'
+                    box.innerHTML = '<span style="font-size:12px;opacity:.8;">'
                         + escapeHtml(t(data, 'user.modal.qr.fallback', 'QR unavailable \u2014 copy the link above.')) + '</span>';
                 }
             });
@@ -585,7 +585,7 @@
             + 'font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;'
             + 'padding:3px 9px;border-radius:999px;background:color-mix(in srgb,var(--npnp-state) 32%,transparent);color:var(--npnp-fg);}'
             + '.npnp-hero-main{font-size:24px;font-weight:800;line-height:1.15;}'
-            + '.npnp-hero-sub{font-size:13px;opacity:.85;}'
+            + '.npnp-hero-sub{font-size:13px;opacity:.9;}'
             + '@media (max-width:600px){.npnp-hero{padding:12px;gap:10px;border-radius:var(--npnp-radius);}'
             + '.npnp-hero-main{font-size:20px;}'
             + '.npnp-hero-icon{width:38px;height:38px;}'
@@ -594,8 +594,8 @@
             + '.npnp-hero-main{font-size:17px;}'
             + '.npnp-hero-icon{width:32px;height:32px;}'
             + '.npnp-hero-icon .material-icons{font-size:18px;}}'
-            + '.npnp-modal h3{margin:20px 0 9px;font-size:11px;text-transform:uppercase;'
-            + 'letter-spacing:.7px;opacity:.7;font-weight:700;display:flex;align-items:center;gap:8px;}'
+            + '.npnp-modal h3{margin:20px 0 9px;font-size:12px;text-transform:uppercase;'
+            + 'letter-spacing:.7px;opacity:.75;font-weight:700;display:flex;align-items:center;gap:8px;}'
             + '.npnp-modal h3::before{content:"";width:16px;height:2px;border-radius:2px;background:var(--npnp-accent);opacity:.9;}'
             + '.npnp-modal .row{margin:6px 0;}'
             + '.npnp-pay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}'
@@ -625,18 +625,18 @@
             + '.npnp-hero-gauge{height:5px;border-radius:999px;margin-top:9px;overflow:hidden;'
             + 'background:color-mix(in srgb,var(--npnp-fg,currentColor) 14%,transparent);}'
             + '.npnp-hero-gauge>span{display:block;height:100%;border-radius:999px;}'
-            // Tier savings chip. Text is darkened so it stays readable on light themes.
-            + '.npnp-tier-save{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;'
-            + 'padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--npnp-ok) 22%,transparent);'
-            + 'color:color-mix(in srgb,var(--npnp-ok) 55%,#000 45%);}'
+            // Tier savings chip. Text uses the theme foreground so it stays readable on both light and dark themes.
+            + '.npnp-tier-save{display:inline-block;margin-top:6px;font-size:12px;font-weight:700;'
+            + 'padding:2px 9px;border-radius:999px;background:color-mix(in srgb,var(--npnp-ok) 20%,transparent);'
+            + 'border:1px solid color-mix(in srgb,var(--npnp-ok) 35%,transparent);color:var(--npnp-fg,inherit);}'
             // Payment reference.
             + '.npnp-ref-row{display:flex;align-items:center;gap:10px;margin-top:12px;'
             + 'background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:var(--npnp-radius);padding:10px 12px;}'
             + '@media (max-width:480px){.npnp-ref-row{flex-direction:column;gap:6px;align-items:stretch;}}'
             + '.npnp-ref-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}'
-            + '.npnp-ref-label{font-size:11px;text-transform:uppercase;letter-spacing:.5px;opacity:.6;font-weight:700;}'
+            + '.npnp-ref-label{font-size:12px;text-transform:uppercase;letter-spacing:.5px;opacity:.7;font-weight:700;}'
             + '.npnp-ref-code{font:700 14px ui-monospace,monospace;letter-spacing:.5px;word-break:break-all;}'
-            + '.npnp-ref-hint{font-size:12px;opacity:.7;margin-top:6px;}'
+            + '.npnp-ref-hint{font-size:12px;opacity:.78;margin-top:6px;}'
             // QR codes.
             + '.npnp-qr-grid{display:flex;flex-wrap:wrap;gap:14px;}'
             + '@media (max-width:480px){.npnp-qr-grid{justify-content:center;gap:10px;}}'
@@ -661,7 +661,7 @@
             + '@media (max-width:480px){.npnp-pending-banner{font-size:12px;padding:8px 10px;align-items:flex-start;}}'
             + '.npnp-history{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;}'
             + '.npnp-history th,.npnp-history td{padding:6px 8px;border-bottom:1px solid var(--npnp-border);text-align:left;overflow-wrap:anywhere;}'
-            + '.npnp-history th{opacity:.6;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;}'
+            + '.npnp-history th{opacity:.7;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px;}'
             + '@media (max-width:480px){.npnp-history{font-size:12px;}'
             + '.npnp-history th,.npnp-history td{padding:5px 4px;}}'
             + '.npnp-empty{opacity:.55;font-style:italic;padding:8px 0;font-size:13px;}'
