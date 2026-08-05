@@ -48,6 +48,6 @@ public class WebTransformerTests
     {
         var payload = new JObject { ["contents"] = "<html></html>" };
         string result = WebTransformer.Transform(payload);
-        Assert.Matches("/NoPayNoPlay/Web/client\\.js\\?v=[0-9.]+\"></script>$", result);
+        Assert.Matches("/NoPayNoPlay/Web/client\\.js\\?v=[0-9a-f]+\"></script>$", result);
     }
 }

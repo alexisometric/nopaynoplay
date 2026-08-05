@@ -7,6 +7,16 @@
     }
     window.__noPayNoPlayLoaded = true;
 
+    // Capture the ?v=<content hash> cache-buster from our own <script> tag (injected
+    // by WebTransformer), so the lazily-loaded qrcode.js is fetched with the same
+    // version and never served stale from the browser cache after an update.
+    var _assetVersion = '';
+    try {
+        var _src = (document.currentScript && document.currentScript.getAttribute('src')) || '';
+        var _m = /[?&]v=([^&]+)/.exec(_src);
+        if (_m) { _assetVersion = _m[1]; }
+    } catch (_) {}
+
     var STATE_COLORS = {
         Ok: '#2ecc71',
         WarningSoon: '#f39c12',
@@ -453,7 +463,7 @@
         if (_qrLibPromise) return _qrLibPromise;
         _qrLibPromise = new Promise(function (resolve) {
             var s = document.createElement('script');
-            s.src = '/NoPayNoPlay/Web/qrcode.js';
+            s.src = '/NoPayNoPlay/Web/qrcode.js' + (_assetVersion ? '?v=' + encodeURIComponent(_assetVersion) : '');
             s.async = true;
             s.onload = function () { resolve(); };
             // QR is an enhancement; if it fails to load the payment cards still link.

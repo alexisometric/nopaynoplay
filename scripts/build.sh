@@ -17,19 +17,21 @@ trap 'rm -rf "$WORK_DIR"' EXIT
 
 echo ">> Build $VERSION (ABI $TARGET_ABI)"
 
-# Cache-buster for the admin dashboard script: bake the version into the config.html
-# <script src> before compiling (the file is restored on exit so the working tree
-# stays clean). Without this, admins can run a stale config.js after an update.
+# Cache-buster for the admin dashboard script: bake a content hash of config.js into
+# the config.html <script src> before compiling (the file is restored on exit so the
+# working tree stays clean). Content-addressed (not the plugin version) so a hotfix
+# that keeps the same version still invalidates stale config.js in admin browsers.
 CONFIG_HTML="$ROOT/src/Web/config.html"
 CONFIG_HTML_ORIG="$(mktemp)"
+CONFIG_JS_HASH="$(sha256sum "$ROOT/src/Web/config.js" | cut -c1-12)"
 cp -f "$CONFIG_HTML" "$CONFIG_HTML_ORIG"
-python3 - "$VERSION" "$CONFIG_HTML" <<'PY'
+python3 - "$CONFIG_JS_HASH" "$CONFIG_HTML" <<'PY'
 import sys
-version, path = sys.argv[1], sys.argv[2]
+hashv, path = sys.argv[1], sys.argv[2]
 text = open(path, encoding="utf-8").read()
 text = text.replace(
     '<script src="configurationpage?name=NoPayNoPlayJs" defer></script>',
-    '<script src="configurationpage?name=NoPayNoPlayJs&v=' + version + '" defer></script>')
+    '<script src="configurationpage?name=NoPayNoPlayJs&v=' + hashv + '" defer></script>')
 open(path, "w", encoding="utf-8").write(text)
 PY
 restore_config() { cp -f "$CONFIG_HTML_ORIG" "$CONFIG_HTML"; rm -f "$CONFIG_HTML_ORIG"; }

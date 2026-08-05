@@ -30,14 +30,14 @@ public static class WebTransformer
     private const int MaxCacheEntries = 8;
 
     /// <summary>
-    /// Returns the &lt;script&gt; tag to inject. The src URL embeds the plugin
-    /// version as a cache-buster so updating the plugin invalidates browser
-    /// caches without requiring a hard refresh from end users.
+    /// Returns the &lt;script&gt; tag to inject. The src URL embeds a short content
+    /// hash of client.js (+ qrcode.js) as a cache-buster, so updating the plugin
+    /// invalidates browser caches — even for a hotfix that keeps the same assembly
+    /// version — without requiring a hard refresh from end users.
     /// </summary>
     private static string BuildScriptTag()
     {
-        string version = typeof(WebTransformer).Assembly.GetName().Version?.ToString() ?? "0";
-        return "<script defer src=\"/NoPayNoPlay/Web/client.js?v=" + version + "\"></script>";
+        return "<script defer src=\"/NoPayNoPlay/Web/client.js?v=" + WebAssetVersion.Value + "\"></script>";
     }
 
     /// <summary>Static method matching the File Transformation callback contract.</summary>
@@ -63,8 +63,9 @@ public static class WebTransformer
             return contents;
         }
 
-        string version = typeof(WebTransformer).Assembly.GetName().Version?.ToString() ?? "0";
-        string cacheKey = version + ":" + System.HashCode.Combine(contents.Length, contents);
+        // Seed the cache key with the content hash too: a hotfix that keeps the same
+        // assembly version still changes the hash and thus busts the stale entry.
+        string cacheKey = WebAssetVersion.Value + ":" + System.HashCode.Combine(contents.Length, contents);
         if (_cache.TryGetValue(cacheKey, out var cached))
         {
             return cached;
