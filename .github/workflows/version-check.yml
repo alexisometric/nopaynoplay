@@ -1,0 +1,48 @@
+name: Version consistency
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/Jellyfin.Plugin.NoPayNoPlay.csproj'
+      - 'src/meta.json'
+      - 'manifest.json'
+  pull_request:
+    paths:
+      - 'src/Jellyfin.Plugin.NoPayNoPlay.csproj'
+      - 'src/meta.json'
+  schedule:
+    - cron: '0 4 * * 1'   # Lundi 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: version-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Harden runner
+        uses: step-security/harden-runner@b09bb98e06d4d774595224525879c09bc6e98c40 # v2.20.1
+        with:
+          egress-policy: audit
+
+      # On PRs the manifest legitimately lags a version bump (refreshed at release),
+      # so only enforce csproj + meta.json there. On main / schedule / dispatch the
+      # published manifest must match the current version too.
+      - name: Check version consistency (csproj + meta.json)
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/check-version-consistency.py
+
+      - name: Check version consistency (incl. manifest)
+        if: github.event_name != 'pull_request'
+        run: python3 scripts/check-version-consistency.py --require-manifest
