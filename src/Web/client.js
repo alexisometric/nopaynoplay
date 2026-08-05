@@ -98,16 +98,29 @@
 
     // ---- ElegantFin theme integration ----
     // ElegantFin (https://github.com/lscambo13/ElegantFin) exposes its accent as
-    // --accentColor on :root. When detected, the plugin switches to a translucent
-    // "glass" look (rounded corners, backdrop blur, soft translucent surfaces) so
-    // the banner / modal blend with ElegantFin's gradient background. Detection is
-    // re-evaluated on every refresh so the skin applies even if the theme's CSS
-    // loads after the plugin's.
+    // --accentColor on :root in older builds; newer builds (v26+, including when
+    // loaded through the KefinTweaks Skin Manager) use --activeColor, --blurLargest
+    // and --elegantFinFooterText instead. When detected, the plugin switches to a
+    // translucent "glass" look (rounded corners, backdrop blur, soft translucent
+    // surfaces) so the banner / modal blend with ElegantFin's gradient background.
+    // Detection is re-evaluated on every refresh so the skin applies even if the
+    // theme's CSS loads after the plugin's.
     var _forcedEfSkin = false;
     function isElegantFin() {
         try {
-            var c = getComputedStyle(document.documentElement).getPropertyValue('--accentColor');
-            return typeof c === 'string' && c.trim().length > 0;
+            var cs = getComputedStyle(document.documentElement);
+            // Older ElegantFin builds exposed --accentColor; keep detecting it.
+            var accent = cs.getPropertyValue('--accentColor');
+            if (typeof accent === 'string' && accent.trim().length > 0) return true;
+            // Modern ElegantFin (v26+, including when loaded via the KefinTweaks
+            // Skin Manager) no longer sets --accentColor — it exposes --activeColor,
+            // --blurLargest and --elegantFinFooterText instead.
+            var footer = cs.getPropertyValue('--elegantFinFooterText');
+            if (typeof footer === 'string' && footer.trim().length > 0) return true;
+            var active = cs.getPropertyValue('--activeColor');
+            var blurLargest = cs.getPropertyValue('--blurLargest');
+            return typeof active === 'string' && active.trim().length > 0
+                && typeof blurLargest === 'string' && blurLargest.trim().length > 0;
         } catch (_) { return false; }
     }
     function efSkinActive() { return _forcedEfSkin || isElegantFin(); }
