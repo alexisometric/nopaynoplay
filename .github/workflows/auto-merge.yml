@@ -59,8 +59,13 @@ jobs:
             echo "eligible=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # Approval is optional: on an unprotected main it is NOT required to merge, and
+      # GitHub forbids the actions bot from approving anyway ("GitHub Actions is not
+      # permitted to approve pull requests"). Best-effort so it never blocks the merge;
+      # on a protected main you'd need a PAT/app token to approve+merge instead.
       - name: Approve (Dependabot PRs)
         if: steps.elig.outputs.eligible == 'true' && github.event.pull_request.user.login == 'dependabot[bot]'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
