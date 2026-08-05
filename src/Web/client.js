@@ -1829,6 +1829,21 @@
             t(data, 'user.toast.dismiss', 'Dismiss'));
     }
 
+    // Remove every plugin-injected UI element (banner, header button, body class
+    // and CSS padding vars). Called when the session is gone (logout, 401, expired
+    // session) so a logged-out screen never keeps showing the previous user's
+    // subscription banner — and the next user's refresh re-creates it fresh.
+    function clearUserUi() {
+        var banner = document.getElementById('npnp-banner');
+        if (banner) banner.parentNode.removeChild(banner);
+        var hb = document.querySelector('.npnp-header-btn');
+        if (hb) hb.parentNode.removeChild(hb);
+        document.body.classList.remove('npnp-has-banner');
+        document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
+        document.documentElement.style.setProperty('--npnp-header-h', '0px');
+        lastData = null;
+    }
+
     function refresh() {
         // Coalesce concurrent refreshes (viewshow + interval + post-action) so we never
         // issue overlapping /Me calls.
@@ -1837,7 +1852,7 @@
         // SPA hasn't booted) — there is no session and nothing to display, so skip
         // silently. The next viewshow / interval refresh picks the session up after
         // login without the plugin ever shouting about a missing ApiClient.
-        if (!getApiClient()) return Promise.resolve();
+        if (!getApiClient()) { clearUserUi(); return Promise.resolve(); }
         _meInFlight = fetchMe().then(function (raw) {
             var normalized = normalizeMe(raw);
             var data = applyTestOverride(normalized);
@@ -1861,6 +1876,7 @@
             // failures (server unreachable, 5xx, unexpected) get a notice.
             if (!err || err.status === 401 || err.statusCode === 401
                 || /ApiClient unavailable/.test(err.message || '')) {
+                clearUserUi();
                 return;
             }
             // Never fail silently: log and surface a lightweight, throttled notice.
