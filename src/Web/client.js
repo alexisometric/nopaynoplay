@@ -198,10 +198,22 @@
     }
 
     function getLangParam() {
+        // An explicit ?lang= in the URL wins (documented override, admin test page).
         try {
             var qs = new URLSearchParams(window.location.search);
-            return qs.get('lang') || '';
-        } catch (_) { return ''; }
+            var explicit = qs.get('lang');
+            if (explicit) return explicit;
+        } catch (_) {}
+        // Otherwise follow Jellyfin's active UI language: jellyfin-web sets
+        // document.documentElement.lang to the resolved per-user/server culture.
+        // Forwarding it as ?lang= makes the plugin speak the language the user
+        // actually sees in Jellyfin, instead of falling back to the browser's
+        // Accept-Language header on the server.
+        try {
+            var docLang = document.documentElement && document.documentElement.getAttribute('lang');
+            if (docLang) return docLang;
+        } catch (_) {}
+        return '';
     }
 
     function postJson(path, body) {

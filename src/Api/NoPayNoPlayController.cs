@@ -291,7 +291,8 @@ public class NoPayNoPlayController : ControllerBase
 
     private string ResolveCulture()
     {
-        // Admin override wins, then headers/server config.
+        // Admin override wins, then the Jellyfin UI language (?lang= forwarded by the
+        // web client, falling back to the server UI culture, then the browser header).
         string? overrideCulture = Cfg.UiCultureOverride;
         if (!string.IsNullOrWhiteSpace(overrideCulture))
         {

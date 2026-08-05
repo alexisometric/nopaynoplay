@@ -12,8 +12,8 @@ namespace Jellyfin.Plugin.NoPayNoPlay.Localization;
 
 /// <summary>
 /// Loads embedded JSON translation files and resolves the active culture
-/// based on (in order): explicit lang query string, Accept-Language header,
-/// the Jellyfin server UI culture, and English as a final fallback.
+/// based on (in order): explicit lang query string, the Jellyfin server UI
+/// culture, the browser's Accept-Language header, and English as a final fallback.
 /// </summary>
 public sealed class Localizer
 {
@@ -175,7 +175,28 @@ public sealed class Localizer
             }
         }
 
-        // 2. Accept-Language header (browser/Jellyfin web).
+        // 2. Jellyfin server UI culture (global setting): the plugin follows the
+        //    language Jellyfin is configured to use before considering the browser's
+        //    Accept-Language header, so a browser in another language does not
+        //    override the server's (or the user's, forwarded via ?lang=) UI language.
+        try
+        {
+            string? serverCulture = _serverConfig?.Configuration?.UICulture;
+            if (!string.IsNullOrWhiteSpace(serverCulture))
+            {
+                string match = MatchAvailable(serverCulture);
+                if (_bundles.ContainsKey(match))
+                {
+                    return match;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not read server UI culture");
+        }
+
+        // 3. Accept-Language header (browser/Jellyfin web) — last resort.
         if (httpContext is not null)
         {
             string? accept = httpContext.Request.Headers.AcceptLanguage.ToString();
@@ -196,24 +217,6 @@ public sealed class Localizer
                     }
                 }
             }
-        }
-
-        // 3. Server UI culture (Jellyfin global setting).
-        try
-        {
-            string? serverCulture = _serverConfig?.Configuration?.UICulture;
-            if (!string.IsNullOrWhiteSpace(serverCulture))
-            {
-                string match = MatchAvailable(serverCulture);
-                if (_bundles.ContainsKey(match))
-                {
-                    return match;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not read server UI culture");
         }
 
         return DefaultCulture;
