@@ -1,8 +1,9 @@
 version: 2
 
 # NOTE: labels are intentionally not set — Dependabot fails its update run when a
-# referenced label does not exist, and the repo has no `dependencies`/`tests`/`ci`
-# labels today. Add `labels:` back only after creating them in Settings > Labels.
+# referenced label does not exist. Dependabot auto-creates its own labels
+# (`.NET`, `dependencies`, `github_actions`); `tests`/`ci` still don't exist, so
+# keep `labels:` unset until they are created in Settings > Labels.
 updates:
   - package-ecosystem: "nuget"
     directory: "/src"
