@@ -1,5 +1,5 @@
-using Newtonsoft.Json.Linq;
 using Jellyfin.Plugin.NoPayNoPlay.Web;
+using Newtonsoft.Json.Linq;
 using Xunit;
 
 namespace Jellyfin.Plugin.NoPayNoPlay.Tests;

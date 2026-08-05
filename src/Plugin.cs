@@ -84,15 +84,15 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             if (cfg.Tiers.Count == 0)
             {
-                cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 1,  Price = 10m,  Highlight = false });
-                cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 3,  Price = 27m,  Highlight = true });
+                cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 1, Price = 10m, Highlight = false });
+                cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 3, Price = 27m, Highlight = true });
                 cfg.Tiers.Add(new Configuration.SubscriptionTier { Months = 12, Price = 100m, Highlight = false });
             }
             if (cfg.Tags.Count == 0)
             {
-                cfg.Tags.Add(new Configuration.UserTag { Key = "family",  Label = "Family",  Color = "#9b59b6" });
+                cfg.Tags.Add(new Configuration.UserTag { Key = "family", Label = "Family", Color = "#9b59b6" });
                 cfg.Tags.Add(new Configuration.UserTag { Key = "friends", Label = "Friends", Color = "#3498db" });
-                cfg.Tags.Add(new Configuration.UserTag { Key = "guests",  Label = "Guests",  Color = "#95a5a6" });
+                cfg.Tags.Add(new Configuration.UserTag { Key = "guests", Label = "Guests", Color = "#95a5a6" });
             }
             cfg.DefaultsSeeded = true;
             dirty = true;
