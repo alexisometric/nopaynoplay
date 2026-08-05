@@ -973,12 +973,13 @@
         var currency = data.currency || 'EUR';
         var badgeLabel = t(data, 'user.modal.tier.popular', 'Best deal');
         var perMonth = t(data, 'user.modal.tier.perMonth', '{price} / month');
-        var monthsLabel = t(data, 'user.modal.tier.months', '{n} month(s)');
         var saveLabel = t(data, 'user.modal.tier.save', 'Save {percent}%');
         var monthly = Number(data.price || 0);
         var html = tiers.map(function (raw) {
             var t1 = normalizeKeys(raw);
             var months = Math.max(1, Number(t1.months || 1));
+            // Pluralise so the tier card reads "1 month" / "3 months", not "1 month(s)".
+            var monthsLabel = tp(data, 'user.modal.tier.months', months, '{n} month(s)');
             var price = Number(t1.price || 0);
             var pm = months > 0 ? (price / months) : 0;
             // Savings vs the plain monthly price (only when there's a real discount).
@@ -994,7 +995,7 @@
                 + ' data-tier-months="' + months + '"'
                 + ' data-tier-price="' + price + '">'
                 + (t1.highlight ? '<span class="npnp-tier-badge">' + escapeHtml(badgeLabel) + '</span>' : '')
-                + '<div class="npnp-tier-months">' + escapeHtml(format(monthsLabel, { n: months })) + '</div>'
+                + '<div class="npnp-tier-months">' + escapeHtml(monthsLabel) + '</div>'
                 + '<div class="npnp-tier-price">' + escapeHtml(formatMoney(price, currency, data.lang)) + '</div>'
                 + '<div class="npnp-tier-permonth">' + escapeHtml(format(perMonth, { price: formatMoney(pm, currency, data.lang) })) + '</div>'
                 + saveChip

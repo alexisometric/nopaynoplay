@@ -60,6 +60,28 @@
         return fallback;
     }
 
+    // Plural helper (mirrors client.js). Picks the CLDR category (.one/.few/.many/
+    // .other) for the resolved language via Intl.PluralRules — so e.g. Russian
+    // pluralises correctly — and falls back to the base key when no plural form is
+    // registered. Substitutes {n} with the count.
+    var _pluralRules = null;
+    function pluralSuffix(n) {
+        try {
+            if (!_pluralRules || _pluralRules.resolvedOptions().locale !== (i18n.lang || 'en')) {
+                _pluralRules = new Intl.PluralRules(i18n.lang || 'en');
+            }
+            return '.' + _pluralRules.select(Number(n));
+        } catch (_) {
+            return Number(n) === 1 ? '.one' : '.other';
+        }
+    }
+    function tp(key, n, fallback) {
+        var suffix = pluralSuffix(n);
+        var v = t(key + suffix, null);
+        if (v === null) v = t(key, fallback);
+        return String(v).replace(/\{n\}/g, String(n));
+    }
+
     function format(template, tokens) {
         return String(template).replace(/\{(\w+)\}/g, function (_, k) {
             return Object.prototype.hasOwnProperty.call(tokens, k) ? tokens[k] : '';
@@ -375,7 +397,7 @@
             var dl = Math.max(0, Number(u.daysLeft || 0));
             return '<div class="row">'
                 + '<span class="uname">' + escapeHtml(u.username || '') + '</span>'
-                + '<span class="due">' + escapeHtml(format(t('admin.stats.expiringSoon.days', '{n} day(s)'), { n: dl }))
+                + '<span class="due">' + escapeHtml(tp('admin.stats.expiringSoon.days', dl, '{n} day(s)'))
                 + ' \u00b7 ' + escapeHtml(formatDate(u.expiryDate)) + '</span>'
                 + '</div>';
         }).join('');
@@ -395,7 +417,7 @@
         el.innerHTML = title + '<div class="npnp-method-breakdown">' + bd.map(function (m) {
             return '<div class="npnp-method-card">'
                 + '<div class="m-name">' + escapeHtml(m.method) + '</div>'
-                + '<div class="m-count">' + escapeHtml(format(t('admin.stats.methods.count', '{n} payment(s)'), { n: m.count })) + '</div>'
+                + '<div class="m-count">' + escapeHtml(tp('admin.stats.methods.count', m.count, '{n} payment(s)')) + '</div>'
                 + '<div class="m-amount">' + escapeHtml(formatPrice(m.amount) + ' ' + (s.currency || 'EUR')) + '</div>'
                 + '</div>';
         }).join('') + '</div>';
@@ -1602,9 +1624,9 @@
             + '</tr></thead><tbody>';
         var body = rows.map(function (r, idx) {
             return '<tr data-idx="' + idx + '">'
-                + '<td><input is="emby-input" type="number" min="1" max="60" class="emby-input npnp-tier-months" value="' + (r.Months || 1) + '" /></td>'
-                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="emby-input npnp-tier-price" value="' + (r.Price || 0) + '" /></td>'
-                + '<td><input is="emby-input" type="text" maxlength="64" class="emby-input npnp-tier-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="1" max="60" class="npnp-tier-months" value="' + (r.Months || 1) + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="npnp-tier-price" value="' + (r.Price || 0) + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="64" class="npnp-tier-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
                 + '<td class="npnp-cell-center"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-tier-highlight"' + (r.Highlight ? ' checked' : '') + ' /><span></span></label></td>'
                 + '<td class="npnp-cell-actions"><button is="emby-button" type="button" class="button-alt npnp-tier-del npnp-icon-btn npnp-danger" title="' + escapeHtml(t('admin.tiers.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.tiers.delete', 'Delete')) + '">'
                 + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
@@ -1692,10 +1714,10 @@
             + '</tr></thead><tbody>';
         var body = rows.map(function (r, idx) {
             return '<tr data-idx="' + idx + '">'
-                + '<td><input is="emby-input" type="text" maxlength="32" class="emby-input npnp-tag-key" value="' + escapeHtml(r.Key || '') + '" /></td>'
-                + '<td><input is="emby-input" type="text" maxlength="64" class="emby-input npnp-tag-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="32" class="npnp-tag-key" value="' + escapeHtml(r.Key || '') + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="64" class="npnp-tag-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
                 + '<td class="npnp-cell-center"><input type="color" class="npnp-tag-color" value="' + escapeHtml(r.Color || '#888888') + '" aria-label="' + escapeHtml(t('admin.tags.col.color', 'Color')) + '" /><span class="npnp-tag-color-hex" style="font-size:11px;opacity:.7;margin-left:4px;vertical-align:middle;font-family:monospace;">' + escapeHtml(r.Color || '#888888') + '</span></td>'
-                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="emby-input npnp-tag-price" value="' + (r.MonthlyPriceOverride || 0) + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="npnp-tag-price" value="' + (r.MonthlyPriceOverride || 0) + '" /></td>'
                 + '<td class="npnp-cell-actions"><button is="emby-button" type="button" class="button-alt npnp-tag-del npnp-icon-btn npnp-danger" title="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '">'
                 + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
                 + '</tr>';
@@ -2060,7 +2082,7 @@
             if (!ids.length) return;
             openConfirmModal(page,
                 t('admin.users.action.reset', 'Reset trial'),
-                t('admin.users.bulk.confirm.reset', 'Reset {n} member(s) back to a fresh trial?').replace('{n}', String(ids.length)),
+                tp('admin.users.bulk.confirm.reset', ids.length, 'Reset {n} member(s) back to a fresh trial?'),
                 function () {
                     var btn = bar.querySelector('#npnpBulkReset');
                     setBusyButton(btn, true);
@@ -2107,7 +2129,7 @@
 
         var body = ''
             + '<form id="npnpBulkPayForm">'
-            + '<p>' + escapeHtml(t('admin.users.bulk.pay.intro', 'Recording the same payment for {n} member(s).').replace('{n}', String(ids.length))) + '</p>'
+            + '<p>' + escapeHtml(tp('admin.users.bulk.pay.intro', ids.length, 'Recording the same payment for {n} member(s).')) + '</p>'
             + '<div class="inputContainer"><label for="npnpBulkAmount">' + escapeHtml(t('admin.payment.amount', 'Amount')) + ' (' + escapeHtml(currency) + ')</label>'
             + '<input is="emby-input" id="npnpBulkAmount" type="number" step="0.01" min="0" value="' + escapeHtml(defaultAmount) + '" /></div>'
             + '<div class="inputContainer"><label for="npnpBulkMonths">' + escapeHtml(t('admin.payment.months', 'Months')) + '</label>'
