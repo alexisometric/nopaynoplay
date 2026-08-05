@@ -111,12 +111,17 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # The version tag does NOT exist yet for workflow_dispatch releases (it is
+          # created by the "Create GitHub Release" step that runs AFTER this one), so
+          # the log range must use HEAD — never the tag name — or the changelog comes
+          # out empty ("*No notable changes.*"). The compare URL keeps the tag name,
+          # which resolves as soon as the release step creates it.
           PREV_TAG=$(git tag --list 'v*.*.*.*' --sort=-version:refname | grep -vFx "$TAG" | head -n1 || true)
           if [[ -n "$PREV_TAG" ]]; then
-            RANGE="${PREV_TAG}..${TAG}"
+            RANGE="${PREV_TAG}..HEAD"
             COMPARE="https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
           else
-            RANGE="$TAG"
+            RANGE="HEAD"
             COMPARE="https://github.com/${REPO}/commits/${TAG}"
           fi
 
