@@ -653,7 +653,7 @@
             + '.npnp-mini-btn:hover{border-color:var(--npnp-accent);background:var(--npnp-surface-hover);}'
             + '.npnp-mini-btn.primary{background:var(--npnp-accent);border-color:var(--npnp-accent);color:var(--npnp-accent-fg);}'
             + '.npnp-mini-btn.primary:hover{filter:brightness(1.1);background:var(--npnp-accent);}'
-            + '.npnp-mini-btn.success{background:var(--npnp-ok);border-color:var(--npnp-ok);color:#fff;}'
+            + '.npnp-mini-btn.success{background:#1e8449;border-color:#1e8449;color:#fff;}'
             + '.npnp-mini-btn:disabled{opacity:.5;cursor:not-allowed;}'
             + '.npnp-pending-banner{background:color-mix(in srgb,var(--npnp-warn) 15%,transparent);border:1px solid var(--npnp-warn);'
             + 'color:inherit;padding:10px 12px;border-radius:var(--npnp-radius);font-size:13px;margin:8px 0 0;'
