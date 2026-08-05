@@ -72,6 +72,8 @@ jobs:
         run: |
           set -euo pipefail
           sed -i "s#<Version>[^<]*</Version>#<Version>${V}</Version>#" src/Jellyfin.Plugin.NoPayNoPlay.csproj
+          sed -i "s#<FileVersion>[^<]*</FileVersion>#<FileVersion>${V}</FileVersion>#" src/Jellyfin.Plugin.NoPayNoPlay.csproj
+          sed -i "s#<AssemblyVersion>[^<]*</AssemblyVersion>#<AssemblyVersion>${V}</AssemblyVersion>#" src/Jellyfin.Plugin.NoPayNoPlay.csproj
           python3 - "$V" <<'PY'
           import json, sys
           path = "src/meta.json"
