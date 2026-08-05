@@ -132,8 +132,10 @@ jobs:
           mapfile -d '' -t COMMITS < <(git log --no-merges -z --pretty=format:'%x1f%h%x1f%s%x1f%b' "$RANGE" 2>/dev/null || true)
 
           # User-facing sections only, so release notes stay human-readable: no
-          # commit hashes, no raw git-log dump. Internal housekeeping (docs, CI,
-          # build, tests, chores) is folded into a single short "Maintenance" note.
+          # raw git-log dump. Every bullet carries the link to its source commit,
+          # and internal housekeeping (docs, CI, build, tests, chores) is grouped
+          # under a single "Maintenance" heading (one bullet per change, each with
+          # its own commit link).
           declare -A SECTIONS=(
             [feat]="### ✨ New features"
             [fix]="### 🐛 Bug fixes"
@@ -149,6 +151,8 @@ jobs:
           declare -A BUCKETS=()
           declare -a MAINT=()
           cc_re='^([a-z]+)(\([^)]+\))?!?:[[:space:]]*(.*)$'
+          # Renders "([abc1234](…/commit/abc1234))" so every bullet links its commit.
+          commit_url() { echo "[$1](https://github.com/${REPO}/commit/$1)"; }
           for rec in "${COMMITS[@]}"; do
             [[ -z "$rec" ]] && continue
             rec="${rec#$'\x1f'}"
@@ -167,12 +171,12 @@ jobs:
               fi
             fi
             # Anything that is not a user-facing change (docs/ci/build/test/chore)
-            # goes into a single "Maintenance" note.
+            # becomes its own bullet under the "Maintenance" heading, with its commit.
             if [[ "$type" == "other" ]]; then
-              [[ -n "$text" ]] && MAINT+=("$text")
+              [[ -n "$text" ]] && MAINT+=("- ${text} ($(commit_url "$_sha"))")
               continue
             fi
-            BUCKETS[$type]+="- ${text^}"$'\n'
+            BUCKETS[$type]+="- ${text^} ($(commit_url "$_sha"))"$'\n'
             # Keep the commit-body bullets for user-facing sections only; they add
             # useful detail without leaking implementation internals.
             if [[ -n "$body" ]]; then
@@ -186,6 +190,12 @@ jobs:
 
           {
             echo "## What's new in NoPayNoPlay ${TAG#v}"
+            echo
+            if [[ -n "${PREV_TAG:-}" ]]; then
+              echo "**Full changelog:** [${PREV_TAG} → ${TAG}](${COMPARE})"
+            else
+              echo "**Full changelog:** ${COMPARE}"
+            fi
             echo
             any=0
             for t in "${ORDER[@]}"; do
@@ -202,7 +212,7 @@ jobs:
               echo "### 🔧 Maintenance"
               echo
               for m in "${MAINT[@]}"; do
-                echo "- ${m}"
+                echo "${m}"
               done
               echo
             fi
@@ -210,7 +220,6 @@ jobs:
               echo "_No notable changes._"
               echo
             fi
-            echo "**Full changelog:** ${COMPARE}"
           } > release-notes.md
 
           echo "path=release-notes.md" >> "$GITHUB_OUTPUT"
