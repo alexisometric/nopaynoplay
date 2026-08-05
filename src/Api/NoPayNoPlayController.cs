@@ -939,6 +939,75 @@ public class NoPayNoPlayController : ControllerBase
             }
         }
 
+        // ---- Enriched dashboard data (used by the admin "Members" overview) ----
+        int okCount = 0, warningSoonCount = 0, inGraceCount = 0, blockedCount = 0, exemptCount = 0;
+        int pendingClaims = 0;
+        int activeSubscribers = 0;
+        var expiringSoonTuples = new List<(Guid UserId, string Username, DateTime ExpiryDate, int DaysLeft)>();
+        var methodCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var methodAmounts = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+
+        DateTime soonWindow = now.AddDays(7);
+        foreach (var sub in Cfg.Subscriptions.Where(s => !adminIds.Contains(s.UserId)))
+        {
+            var subUser = _userManager.GetUserById(sub.UserId);
+            if (subUser is null) continue;
+
+            SubscriptionState st = _service.EvaluateState(sub);
+            if (sub.IsExempt)
+            {
+                exemptCount++;
+            }
+            else
+            {
+                switch (st)
+                {
+                    case SubscriptionState.Ok: okCount++; break;
+                    case SubscriptionState.WarningSoon: warningSoonCount++; break;
+                    case SubscriptionState.InGrace: inGraceCount++; break;
+                    case SubscriptionState.Blocked: blockedCount++; break;
+                }
+                if (st != SubscriptionState.Blocked) activeSubscribers++;
+            }
+
+            if (sub.HasPendingPaymentClaim) pendingClaims++;
+
+            // "Expiring soon": still playable (not blocked) with a deadline within 7 days.
+            if (!sub.IsExempt && st != SubscriptionState.Blocked && sub.ExpiryDate <= soonWindow)
+            {
+                expiringSoonTuples.Add((
+                    sub.UserId,
+                    subUser.Username ?? "(deleted)",
+                    sub.ExpiryDate,
+                    (int)Math.Ceiling((sub.ExpiryDate - now).TotalDays)));
+            }
+
+            foreach (var t in sub.Transactions)
+            {
+                string method = string.IsNullOrWhiteSpace(t.Method) ? "other" : t.Method;
+                methodCounts.TryGetValue(method, out int mc);
+                methodCounts[method] = mc + 1;
+                methodAmounts.TryGetValue(method, out decimal ma);
+                methodAmounts[method] = ma + t.Amount;
+            }
+        }
+
+        var expiringSoon = expiringSoonTuples
+            .OrderBy(x => x.ExpiryDate)
+            .Select(x => (object)new
+            {
+                userId = x.UserId,
+                username = x.Username,
+                expiryDate = x.ExpiryDate,
+                daysLeft = x.DaysLeft
+            })
+            .ToList();
+
+        var methodBreakdown = methodCounts
+            .Select(kv => new { method = kv.Key, count = kv.Value, amount = methodAmounts[kv.Key] })
+            .OrderByDescending(m => m.amount)
+            .ToList();
+
         return Ok(new
         {
             currency = Cfg.Currency,
@@ -947,7 +1016,19 @@ public class NoPayNoPlayController : ControllerBase
             revenueAllTime = totalAllTime,
             transactionCount = txAllTime,
             monthlyLabels,
-            monthlyAmounts = monthly
+            monthlyAmounts = monthly,
+            stateCounts = new
+            {
+                ok = okCount,
+                warningSoon = warningSoonCount,
+                inGrace = inGraceCount,
+                blocked = blockedCount,
+                exempt = exemptCount
+            },
+            activeSubscribers,
+            pendingClaims,
+            expiringSoon,
+            methodBreakdown
         });
     }
 

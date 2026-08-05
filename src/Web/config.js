@@ -273,7 +273,8 @@
             ['admin.stats.thisMonth', 'Revenue this month', s.revenueThisMonth],
             ['admin.stats.last12Months', 'Last 12 months', s.revenueLast12Months],
             ['admin.stats.allTime', 'All time', s.revenueAllTime],
-            ['admin.stats.transactions', 'Transactions', s.transactionCount, true]
+            ['admin.stats.transactions', 'Transactions', s.transactionCount, true],
+            ['admin.stats.active', 'Active subscribers', s.activeSubscribers, true]
         ];
         el.innerHTML = cards.map(function (card) {
             var val = card[3] ? String(card[2] || 0) : (formatPrice(card[2]) + ' ' + escapeHtml(c));
@@ -321,6 +322,83 @@
                 + 'style="width:100%;height:auto;max-width:560px;display:block;">'
                 + axis + bars + yMaxLabel + '</svg>';
         }
+
+        // Enriched dashboard panels (attention, expiring soon, payment methods).
+        renderAttention(page, s);
+        renderExpiringSoon(page, s);
+        renderMethodBreakdown(page, s);
+    }
+
+    // Attention cards: quick, coloured snapshot of what needs the admin's action.
+    // Clicking a card focuses the members table on that state.
+    function renderAttention(page, s) {
+        var el = page.querySelector('#npnpAttention');
+        if (!el || !s || !s.stateCounts) return;
+        var sc = s.stateCounts;
+        var soonCount = (s.expiringSoon && s.expiringSoon.length) || 0;
+        var cards = [
+            { key: 'Blocked', n: sc.blocked || 0, cls: 'alert', lbl: t('state.blocked', 'Blocked'), filter: 'Blocked' },
+            { key: 'InGrace', n: sc.inGrace || 0, cls: 'warn', lbl: t('state.inGrace', 'Grace period'), filter: 'InGrace' },
+            { key: 'Expiring', n: soonCount, cls: 'accent', lbl: t('admin.stats.expiringSoon', 'Expiring soon (7d)'), filter: 'WarningSoon' },
+            { key: 'Pending', n: s.pendingClaims || 0, cls: 'warn', lbl: t('admin.stats.pendingClaims', 'Pending claims'), filter: '' },
+            { key: 'Active', n: s.activeSubscribers || 0, cls: '', lbl: t('admin.stats.active', 'Active subscribers'), filter: '' }
+        ];
+        el.innerHTML = cards.map(function (c) {
+            return '<button type="button" class="npnp-attention-card ' + c.cls + '" data-filter="' + c.filter + '"'
+                + ' aria-label="' + escapeHtml(c.lbl) + ': ' + c.n + '">'
+                + '<span class="num">' + c.n + '</span>'
+                + '<span class="lbl">' + escapeHtml(c.lbl) + '</span>'
+                + '</button>';
+        }).join('');
+        el.querySelectorAll('.npnp-attention-card').forEach(function (b) {
+            b.addEventListener('click', function () {
+                var sel = page.querySelector('#npnpStateFilter');
+                state.stateFilter = b.getAttribute('data-filter') || '';
+                if (sel) sel.value = state.stateFilter;
+                renderUsers(page);
+            });
+        });
+    }
+
+    // Members whose subscription expires within 7 days (still playable).
+    function renderExpiringSoon(page, s) {
+        var el = page.querySelector('#npnpExpiringSoon');
+        if (!el) return;
+        var title = '<h3>' + escapeHtml(t('admin.stats.expiringSoon.title', 'Expiring within 7 days')) + '</h3>';
+        var soon = (s && Array.isArray(s.expiringSoon)) ? s.expiringSoon : [];
+        if (!soon.length) {
+            el.innerHTML = title + '<div class="empty">'
+                + escapeHtml(t('admin.stats.expiringSoon.empty', 'No subscription expires in the next 7 days.')) + '</div>';
+            return;
+        }
+        el.innerHTML = title + soon.map(function (u) {
+            var dl = Math.max(0, Number(u.daysLeft || 0));
+            return '<div class="row">'
+                + '<span class="uname">' + escapeHtml(u.username || '') + '</span>'
+                + '<span class="due">' + escapeHtml(format(t('admin.stats.expiringSoon.days', '{n} day(s)'), { n: dl }))
+                + ' \u00b7 ' + escapeHtml(formatDate(u.expiryDate)) + '</span>'
+                + '</div>';
+        }).join('');
+    }
+
+    // Revenue split per payment method (PayPal / Lydia / bank / cash / …).
+    function renderMethodBreakdown(page, s) {
+        var el = page.querySelector('#npnpMethodBreakdown');
+        if (!el) return;
+        var title = '<h3>' + escapeHtml(t('admin.stats.methods', 'Payment methods')) + '</h3>';
+        var bd = (s && Array.isArray(s.methodBreakdown)) ? s.methodBreakdown : [];
+        if (!bd.length) {
+            el.innerHTML = title + '<div class="empty">'
+                + escapeHtml(t('admin.stats.methods.empty', 'No payments recorded yet.')) + '</div>';
+            return;
+        }
+        el.innerHTML = title + '<div class="npnp-method-breakdown">' + bd.map(function (m) {
+            return '<div class="npnp-method-card">'
+                + '<div class="m-name">' + escapeHtml(m.method) + '</div>'
+                + '<div class="m-count">' + escapeHtml(format(t('admin.stats.methods.count', '{n} payment(s)'), { n: m.count })) + '</div>'
+                + '<div class="m-amount">' + escapeHtml(formatPrice(m.amount) + ' ' + (s.currency || 'EUR')) + '</div>'
+                + '</div>';
+        }).join('') + '</div>';
     }
 
     // Shows a skeleton loading placeholder for lazy-loaded tabs.
@@ -627,6 +705,22 @@
         });
     }
 
+    // Keeps the members sort control (select + direction button) in sync with the
+    // current sort state. Called after any re-render.
+    function updateSortControls(page) {
+        var field = page.querySelector('#npnpSortField');
+        if (field) field.value = state.sortKey || 'Username';
+        var btn = page.querySelector('#npnpSortDir');
+        if (btn) {
+            var ic = btn.querySelector('.material-icons');
+            if (ic) ic.textContent = state.sortDir > 0 ? 'arrow_upward' : 'arrow_downward';
+            var lbl = t(state.sortDir > 0 ? 'admin.users.sort.asc' : 'admin.users.sort.desc',
+                state.sortDir > 0 ? 'Ascending' : 'Descending');
+            btn.setAttribute('aria-label', lbl);
+            btn.title = lbl;
+        }
+    }
+
     function renderUsers(page) {
         renderSummary(page);
         refreshMethodFilter(page);
@@ -715,12 +809,12 @@
                 + '<td class="npnp-row-check"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-rowcheck"' + checked + ' aria-label="' + rowCheckLabel + '" /><span></span></label></td>'
                 + '<td class="col-user">' + escapeHtml(u.Username) + '</td>'
                 + '<td class="col-state"><span class="npnp-state-pill" style="--c:' + color + '">' + escapeHtml(label) + '</span>' + pendingBadge + arrearsBadge + '</td>'
-                + '<td class="col-expiry">' + escapeHtml(u.IsExempt ? '—' : formatDate(u.ExpiryDate)) + '</td>'
-                + '<td class="col-days">' + escapeHtml(u.IsExempt ? '—' : String(u.DaysLeft)) + '</td>'
-                + '<td class="col-payment">' + escapeHtml(lastLabel) + '</td>'
-                + '<td class="col-method">' + escapeHtml(lastMethod) + '</td>'
-                + '<td class="col-total">' + escapeHtml(totalPaidStr) + '</td>'
-                + '<td class="col-tag">' + tagCell + '</td>'
+                + '<td class="col-expiry" data-label="' + escapeHtml(t('admin.users.col.expiry', 'Expiry')) + '">' + escapeHtml(u.IsExempt ? '—' : formatDate(u.ExpiryDate)) + '</td>'
+                + '<td class="col-days" data-label="' + escapeHtml(t('admin.users.col.daysLeft', 'Days left')) + '">' + escapeHtml(u.IsExempt ? '—' : String(u.DaysLeft)) + '</td>'
+                + '<td class="col-payment" data-label="' + escapeHtml(t('admin.users.col.lastPayment', 'Last payment')) + '">' + escapeHtml(lastLabel) + '</td>'
+                + '<td class="col-method" data-label="' + escapeHtml(t('admin.users.col.lastMethod', 'Last method')) + '">' + escapeHtml(lastMethod) + '</td>'
+                + '<td class="col-total" data-label="' + escapeHtml(t('admin.users.col.totalPaid', 'Total paid')) + '">' + escapeHtml(totalPaidStr) + '</td>'
+                + '<td class="col-tag" data-label="' + escapeHtml(t('admin.users.col.tag', 'Tag')) + '">' + tagCell + '</td>'
                 + '<td class="col-actions"><div class="npnp-actions">'
                 + pendingActions
                 + '<button is="emby-button" type="button" class="raised npnp-pay" title="' + escapeHtml(t('admin.users.action.pay', 'Record payment')) + '"><span class="material-icons" aria-hidden="true">payments</span></button>'
@@ -859,6 +953,7 @@
                 });
             }
         });
+        updateSortControls(page);
     }
 
     function renderActivity(page) {
@@ -1743,7 +1838,9 @@
     var _themeObserver = null;
     function bindThemePreview(page) {
         function updateSwatches() {
-            var style = getComputedStyle(page.querySelector('#NoPayNoPlayConfigPage'));
+            // `page` IS the #NoPayNoPlayConfigPage element (passed by the bootstrap /
+            // tab activator) — querying it by id from itself returns null.
+            var style = getComputedStyle(page);
             var accent = style.getPropertyValue('--npnp-accent').trim() || '#00a4dc';
             var surface1 = style.getPropertyValue('--npnp-surface-1').trim();
             var border = style.getPropertyValue('--npnp-border').trim();
@@ -1850,6 +1947,39 @@
         if (expU) expU.addEventListener('click', function () { downloadCsv('NoPayNoPlay/Users/Export.csv', 'nopaynoplay-users.csv'); });
         var expA = page.querySelector('#npnpExportActivity');
         if (expA) expA.addEventListener('click', function () { downloadCsv('NoPayNoPlay/Activity/Export.csv', 'nopaynoplay-activity.csv'); });
+
+        // Sort control (the members list is rendered as cards, so column-header
+        // sorting is gone — sorting happens via this select + direction button).
+        var sortField = page.querySelector('#npnpSortField');
+        if (sortField) {
+            var sortFields = [
+                ['Username', t('admin.users.col.user', 'User')],
+                ['State', t('admin.users.col.state', 'State')],
+                ['ExpiryDate', t('admin.users.col.expiry', 'Expiry')],
+                ['DaysLeft', t('admin.users.col.daysLeft', 'Days left')],
+                ['LastPayment', t('admin.users.col.lastPayment', 'Last payment')],
+                ['LastMethod', t('admin.users.col.lastMethod', 'Last method')],
+                ['TotalPaid', t('admin.users.col.totalPaid', 'Total paid')]
+            ];
+            sortField.innerHTML = sortFields.map(function (f) {
+                return '<option value="' + f[0] + '">' + escapeHtml(f[1]) + '</option>';
+            }).join('');
+            sortField.addEventListener('change', function () {
+                state.sortKey = sortField.value || 'Username';
+                state.sortDir = 1;
+                state.page = 1;
+                renderUsers(page);
+            });
+        }
+        var sortDirBtn = page.querySelector('#npnpSortDir');
+        if (sortDirBtn) {
+            sortDirBtn.addEventListener('click', function () {
+                state.sortDir = -state.sortDir;
+                state.page = 1;
+                renderUsers(page);
+            });
+        }
+        updateSortControls(page);
 
         bindBulkBar(page);
     }

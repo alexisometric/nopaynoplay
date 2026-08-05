@@ -16,7 +16,8 @@
            Semantic state colours (ok/warn/danger) stay fixed because
            they convey meaning. */
         #NoPayNoPlayConfigPage {
-            --npnp-accent: var(--accent, var(--theme-primary-color, var(--uiAccentColor, #00a4dc)));
+            color: var(--theme-body-color, var(--theme-text-color, var(--textColor, inherit)));
+            --npnp-accent: var(--accent, var(--accentColor, var(--theme-primary-color, var(--uiAccentColor, #00a4dc))));
             --npnp-accent-fg: var(--theme-accent-text-color, #fff);
             --npnp-radius: var(--smallRadius, 6px);
             --npnp-large-radius: var(--largeRadius, 12px);
@@ -46,6 +47,10 @@
         .npnp-toolbar .inputContainer { margin:0; flex:1 1 180px; min-width:140px; }
         .npnp-toolbar .npnp-export-btn { display:flex; align-items:flex-end; padding-bottom:1px; }
         .npnp-toolbar .npnp-export-btn button { white-space:nowrap; font-size:13px; padding:7px 14px; }
+        .npnp-sort-row { display:flex; gap:8px; align-items:flex-end; flex:1 1 180px; min-width:150px; }
+        .npnp-sort-row .inputContainer { flex:1; margin:0; min-width:0; }
+        .npnp-sort-dir-wrap { display:flex; align-items:flex-end; padding-bottom:1px; }
+        .npnp-sort-dir { min-width:44px; min-height:36px; }
 
         /* --- Tables --- */
         .npnp-table-wrap { overflow-x:auto; margin:0 -2px; }
@@ -75,9 +80,9 @@
         .npnp-table tbody tr:last-child td { border-bottom:none; }
 
         /* --- Stats cards --- */
-        .npnp-stats-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+        .npnp-stats-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:12px; }
         .npnp-stats-row .npnp-stat-card { background:var(--npnp-surface-1); border:1px solid var(--npnp-border);
-            border-radius:var(--npnp-radius); padding:14px 18px; min-width:140px; flex:1 1 140px;
+            border-radius:var(--npnp-radius); padding:14px 18px; min-width:0;
             transition:border-color .15s, background .15s; }
         .npnp-stats-row .npnp-stat-card:hover { border-color:var(--npnp-border-strong); background:var(--npnp-surface-2); }
         .npnp-stats-row .npnp-stat-card .npnp-stat-num { font-size:1.5em; font-weight:700; display:block; letter-spacing:-.3px; }
@@ -87,6 +92,34 @@
             border:1px solid var(--npnp-border); border-radius:var(--npnp-radius); }
         .npnp-revenue-chart:empty { display:none; }
         .npnp-chart-title { font-size:12px; font-weight:600; margin-bottom:8px; opacity:.8; text-transform:uppercase; letter-spacing:.5px; }
+
+        /* --- Enriched dashboard (attention + expiring soon + methods) --- */
+        .npnp-attention-row { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
+        .npnp-attention-card { flex:1 1 130px; min-width:118px; background:var(--npnp-surface-1); border:1px solid var(--npnp-border);
+            border-left:4px solid var(--npnp-ok); border-radius:var(--npnp-radius); padding:12px 14px; cursor:pointer;
+            text-align:left; color:inherit; transition:transform .12s, border-color .15s, background .15s; }
+        .npnp-attention-card:hover { transform:translateY(-1px); background:var(--npnp-surface-2); border-color:var(--npnp-border-strong); }
+        .npnp-attention-card .num { font-size:1.55em; font-weight:800; line-height:1.1; letter-spacing:-.3px; }
+        .npnp-attention-card .lbl { opacity:.72; font-size:.76em; margin-top:3px; font-weight:600; }
+        .npnp-attention-card.alert { border-left-color:var(--npnp-danger); }
+        .npnp-attention-card.warn { border-left-color:var(--npnp-warn); }
+        .npnp-attention-card.accent { border-left-color:var(--npnp-accent); }
+        .npnp-panel { background:var(--npnp-surface-1); border:1px solid var(--npnp-border); border-radius:var(--npnp-radius);
+            padding:16px 18px; margin-bottom:14px; }
+        .npnp-panel h3 { margin:0 0 12px; font-size:13px; text-transform:uppercase; letter-spacing:.6px; opacity:.75; }
+        .npnp-expiring-soon .row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:8px 10px;
+            border-radius:var(--npnp-radius); font-size:13px; }
+        .npnp-expiring-soon .row:nth-child(odd) { background:var(--npnp-surface-2); }
+        .npnp-expiring-soon .row .uname { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .npnp-expiring-soon .row .due { opacity:.72; font-size:.85em; font-variant-numeric:tabular-nums; white-space:nowrap; }
+        .npnp-expiring-soon .empty { opacity:.55; font-style:italic; font-size:13px; padding:6px 2px; }
+        .npnp-method-breakdown { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; }
+        .npnp-method-card { background:var(--npnp-surface-2); border:1px solid var(--npnp-border); border-radius:var(--npnp-radius); padding:10px 12px; }
+        .npnp-method-card .m-name { font-weight:700; font-size:13px; text-transform:capitalize; }
+        .npnp-method-card .m-count { opacity:.72; font-size:.78em; }
+        .npnp-method-card .m-amount { font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; }
+        .npnp-dash-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:14px; align-items:start; }
+        @media (max-width:900px){ .npnp-dash-grid { grid-template-columns:minmax(0,1fr); } }
 
         /* --- Bulk bar --- */
         .npnp-bulk-bar { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 14px;
@@ -274,7 +307,7 @@
             .npnp-tab-btn { padding:8px 12px; font-size:13px; }
             .npnp-table { font-size:13px; }
             .npnp-table th, .npnp-table td { padding:7px 8px; }
-            .npnp-stats-row .npnp-stat-card { min-width:120px; padding:10px 12px; }
+            .npnp-stats-row .npnp-stat-card { padding:10px 12px; }
             .npnp-stat { min-width:80px; padding:8px 10px; }
             .npnp-stat-num { font-size:18px; }
             .npnp-grid-2 { grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
@@ -285,16 +318,21 @@
         @media (max-width: 768px) {
             .npnp-tab-btn { padding:7px 10px; font-size:12px; }
             .npnp-tabs { gap:3px; margin-bottom:12px; }
-            .npnp-toolbar { flex-direction:column; gap:6px; }
-            .npnp-toolbar .inputContainer { flex:1 1 100%; }
+            .npnp-toolbar { flex-direction:column; gap:6px; align-items:stretch; }
+            .npnp-toolbar .inputContainer { flex:1 1 100%; width:100%; }
             .npnp-toolbar .inputContainer label { margin-bottom:2px; font-size:12px; }
+            .npnp-toolbar input, .npnp-toolbar select { width:100%; }
+            .npnp-toolbar .npnp-export-btn { width:100%; }
+            .npnp-toolbar .npnp-export-btn button { width:100%; justify-content:center; }
+            .npnp-sort-row { width:100%; flex:1 1 100%; }
+            .npnp-sort-row .inputContainer { flex:1; width:auto; }
             .npnp-section { padding:14px; }
             .npnp-summary { gap:6px; }
             .npnp-stat { min-width:60px; padding:6px 8px; }
             .npnp-stat-num { font-size:16px; }
             .npnp-stat-lbl { font-size:10px; }
             .npnp-stats-row { gap:8px; }
-            .npnp-stats-row .npnp-stat-card { min-width:calc(50% - 8px); flex:1 1 calc(50% - 8px); padding:10px 12px; }
+            .npnp-stats-row .npnp-stat-card { padding:10px 12px; }
             .npnp-stats-row .npnp-stat-card .npnp-stat-num { font-size:1.1em; }
             .npnp-save-bar { padding:10px 0 !important; }
 
@@ -315,7 +353,7 @@
             .npnp-modal-header { padding:14px 16px 10px; }
             .npnp-modal-header h2 { font-size:17px; }
             .npnp-modal-body { padding:10px 16px 18px; }
-            .npnp-pay-grid { grid-template-columns:1fr; gap:8px; }
+            .npnp-pay-grid { grid-template-columns:minmax(0,1fr); gap:8px; }
             .npnp-tiers { grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:8px; }
             .npnp-tier { padding:10px 8px; }
             .npnp-tier .npnp-tier-price { font-size:18px; }
@@ -342,7 +380,7 @@
             .npnp-table { font-size:12px; }
             .npnp-table th, .npnp-table td { padding:6px 5px; }
             .npnp-table th { font-size:11px; }
-            .npnp-stats-row .npnp-stat-card { min-width:100%; flex:1 1 100%; }
+            .npnp-stats-row .npnp-stat-card { padding:8px 10px; }
             .npnp-stat { min-width:calc(50% - 6px); flex:1 1 calc(50% - 6px); padding:5px 6px; }
             .npnp-stat-num { font-size:14px; }
             .npnp-section { padding:12px; }
@@ -352,7 +390,7 @@
             .npnp-modal-header h2 { font-size:16px; }
             .npnp-modal-body { padding:8px 14px 16px; }
             .npnp-pay-card { padding:10px 12px; }
-            .npnp-tiers { grid-template-columns:1fr 1fr; gap:6px; }
+            .npnp-tiers { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:6px; }
             .npnp-tier { padding:8px 6px; }
             .npnp-tier .npnp-tier-price { font-size:16px; }
             .npnp-tier .npnp-tier-months { font-size:11px; }
@@ -374,6 +412,61 @@
             .npnp-ref-row { flex-direction:column; gap:6px; }
             .npnp-qr-grid { justify-content:center; }
             .npnp-modal .close { font-size:20px; padding:4px 6px; }
+        }
+
+        /* Members as cards on every screen: the table rows are re-flowed into a
+           responsive card grid (1 column on phones, 2+ on tablets/desktop) so the
+           admin actions stay reachable on any device. The semantic table + its
+           bindings are untouched; only the layout changes. Scoped to
+           #npnpUsersTable so the other dashboard tables keep their scroll wrap. */
+        #npnpUsersTable { overflow-x:visible; }
+        #npnpUsersTable thead { display:none; }
+        #npnpUsersTable .npnp-table { display:block; width:100%; box-sizing:border-box; }
+        #npnpUsersTable .npnp-table tbody { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+            gap:12px; }
+        #npnpUsersTable .npnp-table tbody tr { box-sizing:border-box; border:1px solid var(--npnp-border);
+            border-radius:var(--npnp-radius); padding:10px 12px 8px; margin:0;
+            position:relative; background:var(--npnp-surface-1); }
+        #npnpUsersTable .npnp-table tbody tr:hover { background:var(--npnp-surface-2); }
+        #npnpUsersTable .npnp-table td { box-sizing:border-box; display:flex;
+            justify-content:space-between; align-items:center; gap:10px;
+            padding:4px 0; border:none; font-size:13px; text-align:right; }
+        #npnpUsersTable .npnp-table td::before { content:attr(data-label); opacity:.6; font-size:.7em;
+            text-transform:uppercase; letter-spacing:.4px; font-weight:700; flex-shrink:0; }
+        #npnpUsersTable .npnp-table td.npnp-row-check { position:absolute; top:8px; right:10px; width:auto; }
+        #npnpUsersTable .npnp-table td.col-user { font-weight:700; font-size:15px; padding-right:36px;
+            display:block; text-align:left; }
+        #npnpUsersTable .npnp-table td.col-user::before { display:none; }
+        #npnpUsersTable .npnp-table td.col-state { display:flex; justify-content:flex-start;
+            flex-wrap:wrap; gap:4px; padding:0 0 6px; }
+        #npnpUsersTable .npnp-table td.col-state::before { display:none; }
+        /* Re-show every info column as a labelled row (they were hidden on tablet
+           tables; the card has room for all of them). */
+        #npnpUsersTable .npnp-table td.col-expiry, #npnpUsersTable .npnp-table td.col-days,
+        #npnpUsersTable .npnp-table td.col-payment, #npnpUsersTable .npnp-table td.col-method,
+        #npnpUsersTable .npnp-table td.col-total, #npnpUsersTable .npnp-table td.col-tag { display:flex; }
+        #npnpUsersTable .npnp-table td.col-tag .npnp-tag-select { width:auto; min-width:110px; }
+        #npnpUsersTable .npnp-table td.col-actions { margin-top:8px; padding-top:10px; display:block;
+            border-top:1px solid var(--npnp-border); }
+        #npnpUsersTable .npnp-table td.col-actions::before { display:none; }
+        #npnpUsersTable .npnp-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; width:100%; }
+        #npnpUsersTable .npnp-actions button { min-height:40px; }
+        #npnpUsersTable .npnp-actions .npnp-confirm-pending,
+        #npnpUsersTable .npnp-actions .npnp-reject-pending { grid-column:span 1; }
+        #npnpUsersTable .npnp-pagination { margin-top:14px; }
+
+        /* Mobile (≤720px): action-first order — filters + member cards first, then
+           the dashboard panels (stats/chart/…) at the bottom. The summary chips
+           are redundant with the attention row + state dropdown, so they are
+           hidden to reduce scrolling. */
+        @media (max-width:720px){
+            #npnpTab-members.active { display:flex; flex-direction:column; }
+            #npnpTab-members > .npnp-attention-row { order:1; }
+            #npnpTab-members > .npnp-toolbar { order:2; }
+            #npnpTab-members > .npnp-summary { display:none; }
+            #npnpTab-members > #npnpBulkBar { order:3; }
+            #npnpTab-members > #npnpUsersTable { order:4; }
+            #npnpTab-members > .npnp-dash-grid { order:5; }
         }
 
         /* Respect the OS "reduce motion" setting. */
@@ -500,8 +593,15 @@
 
             <!-- MEMBERS -->
             <section id="npnpTab-members" class="npnp-tab-panel active">
-                <div id="npnpStats" class="npnp-stats-row"></div>
-                <div id="npnpRevenueChart" class="npnp-revenue-chart"></div>
+                <div id="npnpAttention" class="npnp-attention-row"></div>
+                <div class="npnp-dash-grid">
+                    <div>
+                        <div id="npnpStats" class="npnp-stats-row"></div>
+                        <div id="npnpRevenueChart" class="npnp-revenue-chart"></div>
+                        <div id="npnpExpiringSoon" class="npnp-panel npnp-expiring-soon"></div>
+                    </div>
+                    <div id="npnpMethodBreakdown" class="npnp-panel"></div>
+                </div>
                 <div id="npnpUsersSummary" class="npnp-summary"></div>
                 <div class="npnp-toolbar">
                     <div class="inputContainer">
@@ -524,6 +624,18 @@
                         <select is="emby-select" id="npnpMethodFilter">
                             <option value="" data-i18n="admin.users.filter.allMethods">All methods</option>
                         </select>
+                    </div>
+                    <div class="npnp-sort-row">
+                        <div class="inputContainer">
+                            <label for="npnpSortField" data-i18n="admin.users.sort">Sort by</label>
+                            <select is="emby-select" id="npnpSortField"></select>
+                        </div>
+                        <div class="npnp-sort-dir-wrap">
+                            <button is="emby-button" type="button" id="npnpSortDir" class="button-alt npnp-sort-dir"
+                                title="Ascending" aria-label="Ascending">
+                                <span class="material-icons" aria-hidden="true">arrow_upward</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="npnp-export-btn">
                         <button is="emby-button" type="button" id="npnpExportUsers" class="button-alt">
