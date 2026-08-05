@@ -241,8 +241,8 @@
         .npnp-details p { opacity:.8; margin-top:8px; line-height:1.5; }
 
         /* --- Flash message --- */
-        .npnp-flash { padding:8px 14px; border-radius:var(--npnp-radius); background:var(--npnp-ok); color:#fff; font-weight:600; margin-bottom:12px; display:none; font-size:13px; }
-        .npnp-flash.error { background:var(--npnp-danger); }
+        .npnp-flash { padding:8px 14px; border-radius:var(--npnp-radius); background:#1e8449; color:#fff; font-weight:600; margin-bottom:12px; display:none; font-size:13px; }
+        .npnp-flash.error { background:#c0392b; }
         .npnp-flash.show { display:block; }
 
         /* --- Inline field validation errors (settings form) --- */
@@ -600,9 +600,11 @@
                     <div>
                         <div id="npnpStats" class="npnp-stats-row"></div>
                         <div id="npnpRevenueChart" class="npnp-revenue-chart"></div>
+                    </div>
+                    <div>
+                        <div id="npnpMethodBreakdown" class="npnp-panel"></div>
                         <div id="npnpExpiringSoon" class="npnp-panel npnp-expiring-soon"></div>
                     </div>
-                    <div id="npnpMethodBreakdown" class="npnp-panel"></div>
                 </div>
                 <div id="npnpUsersSummary" class="npnp-summary"></div>
                 <div class="npnp-toolbar">
