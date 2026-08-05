@@ -65,10 +65,13 @@
             var qs = new URLSearchParams(window.location.search);
             var theme = qs.get('npnpTestTheme');
             if (!theme) return;
+            // Force the ElegantFin skin when testing that theme explicitly.
+            _forcedEfSkin = theme === 'elegantfin';
             var s = document.createElement('style');
             s.id = 'npnp-test-theme';
             if (theme === 'elegantfin') {
                 s.textContent = ':root{'
+                    + '--accentColor:rgb(117,111,226) !important;'
                     + '--npnp-accent:rgb(117,111,226) !important;'
                     + '--npnp-radius:0.5em !important;'
                     + '--npnp-large-radius:1em !important;'
@@ -78,6 +81,7 @@
                     + '#npnp-banner{backdrop-filter:blur(8px)!important;-webkit-backdrop-filter:blur(8px)!important;}';
             } else if (theme === 'jellyfin') {
                 s.textContent = ':root{'
+                    + '--accent:#00a4dc !important;'
                     + '--npnp-accent:#00a4dc !important;'
                     + '--npnp-radius:10px !important;'
                     + '--npnp-large-radius:16px !important;'
@@ -90,6 +94,83 @@
             if (existing) existing.remove();
             if (s.textContent) document.head.appendChild(s);
         } catch (_) {}
+    }
+
+    // ---- ElegantFin theme integration ----
+    // ElegantFin (https://github.com/lscambo13/ElegantFin) exposes its accent as
+    // --accentColor on :root. When detected, the plugin switches to a translucent
+    // "glass" look (rounded corners, backdrop blur, soft translucent surfaces) so
+    // the banner / modal blend with ElegantFin's gradient background. Detection is
+    // re-evaluated on every refresh so the skin applies even if the theme's CSS
+    // loads after the plugin's.
+    var _forcedEfSkin = false;
+    function isElegantFin() {
+        try {
+            var c = getComputedStyle(document.documentElement).getPropertyValue('--accentColor');
+            return typeof c === 'string' && c.trim().length > 0;
+        } catch (_) { return false; }
+    }
+    function efSkinActive() { return _forcedEfSkin || isElegantFin(); }
+
+    // Phone detection used to hide the QR codes on phones (they are kept on
+    // tablets and desktop where scanning from another device makes sense).
+    // Uses the physical screen size so phones in landscape stay classified as
+    // phones, and coarse-pointer + touchscreen to avoid mis-classifying a
+    // desktop window that happens to be narrow. ?npnpTestPhone=1 forces it
+    // on/off (used by the admin test page / browser harness).
+    function isPhone() {
+        try {
+            var qs = new URLSearchParams(window.location.search);
+            if (qs.has('npnpTestPhone')) return qs.get('npnpTestPhone') !== '0';
+            var touch = ('ontouchstart' in window) || ((navigator.maxTouchPoints || 0) > 0);
+            return touch && Math.min(screen.width, screen.height) < 768;
+        } catch (_) { return false; }
+    }
+
+    // ---- Live countdown helpers ----
+    // The countdown ticks every second against a fixed expiry date. Each timer is
+    // tied to its DOM element and stops itself as soon as the element leaves the
+    // document, so banners / modals that are re-created or closed never leak timers.
+    var _cdSeq = 0;
+    var _cdTimers = {};
+    function pad2(n) { return (n < 10 ? '0' : '') + n; }
+    function formatCountdown(ms, data) {
+        if (!(ms > 0)) return t(data, 'user.countdown.expired', 'Expired');
+        var d = Math.floor(ms / 86400000);
+        var h = Math.floor((ms % 86400000) / 3600000);
+        var m = Math.floor((ms % 3600000) / 60000);
+        var s = Math.floor((ms % 60000) / 1000);
+        return d + t(data, 'user.countdown.day', 'd') + ' '
+            + pad2(h) + t(data, 'user.countdown.hour', 'h') + ' '
+            + pad2(m) + t(data, 'user.countdown.min', 'm') + ' '
+            + pad2(s) + t(data, 'user.countdown.sec', 's');
+    }
+    function startCountdown(targetIso, el, data) {
+        if (!targetIso || !el) return null;
+        // Stop any previous timer bound to this same element.
+        var seq = el._npnpCdSeq;
+        if (seq && _cdTimers[seq]) {
+            clearInterval(_cdTimers[seq].id);
+            delete _cdTimers[seq];
+        }
+        seq = el._npnpCdSeq = ++_cdSeq;
+        var target = new Date(targetIso).getTime();
+        if (!(target > 0)) return null;
+        var update = function () {
+            // Self-cleanup: stop ticking once the element is gone from the DOM.
+            if (!el.isConnected) {
+                if (_cdTimers[seq]) { clearInterval(_cdTimers[seq].id); delete _cdTimers[seq]; }
+                return;
+            }
+            el.textContent = formatCountdown(target - Date.now(), data);
+        };
+        update();
+        var id = setInterval(update, 1000);
+        _cdTimers[seq] = { id: id, el: el };
+        return seq;
+    }
+    function hasLiveCountdown(state) {
+        return state !== 'Exempt' && state !== 'Blocked';
     }
 
     function fetchMe() {
@@ -400,10 +481,11 @@
         // .npnp-modal-backdrop, .npnp-toast-stack) so they never leak into
         // the rest of Jellyfin.
         var themeVars = ''
-            + '--npnp-accent:var(--accent,var(--theme-primary-color,var(--uiAccentColor,#00a4dc)));'
+            + '--npnp-accent:var(--accent,var(--accentColor,var(--theme-primary-color,var(--uiAccentColor,#00a4dc))));'
             + '--npnp-accent-fg:var(--theme-accent-text-color,#fff);'
             + '--npnp-bg:var(--theme-body-background-color,var(--background-color,#1a1a1a));'
             + '--npnp-fg:var(--theme-body-color,var(--theme-text-color,inherit));'
+            + '--npnp-font:system-ui,-apple-system,"Segoe UI",sans-serif;'
             + '--npnp-surface:color-mix(in srgb, currentColor 6%, transparent);'
             + '--npnp-surface-hover:color-mix(in srgb, currentColor 12%, transparent);'
             + '--npnp-border:color-mix(in srgb, currentColor 18%, transparent);'
@@ -420,7 +502,7 @@
             // Banner
             + '#npnp-banner{position:fixed;left:0;right:0;z-index:998;'
             + 'top:var(--npnp-header-h,0px);'
-            + 'padding:12px 18px;font:600 14px/1.4 system-ui,-apple-system,sans-serif;color:#fff;'
+            + 'padding:12px 18px;font:600 14px/1.4 var(--npnp-font,system-ui,-apple-system,sans-serif);color:#fff;'
             + 'display:flex;align-items:center;justify-content:space-between;gap:14px;'
             + 'box-shadow:0 4px 14px rgba(0,0,0,.35);'
             + 'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}'
@@ -463,11 +545,18 @@
             + '@keyframes npnpSlide{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}'
             + '.npnp-modal{background:var(--npnp-bg,var(--headerColor));color:var(--npnp-fg);padding:0;border-radius:var(--npnp-large-radius);'
             + 'width:min(600px,94vw);max-height:90vh;overflow:auto;'
-            + 'font:14px/1.5 system-ui,-apple-system,sans-serif;'
+            + 'font:14px/1.5 var(--npnp-font,system-ui,-apple-system,sans-serif);'
             + 'border:var(--defaultBorder,1px solid var(--npnp-border));'
             + 'box-shadow:0 8px 32px rgba(0,0,0,.25);animation:npnpSlide .2s cubic-bezier(.2,.8,.2,1);}'
             + '@media (max-width:600px){.npnp-modal{border-radius:calc(var(--npnp-large-radius) * 0.7);width:98vw;max-height:94vh;}}'
             + '@media (max-width:480px){.npnp-modal{border-radius:0;width:100vw;max-height:100dvh;border:0;}}'
+            // Styled, thin scrollbar for the modal (matches the theme, no default
+            // OS scrollbar jarring against the glass/rounded look).
+            + '.npnp-modal{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,currentColor 30%,transparent) transparent;}'
+            + '.npnp-modal::-webkit-scrollbar{width:8px;}'
+            + '.npnp-modal::-webkit-scrollbar-track{background:transparent;}'
+            + '.npnp-modal::-webkit-scrollbar-thumb{background:color-mix(in srgb,currentColor 25%,transparent);border-radius:999px;}'
+            + '.npnp-modal::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,currentColor 38%,transparent);}'
             + '.npnp-modal-header{padding:18px 22px 12px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;'
             + 'position:sticky;top:0;z-index:3;background:var(--npnp-bg,var(--headerColor));border-bottom:var(--defaultBorder,1px solid var(--npnp-border));}'
             + '.npnp-modal-header h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.2px;}'
@@ -476,6 +565,8 @@
             + 'transition:opacity .12s,background .12s;}'
             + '.npnp-modal-header .close:hover{opacity:1;background:var(--npnp-surface);}'
             + '.npnp-modal-body{padding:12px 22px 22px;}'
+            // Guard: no direct child may exceed the modal body width on narrow screens.
+            + '.npnp-modal-body>*{max-width:100%;}'
             + '@media (max-width:600px){.npnp-modal-header{padding:14px 16px 10px;}'
             + '.npnp-modal-header h2{font-size:17px;}'
             + '.npnp-modal-body{padding:10px 16px 18px;}}'
@@ -486,7 +577,7 @@
             + '.npnp-hero{display:flex;gap:14px;align-items:center;padding:16px;border-radius:calc(var(--npnp-radius) * 1.2);margin-bottom:16px;'
             + 'background:linear-gradient(135deg,color-mix(in srgb,var(--npnp-state) 22%,transparent),color-mix(in srgb,var(--npnp-state) 6%,transparent));'
             + 'border:1px solid color-mix(in srgb,var(--npnp-state) 42%,transparent);}'
-            + '.npnp-hero-icon{width:46px;height:46px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;'
+            + '.npnp-hero-icon{width:46px;height:46px;border-radius:50%;flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;'
             + 'background:color-mix(in srgb,var(--npnp-state) 28%,transparent);}'
             + '.npnp-hero-icon .material-icons{font-size:26px;color:var(--npnp-state);}'
             + '.npnp-hero-body{display:flex;flex-direction:column;gap:3px;min-width:0;}'
@@ -508,13 +599,22 @@
             + '.npnp-modal h3::before{content:"";width:16px;height:2px;border-radius:2px;background:var(--npnp-accent);opacity:.9;}'
             + '.npnp-modal .row{margin:6px 0;}'
             + '.npnp-pay-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;}'
-            + '@media (max-width:600px){.npnp-pay-grid{grid-template-columns:1fr;gap:8px;}}'
+            + '@media (max-width:600px){.npnp-pay-grid{grid-template-columns:minmax(0,1fr);gap:8px;}}'
+            // Payment card + its "copy link" button side by side.
+            + '.npnp-pay-cell{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:stretch;}'
+            + '.npnp-pay-copy{background:var(--npnp-surface);border:1px solid var(--npnp-border);color:inherit;'
+            + 'border-radius:var(--npnp-radius);min-width:44px;cursor:pointer;display:flex;align-items:center;justify-content:center;'
+            + 'transition:border-color .12s,background .12s,color .12s;}'
+            + '.npnp-pay-copy:hover{border-color:var(--npnp-accent);background:var(--npnp-surface-hover);color:var(--npnp-accent);}'
+            + '.npnp-pay-copy .material-icons{font-size:20px;opacity:.65;transition:opacity .12s;}'
+            + '.npnp-pay-copy:hover .material-icons{opacity:1;}'
+            + '@media (hover:none) and (pointer:coarse){.npnp-pay-copy{min-width:48px;min-height:48px;}}'
             + '.npnp-pay-card{background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:var(--npnp-radius);padding:13px 14px;'
-            + 'display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;'
+            + 'display:flex;align-items:center;gap:12px;text-decoration:none;color:inherit;min-width:0;'
             + 'transition:border-color .12s,transform .12s,background .12s,box-shadow .12s;}'
             + '.npnp-pay-card:hover{border-color:var(--npnp-accent);background:var(--npnp-surface-hover);transform:translateY(-1px);'
             + 'box-shadow:0 6px 18px color-mix(in srgb,var(--npnp-accent) 18%,transparent);}'
-            + '.npnp-pay-icon{width:38px;height:38px;border-radius:var(--npnp-radius);flex-shrink:0;display:flex;align-items:center;justify-content:center;'
+            + '.npnp-pay-icon{width:38px;height:38px;border-radius:var(--npnp-radius);flex-shrink:0;overflow:hidden;display:flex;align-items:center;justify-content:center;'
             + 'background:color-mix(in srgb,var(--npnp-accent) 16%,transparent);}'
             + '.npnp-pay-icon .material-icons{font-size:20px;color:var(--npnp-accent);}'
             + '.npnp-pay-text{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}'
@@ -559,8 +659,8 @@
             + 'color:inherit;padding:10px 12px;border-radius:var(--npnp-radius);font-size:13px;margin:8px 0 0;'
             + 'display:flex;align-items:center;gap:8px;}'
             + '@media (max-width:480px){.npnp-pending-banner{font-size:12px;padding:8px 10px;align-items:flex-start;}}'
-            + '.npnp-history{width:100%;border-collapse:collapse;font-size:13px;}'
-            + '.npnp-history th,.npnp-history td{padding:6px 8px;border-bottom:1px solid var(--npnp-border);text-align:left;}'
+            + '.npnp-history{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;}'
+            + '.npnp-history th,.npnp-history td{padding:6px 8px;border-bottom:1px solid var(--npnp-border);text-align:left;overflow-wrap:anywhere;}'
             + '.npnp-history th{opacity:.6;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.4px;}'
             + '@media (max-width:480px){.npnp-history{font-size:12px;}'
             + '.npnp-history th,.npnp-history td{padding:5px 4px;}}'
@@ -574,8 +674,8 @@
             // Tier cards
             + '.npnp-tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:6px 0 4px;}'
             + '@media (max-width:600px){.npnp-tiers{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;}}'
-            + '@media (max-width:480px){.npnp-tiers{grid-template-columns:1fr 1fr;gap:6px;}}'
-            + '.npnp-tier{background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:var(--npnp-radius);padding:12px;text-align:center;'
+            + '@media (max-width:480px){.npnp-tiers{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;}}'
+            + '.npnp-tier{background:var(--npnp-surface);border:1px solid var(--npnp-border);border-radius:var(--npnp-radius);padding:12px;text-align:center;min-width:0;'
             + 'cursor:pointer;transition:transform .12s,border-color .12s,background .12s;position:relative;color:inherit;}'
             + '.npnp-tier:hover{border-color:var(--npnp-accent);background:var(--npnp-surface-hover);transform:translateY(-1px);}'
             + '.npnp-tier .npnp-tier-months{font-size:13px;opacity:.75;text-transform:uppercase;letter-spacing:.5px;}'
@@ -611,7 +711,7 @@
             + '.npnp-toast{pointer-events:auto;background:var(--npnp-bg);color:var(--npnp-fg);'
             + 'padding:12px 16px;border-radius:var(--npnp-radius);box-shadow:0 6px 20px rgba(0,0,0,.5);'
             + 'min-width:240px;max-width:360px;display:flex;align-items:center;gap:10px;'
-            + 'font:14px/1.4 system-ui,sans-serif;border:1px solid var(--npnp-border);border-left:4px solid var(--npnp-accent);'
+            + 'font:14px/1.4 var(--npnp-font,system-ui,-apple-system,sans-serif);border:1px solid var(--npnp-border);border-left:4px solid var(--npnp-accent);'
             + 'animation:npnpSlide .18s ease-out;}'
             + '@media (max-width:480px){.npnp-toast-stack{right:8px;bottom:8px;left:8px;}'
             + '.npnp-toast{min-width:0;max-width:100%;font-size:13px;padding:10px 12px;}}'
@@ -641,11 +741,66 @@
             + '@media (prefers-reduced-motion:reduce){'
             + '.npnp-modal-backdrop,.npnp-modal,.npnp-toast,#npnp-banner{animation:none !important;}'
             + '.npnp-pay-card,.npnp-tier,#npnp-banner button,.npnp-mini-btn{transition:none !important;}'
-            + '.npnp-pay-card:hover,.npnp-tier:hover,#npnp-banner button:hover{transform:none !important;}}';
+            + '.npnp-pay-card:hover,.npnp-tier:hover,#npnp-banner button:hover{transform:none !important;}}'
+            // QR codes are only useful on devices that can display them next to a
+            // second screen — phones hide them (also handled in JS as a perf win;
+            // this media query is a safety net for narrow desktop windows).
+            + '.npnp-qr-section{min-width:0;}'
+            + '@media (max-width:767px){.npnp-qr-section{display:none !important;}}'
+            // Live countdown styles (banner + modal hero).
+            + '.npnp-countdown{font-variant-numeric:tabular-nums;font-weight:700;letter-spacing:.2px;}'
+            + '.npnp-countdown-pill{display:inline-flex;align-items:center;gap:6px;margin-top:10px;'
+            + 'font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;'
+            + 'padding:4px 11px;border-radius:999px;width:fit-content;'
+            + 'background:color-mix(in srgb,var(--npnp-state) 22%,transparent);'
+            + 'border:1px solid color-mix(in srgb,var(--npnp-state) 42%,transparent);}'
+            + '.npnp-countdown-pill .material-icons{font-size:14px;color:var(--npnp-state);}'
+            + '.npnp-banner-cd{display:inline-flex;align-items:center;gap:4px;margin-left:4px;'
+            + 'font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.3px;'
+            + 'padding:0 7px;border-radius:999px;background:rgba(255,255,255,.16);}';
         var s = document.createElement('style');
         s.id = 'npnp-styles';
         s.textContent = css;
         document.head.appendChild(s);
+        // ElegantFin glass skin lives in its own <style> so it can be added or
+        // removed at runtime (theme loads after the plugin, or admin test mode).
+        applyEfSkin();
+    }
+
+    // Applies (or removes) the ElegantFin "glass" skin. When ElegantFin is active
+    // the banner / modal become translucent with a backdrop blur so they blend
+    // with the theme's gradient background instead of sitting as an opaque box.
+    function applyEfSkin() {
+        var active = efSkinActive();
+        var existing = document.getElementById('npnp-ef-styles');
+        if (!active) {
+            if (existing) existing.parentNode.removeChild(existing);
+            if (document.body) document.body.classList.remove('npnp-ef');
+            return;
+        }
+        if (document.body) document.body.classList.add('npnp-ef');
+        if (existing) return;
+        var ef = document.createElement('style');
+        ef.id = 'npnp-ef-styles';
+        ef.textContent = 'body.npnp-ef #npnp-banner,'
+            + 'body.npnp-ef .npnp-modal-backdrop,'
+            + 'body.npnp-ef .npnp-toast-stack{'
+            + '--npnp-accent:var(--accentColor,rgb(117,111,226));'
+            + '--npnp-bg:rgba(30,40,54,.86);'
+            + '--npnp-surface:rgba(255,255,255,.055);'
+            + '--npnp-surface-hover:rgba(255,255,255,.10);'
+            + '--npnp-border:hsla(214,13%,70%,.26);'
+            + '--npnp-border-strong:hsla(214,13%,70%,.45);'
+            + '--npnp-input-bg:rgba(255,255,255,.05);'
+            + '--npnp-font:"Inter",system-ui,-apple-system,sans-serif;}'
+            + 'body.npnp-ef .npnp-modal{background:rgba(30,40,54,.86);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);}'
+            + 'body.npnp-ef .npnp-modal-header{background:rgba(30,40,54,.72);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}'
+            + 'body.npnp-ef .npnp-pay-card,body.npnp-ef .npnp-ref-row,body.npnp-ef .npnp-tier,'
+            + 'body.npnp-ef .npnp-mini-btn{background:rgba(255,255,255,.055);}'
+            + 'body.npnp-ef .npnp-tier.highlight{background:linear-gradient(135deg,rgba(117,111,226,.22),rgba(255,255,255,.05));}'
+            + 'body.npnp-ef .npnp-hero{background:linear-gradient(135deg,color-mix(in srgb,var(--npnp-state) 26%,transparent),rgba(255,255,255,.05));}'
+            + 'body.npnp-ef .npnp-modal,body.npnp-ef #npnp-banner,body.npnp-ef .npnp-toast{font-family:var(--npnp-font);}';
+        document.head.appendChild(ef);
     }
 
     function escapeHtml(s) {
@@ -689,6 +844,10 @@
     function closeModal() {
         var m = document.getElementById('npnp-modal-backdrop');
         if (m) m.parentNode.removeChild(m);
+        // Restore page scrolling (locked while the dialog is open so the page's
+        // own scrollbar doesn't sit next to the modal).
+        document.body.style.overflow = '';
+        document.documentElement.style.overflow = '';
         // Restore interactivity on the page behind the (now closed) dialog.
         Array.prototype.forEach.call(document.body.children, function (el) {
             if (el.hasAttribute('inert')) el.removeAttribute('inert');
@@ -785,6 +944,18 @@
                 + '%;background:' + color + ';"></span></div>';
         }
 
+        // Live countdown (updates every second; started in openModal). Shown for
+        // any state with a real deadline except the fully blocked one.
+        var countdown = '';
+        if (hasLiveCountdown(data.state) && data.expiryDate) {
+            countdown = '<div class="npnp-countdown-pill" role="timer" aria-label="'
+                + escapeHtml(t(data, 'user.countdown.label', 'Time remaining')) + '"'
+                + ' data-npnp-cd="' + escapeHtml(data.expiryDate) + '">'
+                + '<span class="material-icons" aria-hidden="true">hourglass_top</span>'
+                + '<span class="npnp-countdown"></span>'
+                + '</div>';
+        }
+
         return '<div class="npnp-hero" style="--npnp-state:' + color + ';">'
             + '<div class="npnp-hero-icon"><span class="material-icons" aria-hidden="true">' + icon + '</span></div>'
             + '<div class="npnp-hero-body">'
@@ -792,6 +963,7 @@
             + '<div class="npnp-hero-main">' + escapeHtml(main) + '</div>'
             + '<div class="npnp-hero-sub">' + escapeHtml(sub) + '</div>'
             + gauge
+            + countdown
             + '</div></div>';
     }
 
@@ -842,16 +1014,27 @@
             ? t(data, 'user.modal.donate.freeAmount', 'Choose your amount')
             : formatPrice(data.price) + ' ' + (data.currency || 'EUR');
         var icon = isExempt ? 'volunteer_activism' : (key === 'paypal' ? 'account_balance_wallet' : 'smartphone');
-        return '<a class="npnp-pay-card" href="' + escapeHtml(buildPaymentUrl(key, url, priceForUrl, data.currency || 'EUR'))
-            + '" target="_blank" rel="noopener" data-method="' + escapeHtml(key) + '"'
-            + ' data-base-url="' + escapeHtml(url) + '">'
-            + '<span class="npnp-pay-icon"><span class="material-icons" aria-hidden="true">' + icon + '</span></span>'
-            + '<span class="npnp-pay-text">'
-            + '<span class="npnp-pay-title">' + escapeHtml(methodLabel) + '</span>'
-            + '<span class="npnp-pay-amount">' + escapeHtml(amount) + '</span>'
-            + '</span>'
-            + '<span class="material-icons npnp-pay-go" aria-hidden="true">open_in_new</span>'
-            + '</a>';
+        // Each card is paired with a "copy payment link" button (keeps the amount
+        // of the currently selected tier) so users can paste the link into PayPal
+        // or their banking app — equivalent to scanning the QR on tablet/desktop.
+        return '<div class="npnp-pay-cell">'
+            + '<a class="npnp-pay-card" href="' + escapeHtml(buildPaymentUrl(key, url, priceForUrl, data.currency || 'EUR'))
+                + '" target="_blank" rel="noopener" data-method="' + escapeHtml(key) + '"'
+                + ' data-base-url="' + escapeHtml(url) + '">'
+                + '<span class="npnp-pay-icon"><span class="material-icons" aria-hidden="true">' + icon + '</span></span>'
+                + '<span class="npnp-pay-text">'
+                + '<span class="npnp-pay-title">' + escapeHtml(methodLabel) + '</span>'
+                + '<span class="npnp-pay-amount">' + escapeHtml(amount) + '</span>'
+                + '</span>'
+                + '<span class="material-icons npnp-pay-go" aria-hidden="true">open_in_new</span>'
+                + '</a>'
+            + '<button type="button" class="npnp-pay-copy" data-copy-method="' + escapeHtml(key) + '"'
+                + ' data-copy-base="' + escapeHtml(url) + '"'
+                + ' title="' + escapeHtml(t(data, 'user.modal.copyLink', 'Copy payment link')) + '"'
+                + ' aria-label="' + escapeHtml(t(data, 'user.modal.copyLink', 'Copy payment link')) + '">'
+                + '<span class="material-icons" aria-hidden="true">link</span>'
+                + '</button>'
+            + '</div>';
     }
 
     // Build a payment URL pre-filled with the chosen amount.
@@ -909,10 +1092,13 @@
                 + '<div class="npnp-pay-grid">' + cards + '</div>'
             : '';
 
-        // QR codes: scannable payment links (feature was previously dead code — the
-        // generator is now loaded lazily and wired into the modal).
+        // QR codes: scannable payment links. Only the payment methods actually
+        // configured by the admin are rendered (paypalMeUrl / lydiaUrl), so a
+        // PayPal-only setup shows only the PayPal QR. Hidden on phones (see
+        // isPhone) where scanning from another device is pointless; a CSS fallback
+        // below 768px also hides it in narrow desktop windows.
         var qrSection = '';
-        if (!isExempt && cards) {
+        if (!isExempt && cards && !isPhone()) {
             var qrCards = '';
             if (data.paypalMeUrl) {
                 qrCards += '<div class="npnp-qr-card" data-qr-method="paypal">'
@@ -927,8 +1113,10 @@
                     + '</div>';
             }
             if (qrCards) {
-                qrSection = '<h3>' + escapeHtml(t(data, 'user.modal.qr.title', 'Or scan this QR code')) + '</h3>'
-                    + '<div class="npnp-qr-grid">' + qrCards + '</div>';
+                qrSection = '<div class="npnp-qr-section">'
+                    + '<h3>' + escapeHtml(t(data, 'user.modal.qr.title', 'Or scan this QR code')) + '</h3>'
+                    + '<div class="npnp-qr-grid">' + qrCards + '</div>'
+                    + '</div>';
             }
         }
 
@@ -1053,6 +1241,10 @@
         var wrap = document.createElement('div');
         wrap.innerHTML = html;
         document.body.appendChild(wrap.firstElementChild);
+        // Lock page scrolling while the modal is open so only the modal scrolls
+        // (otherwise the page's own scrollbar shows beside the dialog).
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
 
         // Make the rest of the page inert while the dialog is open so keyboard focus
         // and assistive tech cannot reach background content (aria-modal alone is
@@ -1098,6 +1290,10 @@
                 if (!document.body.contains(modalEl)) {
                     mo.disconnect();
                     document.removeEventListener('keydown', onKey);
+                    // Any close path (Escape, backdrop, Jellyfin navigation) must
+                    // release the scroll lock too.
+                    document.body.style.overflow = '';
+                    document.documentElement.style.overflow = '';
                     if (opener && typeof opener.focus === 'function') {
                         try { opener.focus(); } catch (_) {}
                     }
@@ -1168,6 +1364,13 @@
         // Render the scannable QR codes for the initially selected tier.
         renderQrCodes(data, selectedTierAmount, data.currency || 'EUR');
 
+        // Start the hero live countdown(s) — they update every second and stop
+        // automatically when the modal is closed (element leaves the document).
+        Array.prototype.forEach.call(document.querySelectorAll('[data-npnp-cd]'), function (el) {
+            var out = el.querySelector('.npnp-countdown');
+            if (out) startCountdown(el.getAttribute('data-npnp-cd'), out, data);
+        });
+
         // Copy IBAN / custom note button.
         var copyBtn = document.getElementById('npnp-copy-note');
         if (copyBtn) {
@@ -1210,6 +1413,22 @@
                     t(data, 'user.toast.dismiss', 'Dismiss'));
             });
         }
+        // Per-method "copy payment link" buttons: copies the URL for the currently
+        // selected tier so it can be pasted into PayPal / the banking app (the QR
+        // is only shown on tablet/desktop, but copying is useful on every device).
+        Array.prototype.forEach.call(document.querySelectorAll('.npnp-pay-copy'), function (btn) {
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                var method = btn.getAttribute('data-copy-method');
+                var base = btn.getAttribute('data-copy-base');
+                if (!base) return;
+                var url = buildPaymentUrl(method, base, selectedTierAmount, data.currency || 'EUR');
+                copyToClipboard(url,
+                    t(data, 'user.modal.copyNote.done', 'Copied to clipboard.'),
+                    t(data, 'user.modal.copyNote.fail', 'Copy failed.'),
+                    t(data, 'user.toast.dismiss', 'Dismiss'));
+            });
+        });
         var iPaid = document.getElementById('npnp-i-paid');
         if (iPaid) {
             iPaid.addEventListener('click', function () {
@@ -1380,8 +1599,17 @@
         }
         var subEl = banner.querySelector('.npnp-banner-sub');
         if (subEl) {
-            subEl.textContent = format(t(data, 'user.modal.summary.dueOn', 'Due on {date}'),
-                { date: formatDate(data.expiryDate, data.lang) });
+            subEl.innerHTML = '';
+            subEl.appendChild(document.createTextNode(format(
+                t(data, 'user.modal.summary.dueOn', 'Due on {date}'),
+                { date: formatDate(data.expiryDate, data.lang) })));
+            if (hasLiveCountdown(data.state) && data.expiryDate) {
+                subEl.appendChild(document.createTextNode(' '));
+                var cd = document.createElement('span');
+                cd.className = 'npnp-banner-cd';
+                subEl.appendChild(cd);
+                startCountdown(data.expiryDate, cd, data);
+            }
         }
     }
 
@@ -1445,7 +1673,7 @@
             + bannerIcon
             + '<div class="npnp-banner-msg">'
             + '<span class="npnp-banner-title">' + testBadge + escapeHtml(title) + '</span>'
-            + '<span class="npnp-banner-sub">' + escapeHtml(sub) + '</span>'
+            + '<span class="npnp-banner-sub">' + escapeHtml(sub) + '<span class="npnp-banner-cd"></span></span>'
             + '</div>'
             + '<div class="npnp-banner-actions">'
             +   dismissBtn
@@ -1467,6 +1695,15 @@
                 document.body.classList.remove('npnp-has-banner');
                 document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
             });
+        }
+
+        var cdEl = banner.querySelector('.npnp-banner-cd');
+        if (cdEl) {
+            if (hasLiveCountdown(data.state) && data.expiryDate) {
+                startCountdown(data.expiryDate, cdEl, data);
+            } else {
+                cdEl.parentNode.removeChild(cdEl);
+            }
         }
 
         positionBanner();
@@ -1560,6 +1797,8 @@
             var normalized = normalizeMe(raw);
             var data = applyTestOverride(normalized);
             lastData = data;
+            // Re-evaluate the ElegantFin skin: its CSS may load after the plugin's.
+            applyEfSkin();
             showTestNotificationPreview(data);
             if (data.state === 'Exempt' && !data.__testMode) {
                 var b = document.getElementById('npnp-banner');
@@ -1586,6 +1825,7 @@
     }
 
     function onReady() {
+        applyEfSkin();
         refresh();
         setInterval(refresh, 5 * 60 * 1000);
         document.addEventListener('viewshow', refresh);
