@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/images/logo.png",
     "versions": [
       {
+        "version": "1.4.4.0",
+        "changelog": "See release notes at https://github.com/alexisometric/nopaynoplay/releases/tag/v1.4.4.0",
+        "targetAbi": "10.11.11.0",
+        "sourceUrl": "https://github.com/alexisometric/nopaynoplay/releases/download/v1.4.4.0/nopaynoplay_1.4.4.0.zip",
+        "checksum": "1745003bd24d73d7425f858ee31f9e55",
+        "timestamp": "2026-08-17T05:14:07Z"
+      },
+      {
         "version": "1.4.3.0",
         "changelog": "See release notes at https://github.com/alexisometric/nopaynoplay/releases/tag/v1.4.3.0",
         "targetAbi": "10.11.11.0",
