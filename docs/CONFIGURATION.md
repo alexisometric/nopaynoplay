@@ -45,7 +45,9 @@ A live preview section below the Appearance settings shows the detected theme co
 
 The swatches update automatically when the theme changes, giving admins immediate feedback on how the plugin adapts.
 
-When the **ElegantFin** theme is detected (older builds expose `--accentColor`; newer builds v26+ — including when loaded through the KefinTweaks Skin Manager — expose `--activeColor`, `--blurLargest` and `--elegantFinFooterText`), the plugin switches to a translucent "glass" look for the user banner and modal: soft translucent surfaces, rounded corners and a `backdrop-filter: blur()` so they blend with ElegantFin's gradient background. Radii and blur tokens are inherited from the theme (`--smallRadius`, `--largeRadius`, `--blurDefault`, `--blurLarge`).
+When the **ElegantFin** theme is detected (older builds expose `--accentColor`; newer builds v26+ — including when loaded through the KefinTweaks Skin Manager — expose `--activeColor`, `--blurLargest` and `--elegantFinFooterText`), the plugin switches to a translucent "glass" look for the user banner and modal: soft translucent surfaces, rounded corners and a `backdrop-filter: blur()` so they blend with ElegantFin's gradient background. Radii and blur tokens are inherited from the theme (`--smallRadius`, `--largeRadius`, `--blurDefault`, `--blurLarge`). The banner height also respects ElegantFin's `--appBarHeight` so it always clears the glass header.
+
+The banner is compatible with the **Media Bar** plugin: when the fullscreen slideshow owns the home tab, the banner renders as a slim overlay above it (header offset respected, no content push) so neither UI disturbs the other.
 
 ### Save
 
@@ -211,8 +213,9 @@ Records the last 500 administrative actions with:
 Preview the user-facing UI without modifying real data.
 
 1. Select a state from the dropdown
-2. Click **Preview in a new tab** to open Jellyfin with `?npnpTest=STATE`
-3. Or click **Copy URL** to share the test link
+2. Choose the banner location (default: **Home tab only** — the banner is only shown on the Jellyfin home tab; pick **Any page** to preview it everywhere via `?npnpTestRoute=any`)
+3. Click **Preview in a new tab** to open Jellyfin with `?npnpTest=STATE`
+4. Or click **Copy URL** to share the test link
 
 ### Simulated behaviours in test mode
 

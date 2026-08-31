@@ -782,7 +782,7 @@
                     <details class="npnp-details">
                         <summary data-i18n="admin.test.helpTitle">How does test mode work?</summary>
                         <p data-i18n="admin.test.help">
-                            Open Jellyfin in another tab with the URL parameter ?npnpTest=STATE to preview banners without changing real data. In test mode the "I just paid" button, the promo redeem and the dashboard notification are all simulated locally.
+                            Open Jellyfin in another tab with the URL parameter ?npnpTest=STATE to preview banners without changing real data. In test mode the "I just paid" button, the promo redeem and the dashboard notification are all simulated locally. The banner only appears on the Jellyfin home tab; pick "Any page" to preview it elsewhere.
                         </p>
                     </details>
                     <div class="npnp-grid-2">
@@ -802,6 +802,13 @@
                                 <option value="" data-i18n="admin.test.theme.auto">Auto (current theme)</option>
                                 <option value="jellyfin" data-i18n="admin.test.theme.jellyfin">Jellyfin default</option>
                                 <option value="elegantfin" data-i18n="admin.test.theme.elegantfin">ElegantFin</option>
+                            </select>
+                        </div>
+                        <div class="inputContainer">
+                            <label for="npnpTestRoute" data-i18n="admin.test.route">Banner location</label>
+                            <select is="emby-select" id="npnpTestRoute">
+                                <option value="home" data-i18n="admin.test.route.home" selected>Home tab only</option>
+                                <option value="any" data-i18n="admin.test.route.any">Any page (admin preview)</option>
                             </select>
                         </div>
                     </div>

@@ -96,10 +96,10 @@ src/
 └── Web/
     ├── client.js                     # Injected user UI
     │   ├── Header button              # 💳 icon
-    │   ├── Banner                     # Sticky notification bar
+    │   ├── Banner                     # Sticky bar — home tab only (JellyFlare-style route filter)
     │   ├── Modal                      # Subscription management
     │   ├── Toast system               # Feedback notifications
-    │   └── Test mode                  # ?npnpTest=STATE preview
+    │   └── Test mode                  # ?npnpTest=STATE, ?npnpTestRoute=any preview
     │
     ├── config.html                   # Admin dashboard
     │   └── config.js                 # Dashboard logic
@@ -198,6 +198,14 @@ The `WebTransformer` class registers a callback with the File Transformation plu
 3. Injects `<script defer src="/NoPayNoPlay/Web/client.js?v=HASH">` before `</body>` — `HASH` is a 12-hex **content hash** of the embedded `client.js` + `qrcode.js` (`WebAssetVersion`), not the assembly version, so even a hotfix that keeps the same version invalidates browser caches
 4. Strips previously injected scripts (cache-busting on update)
 5. Retries with back-off (3s→180s) if FT assembly isn't loaded yet
+
+### Banner placement & theme compatibility
+
+The subscription banner (states `WarningSoon` / `InGrace` / `Blocked`) is shown **only on the Jellyfin home tab**, using a JellyFlare-style route filter (`isHomePage()`, matched against `window.location.hash` — `#/home.html` / `#/home` / empty). It is re-evaluated on SPA navigation (`hashchange` / `popstate`) and `viewshow` so it disappears the moment the user leaves the home tab. Admins can preview it anywhere via `?npnpTestRoute=any` (gated on `isAdmin`).
+
+Placement is theme/layout aware:
+- The banner clears the live top bar — measured `.skinHeader`, the modern MUI AppBar (Jellyfin 12), or ElegantFin's `--appBarHeight` token — and slides to `top:0` when the header is scrolled out of view.
+- When the **Media Bar** plugin owns the home tab (fullscreen slideshow, `#slides-container` / `.bar-loading`), the banner overlays the slideshow without pushing page content (the slideshow is absolutely positioned; the content-padding compensation is skipped).
 
 ### Anti-spam & Rate Limiting
 

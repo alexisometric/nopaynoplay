@@ -40,7 +40,67 @@
                 return window.connectionManager.currentApiClient();
             }
         } catch (_) {}
+
+        // Jellyfin 12's web UI is a React/MUI app that uses the TypeScript SDK and no
+        // longer exposes the legacy window.ApiClient. Fall back to a minimal fetch-based
+        // client driven by the persisted server credentials (the same mechanism the Media
+        // Bar plugin uses), so the subscription UI keeps working there. This path only
+        // runs when the legacy client is absent, so 10.11 behaviour is untouched.
+        try {
+            var creds = readJellyfinCredentials();
+            if (creds) return makeFallbackClient(creds);
+        } catch (_) {}
         return null;
+    }
+
+    // Reads the Jellyfin session from localStorage (key used by both the legacy and the
+    // React web). Returns { token, userId } or null when not logged in.
+    function readJellyfinCredentials() {
+        var raw = null;
+        try { raw = localStorage.getItem('jellyfin_credentials'); } catch (_) {}
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        var server = (parsed && parsed.Servers) ? parsed.Servers[0] : null;
+        if (!server || !server.AccessToken || !server.UserId) return null;
+        return { token: server.AccessToken, userId: server.UserId };
+    }
+
+    // Minimal ApiClient-shaped object (getUrl + ajax) backed by fetch. Same-origin only:
+    // the page is served by the Jellyfin web app, so /NoPayNoPlay/... resolves correctly
+    // (mirrors the absolute script src injected by WebTransformer). Used only on the
+    // Jellyfin 12 fallback path above.
+    function makeFallbackClient(creds) {
+        return {
+            getUrl: function (path) {
+                return '/NoPayNoPlay/' + String(path == null ? '' : path).replace(/^\/+/, '');
+            },
+            ajax: function (opts) {
+                opts = opts || {};
+                var headers = { 'Authorization': 'MediaBrowser Token="' + creds.token + '"' };
+                if (opts.contentType) headers['Content-Type'] = opts.contentType;
+                var init = {
+                    method: opts.type || 'GET',
+                    headers: headers,
+                    credentials: 'include',
+                    cache: 'no-store'
+                };
+                if (opts.data && init.method !== 'GET') {
+                    init.body = typeof opts.data === 'string' ? opts.data : JSON.stringify(opts.data);
+                }
+                return fetch(this.getUrl(opts.url), init).then(function (res) {
+                    return res.text().then(function (text) {
+                        if (!res.ok) {
+                            var err = new Error('HTTP ' + res.status);
+                            err.status = res.status;
+                            try { err.data = JSON.parse(text); } catch (_) {}
+                            throw err;
+                        }
+                        if (opts.dataType === 'json') return text ? JSON.parse(text) : null;
+                        return text;
+                    });
+                });
+            }
+        };
     }
 
     function lcfirstKey(k) {
@@ -355,8 +415,14 @@
     function tp(data, key, n, fallback) {
         var suffix = pluralSuffix(data && data.lang, Number(n));
         var v = t(data, key + suffix, null);
-        if (v === null) v = t(data, key, fallback);
-        return String(v).replace(/\{n\}/g, String(n));
+        if (v === null) v = t(data, key, null);
+        var out = String(v == null ? '' : v).replace(/\{n\}/g, String(n));
+        // When no plural variant is registered, the base key is used — but several
+        // base keys carry tokens tp() can't fill ({days}/{months}/{date}). Return
+        // the caller's fully formatted fallback in that case so users never see
+        // literal placeholders.
+        if (v === null || /\{[a-zA-Z]+\}/.test(out)) return fallback;
+        return out;
     }
 
     function format(template, tokens) {
@@ -918,6 +984,11 @@
         setTimeout(close, 4500);
     }
 
+    // Elements this plugin marked inert while a modal was open. closeModal restores
+    // exactly these — never elements Jellyfin itself set inert (removing those would
+    // re-enable content the app intentionally kept out of the accessibility tree).
+    var _pluginInerted = [];
+
     function closeModal() {
         var m = document.getElementById('npnp-modal-backdrop');
         if (m) m.parentNode.removeChild(m);
@@ -925,10 +996,11 @@
         // own scrollbar doesn't sit next to the modal).
         document.body.style.overflow = '';
         document.documentElement.style.overflow = '';
-        // Restore interactivity on the page behind the (now closed) dialog.
-        Array.prototype.forEach.call(document.body.children, function (el) {
-            if (el.hasAttribute('inert')) el.removeAttribute('inert');
+        // Restore interactivity on exactly the elements this plugin made inert.
+        _pluginInerted.forEach(function (el) {
+            if (el.isConnected && el.hasAttribute('inert')) el.removeAttribute('inert');
         });
+        _pluginInerted = [];
     }
 
     // ----- Modal -----
@@ -1122,6 +1194,13 @@
     //    Lydia's pot pages don't always honour it but adding it is harmless).
     function buildPaymentUrl(method, baseUrl, amount, currency) {
         if (!baseUrl) return '';
+        // Defense-in-depth: never emit a link for a non-http(s) URL. The server
+        // sanitizes paypalMeUrl/lydiaUrl, but a hand-edited config.xml could carry
+        // a javascript: scheme — drop it instead of putting it into an href.
+        try {
+            var parsed = new URL(baseUrl, window.location.origin);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+        } catch (_) { return ''; }
         var amt = Math.max(0, Number(amount || 0));
         if (amt <= 0) return baseUrl;
         var cur = String(currency || 'EUR').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'EUR';
@@ -1275,7 +1354,8 @@
         var promoSection = isExempt ? '' : ''
             + '<h3>' + escapeHtml(t(data, 'user.modal.section.promo', 'Promo / referral code')) + '</h3>'
             + '<div class="npnp-promo-row">'
-            + '<input type="text" id="npnp-promo-input" maxlength="32" placeholder="'
+            + '<input type="text" id="npnp-promo-input" maxlength="32" aria-label="'
+            + escapeHtml(t(data, 'user.modal.promo.placeholder', 'Enter a code…')) + '" placeholder="'
             + escapeHtml(t(data, 'user.modal.promo.placeholder', 'Enter a code…')) + '" />'
             + '<button type="button" class="npnp-mini-btn" id="npnp-promo-redeem">'
             + escapeHtml(t(data, 'user.modal.promo.redeem', 'Redeem')) + '</button>'
@@ -1326,11 +1406,13 @@
 
         // Make the rest of the page inert while the dialog is open so keyboard focus
         // and assistive tech cannot reach background content (aria-modal alone is
-        // inconsistently honoured by screen readers).
+        // inconsistently honoured by screen readers). Track what we inert so
+        // closeModal can restore exactly those elements.
         Array.prototype.forEach.call(document.body.children, function (el) {
             if (el.id === 'npnp-modal-backdrop') return;
             if (el.hasAttribute('inert')) return;
             el.setAttribute('inert', '');
+            _pluginInerted.push(el);
         });
 
         var backdrop = document.getElementById('npnp-modal-backdrop');
@@ -1700,10 +1782,94 @@
             || document.querySelector('.videoOsd'));
     }
 
+    // ---- Banner placement helpers (JellyFlare-inspired route filter + theme
+    // compatibility for Media Bar / ElegantFin). ----
+
+    // Admins may force the banner to appear on any page for previews
+    // (?npnpTestRoute=any). The override itself is gated on isAdmin in ensureBanner.
+    var TEST_ROUTE_ANY = 'any';
+    function getTestRouteOverride() {
+        try {
+            var qs = new URLSearchParams(window.location.search);
+            var raw = qs.get('npnpTestRoute');
+            return raw ? String(raw).toLowerCase() : '';
+        } catch (_) { return ''; }
+    }
+
+    // Route detection for the banner, modelled on JellyFlare's per-route filtering:
+    // the banner is only shown on the Jellyfin home tab. Jellyfin resolves the home
+    // tab at #/home.html (legacy) or #/home (newer builds); an empty hash also lands
+    // on home. All other pages (library, detail, settings, admin…) never show it.
+    function isHomePage() {
+        try {
+            var h = (window.location.hash || '').replace(/^#!?\/?/, '').split('?')[0].toLowerCase();
+            // Empty hash / root route → Jellyfin loads the home tab.
+            if (!h) return true;
+            return h === 'home' || h === 'home.html' || h.indexOf('home.html') === 0;
+        } catch (_) { return true; }
+    }
+
+    // True while the Media Bar plugin (IAmParadox27/jellyfin-plugin-media-bar) owns
+    // the home tab: it injects a fullscreen slideshow (#slides-container) and a
+    // loader (.bar-loading) while booting, both only on the home tab. The slideshow
+    // is positioned absolutely over the whole page, so when it is active the banner
+    // overlays it (still clearing the top bar) and the content-padding compensation
+    // is skipped — pushing an absolutely-positioned slideshow would break its layout.
+    function isMediaBarActive() {
+        try {
+            var sc = document.getElementById('slides-container');
+            if (sc && sc.offsetParent !== null) return true;
+            // The loader appears on the home tab while the media bar boots.
+            var loader = document.querySelector('.bar-loading');
+            return !!(loader && loader.offsetParent !== null);
+        } catch (_) { return false; }
+    }
+
+    // Height of the top bar the banner must clear. Prefers the measured .skinHeader
+    // (legacy + ElegantFin), falls back to the modern MUI AppBar (Jellyfin 12) and
+    // finally ElegantFin's --appBarHeight token (5em by default) so the banner sits
+    // below the real header whatever theme/layout is active. A header scrolled out
+    // of view (ElegantFin auto-hide via .headroom--unpinned) counts as height 0 so
+    // the banner slides up to the very top instead of leaving a gap.
+    function headerHeight() {
+        try {
+            var sh = document.querySelector('.skinHeader');
+            if (sh) {
+                var shH = sh.getBoundingClientRect().height;
+                if (shH > 0 && sh.getBoundingClientRect().bottom > 0) return shH;
+            }
+            var mui = document.querySelector('header.MuiAppBar-root');
+            if (mui) {
+                var muiH = mui.getBoundingClientRect().height;
+                if (muiH > 0 && mui.getBoundingClientRect().bottom > 0) return muiH;
+            }
+            var cs = getComputedStyle(document.documentElement);
+            var ab = parseFloat(cs.getPropertyValue('--appBarHeight'));
+            if (isFinite(ab) && ab > 0) {
+                // em → px (ElegantFin defaults --appBarHeight to 5em).
+                var fs = parseFloat(cs.fontSize) || 16;
+                return ab * fs;
+            }
+        } catch (_) {}
+        return 0;
+    }
+
+    // Re-evaluates banner visibility after an SPA navigation (hash / history
+    // pushState) without a fresh /Me round-trip: the banner disappears the moment
+    // the user leaves the home tab and reappears on return.
+    function reconcileBanner() {
+        if (!lastData) return;
+        ensureBanner(lastData);
+        if (document.getElementById('npnp-banner')) positionBanner();
+    }
+
     function ensureBanner(data) {
         var existing = document.getElementById('npnp-banner');
         var needBanner = data.state === 'WarningSoon' || data.state === 'InGrace' || data.state === 'Blocked';
-        if (!needBanner || isPlayerPage()) {
+        // The banner only lives on the home tab (JellyFlare-style route filter).
+        // Admins can override with ?npnpTestRoute=any to preview it on any page.
+        var onBannerRoute = isHomePage() || (data.isAdmin && getTestRouteOverride() === TEST_ROUTE_ANY);
+        if (!needBanner || isPlayerPage() || !onBannerRoute) {
             if (existing) existing.parentNode.removeChild(existing);
             document.body.classList.remove('npnp-has-banner');
             document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
@@ -1790,9 +1956,18 @@
     function positionBanner() {
         var banner = document.getElementById('npnp-banner');
         if (!banner) return;
-        var header = document.querySelector('.skinHeader');
-        var headerH = header ? header.getBoundingClientRect().height : 0;
+        // Banner always clears the live top bar (Jellyfin header, modern MUI AppBar,
+        // or ElegantFin's --appBarHeight) — or sits at the very top when the header
+        // is scrolled out of view. The Media Bar's fullscreen slideshow is
+        // absolutely positioned, so under it we never push page content (padding
+        // would shift the slideshow and leave a gap); the banner just overlays.
+        banner.style.top = '';
+        var headerH = headerHeight();
         document.documentElement.style.setProperty('--npnp-header-h', headerH + 'px');
+        if (isMediaBarActive()) {
+            document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
+            return;
+        }
         requestAnimationFrame(function () {
             var bannerH = banner.getBoundingClientRect().height;
             document.documentElement.style.setProperty('--npnp-banner-pad', (headerH + bannerH) + 'px');
@@ -1936,6 +2111,26 @@
         setInterval(refresh, 5 * 60 * 1000);
         document.addEventListener('viewshow', refresh);
         window.addEventListener('resize', positionBanner);
+        // Home-only banner: re-evaluate visibility when the SPA navigates (hash or
+        // history pushState) so it disappears off the home tab and reappears on it.
+        window.addEventListener('hashchange', reconcileBanner);
+        window.addEventListener('popstate', reconcileBanner);
+
+        // Jellyfin 12's React web navigates via history.pushState/replaceState (no
+        // viewshow/hashchange on every transition). Wrap them so the banner/modal
+        // reconcile after each navigation, mirroring the legacy viewshow behaviour.
+        ['pushState', 'replaceState'].forEach(function (name) {
+            try {
+                var orig = history[name];
+                if (!orig || history['__npnp_' + name]) return;
+                history['__npnp_' + name] = true;
+                history[name] = function () {
+                    var r = orig.apply(this, arguments);
+                    try { reconcileBanner(); } catch (_) {}
+                    return r;
+                };
+            } catch (_) {}
+        });
 
         // Re-position the banner when the Jellyfin header resizes (theme switch,
         // responsive breakpoint) without polling layout every 2 seconds.

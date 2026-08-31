@@ -87,7 +87,7 @@ The contact email set by your admin appears at the bottom of the modal.
 
 ## 📢 Banner
 
-Depending on your subscription state, a sticky banner appears at the top of the page:
+Depending on your subscription state, a sticky banner appears at the **top of the Jellyfin home tab** (it is intentionally not shown on other pages — library, detail pages, settings, admin…):
 
 | State | Banner colour | What it says | Can dismiss? |
 |---|---|---|---|
@@ -98,6 +98,8 @@ Depending on your subscription state, a sticky banner appears at the top of the 
 The **"Pay now"** button on the banner opens the subscription modal.
 
 When your subscription is expiring soon or in grace, the banner also shows a **live countdown** (e.g. `2d 14h 03m 12s`).
+
+The banner adapts to your theme: under **ElegantFin** it uses a translucent "glass" look, and when the **Media Bar** plugin is active it displays as a slim overlay above the slideshow without disturbing it.
 
 ---
 

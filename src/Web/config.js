@@ -78,8 +78,13 @@
     function tp(key, n, fallback) {
         var suffix = pluralSuffix(n);
         var v = t(key + suffix, null);
-        if (v === null) v = t(key, fallback);
-        return String(v).replace(/\{n\}/g, String(n));
+        if (v === null) v = t(key, null);
+        var out = String(v == null ? '' : v).replace(/\{n\}/g, String(n));
+        // When no plural variant is registered, the base key is used — but if it
+        // carries tokens tp() can't fill, return the caller's formatted fallback so
+        // users never see literal placeholders.
+        if (v === null || /\{[a-zA-Z]+\}/.test(out)) return fallback;
+        return out;
     }
 
     function format(template, tokens) {
@@ -748,6 +753,7 @@
         refreshMethodFilter(page);
         var allRows = filterUsers();
         var container = page.querySelector('#npnpUsersTable');
+        if (!container) return;
 
         if (!allRows.length) {
             var msg = (state.userFilter || state.stateFilter)
@@ -939,9 +945,12 @@
                     });
                 });
             }
-            tr.querySelector('.npnp-pay').addEventListener('click', function () { openPaymentModal(page, user); });
-            tr.querySelector('.npnp-history').addEventListener('click', function () { openHistoryModal(page, user); });
-            tr.querySelector('.npnp-exempt').addEventListener('click', function () {
+            var payBtn = tr.querySelector('.npnp-pay');
+            if (payBtn) payBtn.addEventListener('click', function () { openPaymentModal(page, user); });
+            var historyBtn = tr.querySelector('.npnp-history');
+            if (historyBtn) historyBtn.addEventListener('click', function () { openHistoryModal(page, user); });
+            var exemptBtn = tr.querySelector('.npnp-exempt');
+            if (exemptBtn) exemptBtn.addEventListener('click', function () {
                 api().ajax({
                     type: 'POST',
                     url: api().getUrl('NoPayNoPlay/Users/' + userId + '/Exempt'),
@@ -949,7 +958,8 @@
                     contentType: 'application/json'
                 }).then(function () { return loadUsers(page); });
             });
-            tr.querySelector('.npnp-reset').addEventListener('click', function () {
+            var resetBtn = tr.querySelector('.npnp-reset');
+            if (resetBtn) resetBtn.addEventListener('click', function () {
                 openConfirmModal(page,
                     t('admin.users.action.reset', 'Reset trial'),
                     t('admin.users.confirm.reset', 'Reset this user back to a fresh trial?'),
@@ -1020,6 +1030,7 @@
         }
 
         var container = page.querySelector('#npnpActivityTable');
+        if (!container) return;
         if (!rows.length) {
             container.innerHTML = '<div class="npnp-empty">' + escapeHtml(t('admin.activity.empty', 'No activity yet.')) + '</div>';
             return;
@@ -1107,7 +1118,20 @@
         if (root) root.innerHTML = '';
     }
 
+    // Defense-in-depth for buildModal: modal content is pre-escaped by every caller,
+    // but strip any <script> block, inline event handler or javascript: URL that a
+    // future caller (or a compromised server response) could slip through.
+    function sanitizeModalHtml(html) {
+        return String(html == null ? '' : html)
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
+            .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+            .replace(/(\bhref|\bsrc)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1=$2#');
+    }
+
     function buildModal(page, titleHtml, bodyHtml, footerHtml) {
+        titleHtml = sanitizeModalHtml(titleHtml);
+        bodyHtml = sanitizeModalHtml(bodyHtml);
+        footerHtml = footerHtml ? sanitizeModalHtml(footerHtml) : '';
         var root = page.querySelector('#npnpModalRoot');
         var titleId = 'npnpModalTitle-' + Math.random().toString(36).slice(2, 10);
         root.innerHTML = ''
@@ -1171,7 +1195,7 @@
             escapeHtml(title),
             '<p>' + escapeHtml(message) + '</p>',
             '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
-            + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>OK</button>');
+            + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>' + escapeHtml(t('common.ok', 'OK')) + '</button>');
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
         modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
             closeModal(page);
@@ -1194,8 +1218,8 @@
                     + '<td>' + escapeHtml(String(e.MonthsAdded || 0)) + '</td>'
                     + '<td>' + escapeHtml(e.AdminNote || '') + '</td>'
                     + '<td><div class="npnp-actions">'
-                    + (id ? '<button is="emby-button" type="button" class="button-alt npnp-tx-edit" title="' + escapeHtml(t('admin.users.tx.edit', 'Edit')) + '"><span class="material-icons" aria-hidden="true">edit</span></button>' : '')
-                    + (id ? '<button is="emby-button" type="button" class="button-alt npnp-tx-del npnp-danger" title="' + escapeHtml(t('admin.users.tx.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button>' : '')
+                    + (id ? '<button is="emby-button" type="button" class="button-alt npnp-tx-edit" title="' + escapeHtml(t('admin.users.tx.edit', 'Edit')) + '" aria-label="' + escapeHtml(t('admin.users.tx.edit', 'Edit')) + '"><span class="material-icons" aria-hidden="true">edit</span></button>' : '')
+                    + (id ? '<button is="emby-button" type="button" class="button-alt npnp-tx-del npnp-danger" title="' + escapeHtml(t('admin.users.tx.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.users.tx.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button>' : '')
                     + '</div></td>'
                     + '</tr>';
             }).join('');
@@ -1410,6 +1434,7 @@
                 + '<td>' + escapeHtml(expiresText) + '</td>'
                 + '<td>' + escapeHtml(createdText) + '</td>'
                 + '<td><button is="emby-button" type="button" class="button-alt npnp-promo-delete npnp-danger" title="'
+                + escapeHtml(t('admin.promo.delete', 'Delete')) + '" aria-label="'
                 + escapeHtml(t('admin.promo.delete', 'Delete')) + '"><span class="material-icons" aria-hidden="true">delete</span></button></td>'
                 + '</tr>';
         });
@@ -1628,9 +1653,9 @@
             + '</tr></thead><tbody>';
         var body = rows.map(function (r, idx) {
             return '<tr data-idx="' + idx + '">'
-                + '<td><input is="emby-input" type="number" min="1" max="60" class="npnp-tier-months" value="' + (r.Months || 1) + '" /></td>'
-                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="npnp-tier-price" value="' + (r.Price || 0) + '" /></td>'
-                + '<td><input is="emby-input" type="text" maxlength="64" class="npnp-tier-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="1" max="60" class="npnp-tier-months" aria-label="' + escapeHtml(t('admin.tiers.col.months', 'Months')) + '" value="' + escapeHtml(String(r.Months || 1)) + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="npnp-tier-price" aria-label="' + escapeHtml(t('admin.tiers.col.price', 'Price')) + '" value="' + escapeHtml(String(r.Price || 0)) + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="64" class="npnp-tier-label" aria-label="' + escapeHtml(t('admin.tiers.col.label', 'Label')) + '" value="' + escapeHtml(r.Label || '') + '" /></td>'
                 + '<td class="npnp-cell-center"><label class="emby-checkbox-label"><input is="emby-checkbox" type="checkbox" class="npnp-tier-highlight"' + (r.Highlight ? ' checked' : '') + ' /><span></span></label></td>'
                 + '<td class="npnp-cell-actions"><button is="emby-button" type="button" class="button-alt npnp-tier-del npnp-icon-btn npnp-danger" title="' + escapeHtml(t('admin.tiers.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.tiers.delete', 'Delete')) + '">'
                 + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
@@ -1718,10 +1743,10 @@
             + '</tr></thead><tbody>';
         var body = rows.map(function (r, idx) {
             return '<tr data-idx="' + idx + '">'
-                + '<td><input is="emby-input" type="text" maxlength="32" class="npnp-tag-key" value="' + escapeHtml(r.Key || '') + '" /></td>'
-                + '<td><input is="emby-input" type="text" maxlength="64" class="npnp-tag-label" value="' + escapeHtml(r.Label || '') + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="32" class="npnp-tag-key" aria-label="' + escapeHtml(t('admin.tags.col.key', 'Key')) + '" value="' + escapeHtml(r.Key || '') + '" /></td>'
+                + '<td><input is="emby-input" type="text" maxlength="64" class="npnp-tag-label" aria-label="' + escapeHtml(t('admin.tags.col.label', 'Label')) + '" value="' + escapeHtml(r.Label || '') + '" /></td>'
                 + '<td class="npnp-cell-center"><input type="color" class="npnp-tag-color" value="' + escapeHtml(r.Color || '#888888') + '" aria-label="' + escapeHtml(t('admin.tags.col.color', 'Color')) + '" /><span class="npnp-tag-color-hex" style="font-size:11px;opacity:.7;margin-left:4px;vertical-align:middle;font-family:monospace;">' + escapeHtml(r.Color || '#888888') + '</span></td>'
-                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="npnp-tag-price" value="' + (r.MonthlyPriceOverride || 0) + '" /></td>'
+                + '<td><input is="emby-input" type="number" min="0" step="0.01" class="npnp-tag-price" aria-label="' + escapeHtml(t('admin.tags.col.priceOverride', 'Price override')) + '" value="' + escapeHtml(String(r.MonthlyPriceOverride || 0)) + '" /></td>'
                 + '<td class="npnp-cell-actions"><button is="emby-button" type="button" class="button-alt npnp-tag-del npnp-icon-btn npnp-danger" title="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '" aria-label="' + escapeHtml(t('admin.tags.delete', 'Delete')) + '">'
                 + '<span class="material-icons" aria-hidden="true">delete</span></button></td>'
                 + '</tr>';
@@ -1840,12 +1865,16 @@
         function refreshUrl() {
             var s = page.querySelector('#npnpTestState').value || 'warningSoon';
             var theme = page.querySelector('#npnpTestTheme').value || '';
+            var route = page.querySelector('#npnpTestRoute').value || 'home';
             var url = window.location.origin + '/web/index.html?npnpTest=' + encodeURIComponent(s);
             if (theme) url += '&npnpTestTheme=' + encodeURIComponent(theme);
+            // ?npnpTestRoute=any forces the banner outside the home tab (admin preview).
+            if (route === 'any') url += '&npnpTestRoute=any';
             page.querySelector('#npnpTestUrl').value = url;
         }
         page.querySelector('#npnpTestState').addEventListener('change', refreshUrl);
         page.querySelector('#npnpTestTheme').addEventListener('change', refreshUrl);
+        page.querySelector('#npnpTestRoute').addEventListener('change', refreshUrl);
         page.querySelector('#npnpTestPreview').addEventListener('click', function () {
             refreshUrl();
             window.open(page.querySelector('#npnpTestUrl').value, '_blank', 'noopener');
@@ -1925,19 +1954,25 @@
         }
 
         var userSearchDebounce = null;
-        page.querySelector('#npnpUserSearch').addEventListener('input', function (e) {
-            state.userFilter = e.target.value || '';
-            state.page = 1;
-            persistFilters();
-            clearTimeout(userSearchDebounce);
-            userSearchDebounce = setTimeout(function () { renderUsers(page); }, 200);
-        });
-        page.querySelector('#npnpStateFilter').addEventListener('change', function (e) {
-            state.stateFilter = e.target.value || '';
-            state.page = 1;
-            persistFilters();
-            renderUsers(page);
-        });
+        var userSearch = page.querySelector('#npnpUserSearch');
+        if (userSearch) {
+            userSearch.addEventListener('input', function (e) {
+                state.userFilter = e.target.value || '';
+                state.page = 1;
+                persistFilters();
+                clearTimeout(userSearchDebounce);
+                userSearchDebounce = setTimeout(function () { renderUsers(page); }, 200);
+            });
+        }
+        var stateFilter = page.querySelector('#npnpStateFilter');
+        if (stateFilter) {
+            stateFilter.addEventListener('change', function (e) {
+                state.stateFilter = e.target.value || '';
+                state.page = 1;
+                persistFilters();
+                renderUsers(page);
+            });
+        }
         var methodSel = page.querySelector('#npnpMethodFilter');
         if (methodSel) {
             methodSel.addEventListener('change', function (e) {
@@ -1948,14 +1983,17 @@
             });
         }
         var activityDebounce = null;
-        page.querySelector('#npnpActivitySearch').addEventListener('input', function (e) {
-            state.activityFilter = e.target.value || '';
-            state.activityPage = 1;
-            // Debounce like the members search: rebuilding the table per keystroke
-            // is wasteful on large histories.
-            clearTimeout(activityDebounce);
-            activityDebounce = setTimeout(function () { renderActivity(page); }, 200);
-        });
+        var activitySearch = page.querySelector('#npnpActivitySearch');
+        if (activitySearch) {
+            activitySearch.addEventListener('input', function (e) {
+                state.activityFilter = e.target.value || '';
+                state.activityPage = 1;
+                // Debounce like the members search: rebuilding the table per keystroke
+                // is wasteful on large histories.
+                clearTimeout(activityDebounce);
+                activityDebounce = setTimeout(function () { renderActivity(page); }, 200);
+            });
+        }
         var fromEl = page.querySelector('#npnpActivityFrom');
         if (fromEl) fromEl.addEventListener('change', function (e) {
             state.activityFrom = e.target.value || '';
@@ -2219,13 +2257,15 @@
                 .finally(function () { Dashboard.hideLoadingMsg(); });
         });
 
-        bindTabs(page);
-        bindFilters(page);
-        bindTestMode(page);
-        bindDiagnostics(page);
-        bindPromoForm(page);
-        bindTiersTab(page);
-        bindTagsTab(page);
+        // Each tab initializer is guarded so a single missing element (e.g. an older
+        // cached config.html vs newer JS) can't throw and silently disable every tab
+        // that follows — the rest of the dashboard keeps working.
+        [bindTabs, bindFilters, bindTestMode, bindDiagnostics, bindPromoForm, bindTiersTab, bindTagsTab]
+            .forEach(function (fn) {
+                try { fn(page); } catch (err) {
+                    if (window.console) console.error('NoPayNoPlay: admin tab init failed', err);
+                }
+            });
 
         // Warn before leaving the page when tiers/tags have unsaved edits.
         window.addEventListener('beforeunload', function (e) {
@@ -2235,7 +2275,9 @@
             }
         });
 
-        page.querySelector('#npnpSettingsForm').addEventListener('submit', function (e) {
+        var settingsForm = page.querySelector('#npnpSettingsForm');
+        if (settingsForm) {
+        settingsForm.addEventListener('submit', function (e) {
             e.preventDefault();
             clearFieldErrors(page);
             var errors = validateSettingsFields(page);
@@ -2262,5 +2304,6 @@
             }).finally(function () { setBusyButton(saveBtn, false); });
             return false;
         });
+        }
     });
 })();
