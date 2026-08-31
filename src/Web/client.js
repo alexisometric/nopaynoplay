@@ -71,8 +71,10 @@
     // Jellyfin 12 fallback path above.
     function makeFallbackClient(creds) {
         return {
+            // Callers pass the full plugin path ("NoPayNoPlay/Me"), so root it as-is —
+            // never prefix "NoPayNoPlay/" again (that would double the segment and 404).
             getUrl: function (path) {
-                return '/NoPayNoPlay/' + String(path == null ? '' : path).replace(/^\/+/, '');
+                return '/' + String(path == null ? '' : path).replace(/^\/+/, '');
             },
             ajax: function (opts) {
                 opts = opts || {};
