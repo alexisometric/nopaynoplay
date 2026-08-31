@@ -335,6 +335,6 @@ Returns File Transformation registration diagnostics.
 
 Lightweight health probe. Returns `200 OK` with `{ "status": "healthy" }`.
 
-### `POST /NoPayNoPlay/Diagnostics/Retry`
+### `POST /NoPayNoPlay/RetryRegistration`
 
 Re-attempts File Transformation registration without restarting.

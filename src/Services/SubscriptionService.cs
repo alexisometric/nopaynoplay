@@ -42,6 +42,14 @@ public class SubscriptionService
 
     private PluginConfiguration Config => _configAccessor();
 
+    /// <summary>
+    /// Gets the current configuration object — the same one the service mutates
+    /// under <see cref="_lock"/>. Read by the controller instead of reaching for
+    /// the <see cref="Plugin"/> singleton, which keeps the API layer testable
+    /// with an injected in-memory config.
+    /// </summary>
+    public PluginConfiguration CurrentConfig => Config;
+
     /// <summary>Maximum number of transactions kept per user (bounds XML size and serialization cost).</summary>
     private const int MaxTransactionsPerUser = 500;
 
@@ -117,10 +125,11 @@ public class SubscriptionService
 
     /// <summary>
     /// Ensures every listed user has a tracked subscription in a single O(n) pass
-    /// (instead of one linear scan per user). Persists once when at least one new
-    /// record was created.
+    /// (instead of one linear scan per user). When <paramref name="persist"/> is
+    /// <c>false</c>, newly created records are kept in memory only (read paths such
+    /// as GET /Users must never write to disk); the next real mutation persists them.
     /// </summary>
-    public void EnsureUsersTracked(IEnumerable<Guid> userIds)
+    public void EnsureUsersTracked(IEnumerable<Guid> userIds, bool persist = true)
     {
         lock (_lock)
         {
@@ -144,7 +153,7 @@ public class SubscriptionService
                 }
             }
 
-            if (changed)
+            if (changed && persist)
             {
                 _save();
             }
@@ -461,13 +470,20 @@ public class SubscriptionService
     /// <summary>
     /// Records a self-declared payment claim for a user. Does NOT extend the
     /// expiry — the admin must confirm. Returns true if the claim was accepted,
-    /// false if a recent claim already exists (rate-limit collision).
+    /// false if a claim is already pending (so a repeated call cannot overwrite
+    /// the existing one). The per-user 30-minute cooldown lives in the controller;
+    /// this guard is the service-level backstop.
     /// </summary>
     public bool MarkPaymentPending(Guid userId, string method)
     {
         lock (_lock)
         {
             UserSubscription sub = EnsureUserTracked(userId);
+            if (sub.HasPendingPaymentClaim)
+            {
+                return false;
+            }
+
             sub.HasPendingPaymentClaim = true;
             sub.PendingPaymentClaimAt = DateTime.UtcNow;
             sub.PendingPaymentMethod = (method ?? string.Empty).Trim();

@@ -29,9 +29,6 @@ public class PluginConfiguration : BasePluginConfiguration
     /// <summary>Gets or sets the full Lydia URL.</summary>
     public string LydiaUrl { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the IBAN / bank details displayed to the user.</summary>
-    public string IbanText { get; set; } = string.Empty;
-
     /// <summary>Gets or sets a free-form note shown in the user modal.</summary>
     public string CustomNote { get; set; } = string.Empty;
 

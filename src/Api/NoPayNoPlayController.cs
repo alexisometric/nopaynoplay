@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Threading.Tasks;
 using Jellyfin.Data;
@@ -16,223 +15,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using static Jellyfin.Plugin.NoPayNoPlay.Api.Sanitization;
 
 namespace Jellyfin.Plugin.NoPayNoPlay.Api;
-
-/// <summary>Payload to record a payment.</summary>
-public class PaymentDto
-{
-    [Range(0, 100000)]
-    public decimal Amount { get; set; }
-
-    [StringLength(50)]
-    public string Method { get; set; } = string.Empty;
-
-    [Range(1, 60)]
-    public int MonthsAdded { get; set; } = 1;
-
-    [StringLength(500)]
-    public string Note { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Optional date the payment actually occurred. When provided, this is the date stored in
-    /// the transaction history (useful for backfilling past payments). The expiry is still
-    /// extended by <see cref="MonthsAdded"/>; only the recorded date changes.
-    /// Future dates are clamped to "now".
-    /// </summary>
-    public DateTime? Date { get; set; }
-
-    /// <summary>
-    /// Optional idempotency key (generated per payment form) so a double-click or a browser
-    /// retry cannot record the same payment twice within the dedup window.
-    /// </summary>
-    [StringLength(64)]
-    public string? IdempotencyKey { get; set; }
-}
-
-/// <summary>Payload to toggle the exemption flag.</summary>
-public class ExemptDto
-{
-    public bool IsExempt { get; set; }
-}
-
-/// <summary>User row used by the admin dashboard.</summary>
-public class UserSubscriptionDto
-{
-    public Guid UserId { get; set; }
-    public string Username { get; set; } = string.Empty;
-    public DateTime SubscriptionDate { get; set; }
-    public DateTime ExpiryDate { get; set; }
-    public bool IsExempt { get; set; }
-    public bool IsBlocked { get; set; }
-    public string State { get; set; } = string.Empty;
-    public int DaysLeft { get; set; }
-    public List<TransactionEntry> Transactions { get; set; } = new();
-
-    /// <summary>True when the member has self-declared a payment awaiting confirmation.</summary>
-    public bool HasPendingPaymentClaim { get; set; }
-
-    /// <summary>UTC timestamp of the latest pending claim (null when none).</summary>
-    public DateTime? PendingPaymentClaimAt { get; set; }
-
-    /// <summary>Method declared by the user when self-claiming.</summary>
-    public string PendingPaymentMethod { get; set; } = string.Empty;
-
-    /// <summary>Tag key (family / friends / guests / …); empty when none.</summary>
-    public string Tag { get; set; } = string.Empty;
-
-    /// <summary>Total amount paid by the user across every recorded transaction.</summary>
-    public decimal TotalPaid { get; set; }
-
-    /// <summary>Number of full months the user is currently behind on (0 when up to date).</summary>
-    public int ArrearsMonths { get; set; }
-
-    /// <summary>Effective monthly price applied to this user (after tag overrides).</summary>
-    public decimal EffectiveMonthlyPrice { get; set; }
-}
-/// <summary>
-/// A payment row exposed to the member on <c>/Me</c>. Deliberately omits the
-/// admin-only <see cref="TransactionEntry.AdminNote"/> so internal notes are never
-/// serialized into a response the member can read via DevTools.
-/// </summary>
-public class MeTransactionDto
-{
-    public DateTime Date { get; set; }
-    public decimal Amount { get; set; }
-    public int MonthsAdded { get; set; }
-    public string Method { get; set; } = string.Empty;
-}
-
-public class MeDto
-{
-    /// <summary>The caller's own Jellyfin username (used to build a payment reference).</summary>
-    public string Username { get; set; } = string.Empty;
-
-    public DateTime ExpiryDate { get; set; }
-    public int DaysLeft { get; set; }
-    public string State { get; set; } = string.Empty;
-    public decimal Price { get; set; }
-    public string Currency { get; set; } = "EUR";
-    public string PaypalMeUrl { get; set; } = string.Empty;
-    public string LydiaUrl { get; set; } = string.Empty;
-    public string CustomNote { get; set; } = string.Empty;
-    public int WarningDaysBefore { get; set; }
-    public int GraceDays { get; set; }
-
-    /// <summary>Resolved UI culture (e.g. "en", "fr").</summary>
-    public string Lang { get; set; } = "en";
-
-    /// <summary>Translation strings for the resolved culture.</summary>
-    public IReadOnlyDictionary<string, string> Strings { get; set; } =
-        new Dictionary<string, string>();
-
-    /// <summary>
-    /// Stable hash of the <see cref="Strings"/> bundle for the resolved culture. The client
-    /// echoes it back via <c>?strings=</c>; when it matches, the server returns an empty
-    /// bundle so the few-KB translation payload is not re-sent on every refresh.
-    /// </summary>
-    public string StringsHash { get; set; } = string.Empty;
-
-    /// <summary>Personal payment history (most recent first), without admin notes.</summary>
-    public List<MeTransactionDto> Transactions { get; set; } = new();
-
-    /// <summary>
-    /// True when the response is rendered for an administrator. Administrators have
-    /// no real subscription, but the client uses sample values so the modal is
-    /// browsable for previewing the user-facing UI.
-    /// </summary>
-    public bool IsAdminPreview { get; set; }
-
-    /// <summary>True when the member has a pending self-declared payment.</summary>
-    public bool HasPendingPaymentClaim { get; set; }
-
-    /// <summary>UTC timestamp of the pending claim (null when none).</summary>
-    public DateTime? PendingPaymentClaimAt { get; set; }
-
-    /// <summary>Method declared by the user when self-claiming.</summary>
-    public string PendingPaymentMethod { get; set; } = string.Empty;
-
-    /// <summary>Subscription tiers offered to the user (already filtered for display).</summary>
-    public List<SubscriptionTier> Tiers { get; set; } = new();
-
-    /// <summary>Optional contact email — used to build a mailto link in the modal.</summary>
-    public string ContactEmail { get; set; } = string.Empty;
-
-    /// <summary>True when the API caller is currently authenticated as a Jellyfin administrator.</summary>
-    public bool IsAdmin { get; set; }
-}
-public class TransactionPatchDto
-{
-    [Range(0, 100000)]
-    public decimal? Amount { get; set; }
-
-    [StringLength(50)]
-    public string? Method { get; set; }
-
-    [Range(1, 60)]
-    public int? MonthsAdded { get; set; }
-
-    [StringLength(500)]
-    public string? Note { get; set; }
-
-    public DateTime? Date { get; set; }
-}
-
-/// <summary>Bulk-action payload (list of user IDs).</summary>
-public class BulkUserDto
-{
-    public List<Guid> UserIds { get; set; } = new();
-}
-
-/// <summary>Bulk payment payload.</summary>
-public class BulkPaymentDto : PaymentDto
-{
-    public List<Guid> UserIds { get; set; } = new();
-}
-
-/// <summary>Bulk exemption payload.</summary>
-public class BulkExemptDto : BulkUserDto
-{
-    public bool IsExempt { get; set; }
-}
-
-/// <summary>Self-service "I paid" claim from the user.</summary>
-public class MarkPaidDto
-{
-    [StringLength(50)]
-    public string Method { get; set; } = string.Empty;
-}
-
-/// <summary>Promo code creation / update payload.</summary>
-public class PromoCodeDto
-{
-    [Required]
-    [StringLength(32)]
-    public string Code { get; set; } = string.Empty;
-
-    [Range(1, 60)]
-    public int MonthsGranted { get; set; } = 1;
-
-    [Range(0, 100000)]
-    public int MaxUses { get; set; }
-
-    public DateTime? ExpiresAt { get; set; }
-}
-
-/// <summary>Payload to redeem a promo code.</summary>
-public class RedeemCodeDto
-{
-    [Required]
-    [StringLength(32)]
-    public string Code { get; set; } = string.Empty;
-}
-
-/// <summary>Payload to assign / clear a tag on a user.</summary>
-public class UserTagAssignmentDto
-{
-    [StringLength(32)]
-    public string Tag { get; set; } = string.Empty;
-}
 
 /// <summary>NoPayNoPlay public REST API.</summary>
 [ApiController]
@@ -267,6 +52,9 @@ public class NoPayNoPlayController : ControllerBase
         _logger = logger;
     }
 
+    /// <summary>Maximum number of user IDs accepted by the bulk endpoints (bounds CPU: each ID is a UserManager lookup).</summary>
+    private const int MaxBulkUsers = 500;
+
     /// <summary>
     /// Applies the playback policy without letting a transient enforcement failure
     /// (DB lock, IO) surface as a 500 *after* the subscription change has already
@@ -287,7 +75,12 @@ public class NoPayNoPlayController : ControllerBase
         }
     }
 
-    private static PluginConfiguration Cfg => Plugin.Instance!.Configuration;
+    /// <summary>
+    /// The live configuration, read through <see cref="SubscriptionService"/> so
+    /// unit tests can inject an in-memory config instead of relying on the
+    /// <see cref="Plugin"/> singleton.
+    /// </summary>
+    private PluginConfiguration Cfg => _service.CurrentConfig;
 
     private string ResolveCulture()
     {
@@ -427,7 +220,7 @@ public class NoPayNoPlayController : ControllerBase
 
         // Track every live non-admin user in a single O(n) pass (no per-user linear
         // scan) and without persisting on a plain read (GET must never write to disk).
-        _service.EnsureUsersTracked(liveUserIds);
+        _service.EnsureUsersTracked(liveUserIds, persist: false);
 
         string culture = ResolveCulture();
         // Hide subscriptions whose Jellyfin user has been deleted; the orphaned
@@ -444,7 +237,7 @@ public class NoPayNoPlayController : ControllerBase
     [HttpGet("Activity")]
     [Authorize(Policy = Policies.RequiresElevation)]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public ActionResult<object> GetActivity([FromQuery] int limit = 0)
+    public ActionResult<object> GetActivity([FromQuery] int limit = 200)
     {
         var adminIds = new HashSet<Guid>();
         var liveUserIds = new HashSet<Guid>();
@@ -483,10 +276,12 @@ public class NoPayNoPlayController : ControllerBase
             .OrderByDescending(t => t.Date)
             .ToList();
 
-        // Optional cap so the dashboard never receives a giant unbounded payload.
-        if (limit > 0 && rows.Count > limit)
+        // Bounded payload so the dashboard never receives a giant unbounded response
+        // (default 200, hard cap 2000).
+        int n = Math.Clamp(limit <= 0 ? 200 : limit, 1, 2000);
+        if (rows.Count > n)
         {
-            rows = rows.Take(limit).ToList();
+            rows = rows.Take(n).ToList();
         }
 
         return Ok(rows);
@@ -609,79 +404,6 @@ public class NoPayNoPlayController : ControllerBase
             return true;
         });
         return Ok(Cfg);
-    }
-
-    private static string SanitizeEmail(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-        string trimmed = Truncate(value.Trim(), 254);
-        // Minimal RFC-5322-ish validation — enough to reject obvious garbage.
-        if (!System.Text.RegularExpressions.Regex.IsMatch(
-                trimmed,
-                @"^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$"))
-        {
-            return string.Empty;
-        }
-        return trimmed;
-    }
-
-    private static string SanitizeCurrency(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return "EUR";
-        }
-
-        string trimmed = value.Trim().ToUpperInvariant();
-        if (trimmed.Length > 5 || !System.Text.RegularExpressions.Regex.IsMatch(trimmed, "^[A-Z]{2,5}$"))
-        {
-            return "EUR";
-        }
-
-        return trimmed;
-    }
-
-    private static string SanitizeCulture(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        string trimmed = value.Trim();
-        if (!System.Text.RegularExpressions.Regex.IsMatch(trimmed, "^[a-zA-Z]{2,3}(-[a-zA-Z]{2,4})?$"))
-        {
-            return string.Empty;
-        }
-
-        return trimmed.ToLowerInvariant();
-    }
-
-    private static string SanitizeUrl(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        string trimmed = Truncate(value, 500);
-        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-        {
-            return uri.ToString();
-        }
-
-        return string.Empty;
-    }
-
-    private static string Truncate(string? value, int max)
-    {
-        if (string.IsNullOrEmpty(value))
-        {
-            return string.Empty;
-        }
-
-        return value.Length <= max ? value : value.Substring(0, max);
     }
 
     /// <summary>Returns the current user's subscription state and payment info.</summary>
@@ -817,7 +539,7 @@ public class NoPayNoPlayController : ControllerBase
     [Authorize(Policy = Policies.RequiresElevation)]
     public async Task<ActionResult<object>> BulkPay([FromBody] BulkPaymentDto body)
     {
-        if (body is null || body.UserIds.Count == 0) return BadRequest();
+        if (body is null || body.UserIds.Count == 0 || body.UserIds.Count > MaxBulkUsers) return BadRequest();
         int processed = 0;
         foreach (var uid in body.UserIds.Distinct())
         {
@@ -841,7 +563,7 @@ public class NoPayNoPlayController : ControllerBase
     [Authorize(Policy = Policies.RequiresElevation)]
     public async Task<ActionResult<object>> BulkExempt([FromBody] BulkExemptDto body)
     {
-        if (body is null || body.UserIds.Count == 0) return BadRequest();
+        if (body is null || body.UserIds.Count == 0 || body.UserIds.Count > MaxBulkUsers) return BadRequest();
         int processed = 0;
         foreach (var uid in body.UserIds.Distinct())
         {
@@ -859,7 +581,7 @@ public class NoPayNoPlayController : ControllerBase
     [Authorize(Policy = Policies.RequiresElevation)]
     public async Task<ActionResult<object>> BulkReset([FromBody] BulkUserDto body)
     {
-        if (body is null || body.UserIds.Count == 0) return BadRequest();
+        if (body is null || body.UserIds.Count == 0 || body.UserIds.Count > MaxBulkUsers) return BadRequest();
         int processed = 0;
         foreach (var uid in body.UserIds.Distinct())
         {
@@ -1144,26 +866,6 @@ public class NoPayNoPlayController : ControllerBase
         return File(System.Text.Encoding.UTF8.GetBytes(sb.ToString()), "text/csv; charset=utf-8", "nopaynoplay-activity.csv");
     }
 
-    private static string CsvEscape(string? value)
-    {
-        if (string.IsNullOrEmpty(value)) return string.Empty;
-
-        // CSV formula-injection guard: a cell starting with =, +, -, @, tab or CR
-        // is interpreted as a formula by Excel/LibreOffice/Sheets. Prefix it with a
-        // single quote so the spreadsheet treats it as text. The Username comes
-        // straight from Jellyfin (user-controlled), so this matters even though the
-        // export is admin-only.
-        if ("=+-@\t\r".IndexOf(value[0]) >= 0)
-        {
-            value = "'" + value;
-        }
-
-        bool needsQuote = value.IndexOfAny(new[] { ',', '"', '\n', '\r', '\t' }) >= 0
-                          || value[0] == '\'';
-        string v = value.Replace("\"", "\"\"", StringComparison.Ordinal);
-        return needsQuote ? "\"" + v + "\"" : v;
-    }
-
     private static readonly TimeSpan PendingClaimCooldown = TimeSpan.FromMinutes(30);
 
     /// <summary>
@@ -1188,31 +890,37 @@ public class NoPayNoPlayController : ControllerBase
         }
 
         string method = body?.Method is null ? string.Empty : Truncate(body.Method, 50);
-        _service.MarkPaymentPending(userId.Value, method);
+        // Returns false when a claim is already pending — the user's end state is
+        // unchanged (a claim exists) so we still answer ok, but we don't spam the
+        // admin with a duplicate notification for the same claim.
+        bool accepted = _service.MarkPaymentPending(userId.Value, method);
 
         // Surface the claim to administrators through the Jellyfin activity feed/bell
         // (in addition to the pending badge on the dashboard).
-        try
+        if (accepted)
         {
-            string uname = _userManager.GetUserById(userId.Value)?.Username ?? string.Empty;
-            string culture = ResolveCulture();
-            // The username is user-controlled and is rendered in the admin activity feed:
-            // HTML-encode it server-side so a crafted name cannot inject markup.
-            var tokens = new Dictionary<string, string?> { ["username"] = HtmlEncode(uname) };
-            string overview = _localizer.Get("notif.markPaid.body", culture, tokens);
-            await _activityManager.CreateAsync(new ActivityLog(
-                _localizer.Get("notif.markPaid.title", culture),
-                "NoPayNoPlay",
-                Guid.Empty)
+            try
             {
-                Overview = overview,
-                ShortOverview = overview,
-                LogSeverity = Microsoft.Extensions.Logging.LogLevel.Information
-            }).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "NoPayNoPlay: failed to post 'I paid' admin activity for {UserId}", userId);
+                string uname = _userManager.GetUserById(userId.Value)?.Username ?? string.Empty;
+                string culture = ResolveCulture();
+                // The username is user-controlled and is rendered in the admin activity feed:
+                // HTML-encode it server-side so a crafted name cannot inject markup.
+                var tokens = new Dictionary<string, string?> { ["username"] = HtmlEncode(uname) };
+                string overview = _localizer.Get("notif.markPaid.body", culture, tokens);
+                await _activityManager.CreateAsync(new ActivityLog(
+                    _localizer.Get("notif.markPaid.title", culture),
+                    "NoPayNoPlay",
+                    Guid.Empty)
+                {
+                    Overview = overview,
+                    ShortOverview = overview,
+                    LogSeverity = Microsoft.Extensions.Logging.LogLevel.Information
+                }).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "NoPayNoPlay: failed to post 'I paid' admin activity for {UserId}", userId);
+            }
         }
 
         _service.Save();
@@ -1486,21 +1194,6 @@ public class NoPayNoPlayController : ControllerBase
         return Ok(new { ok = true, monthsAdded = months, expiryDate = sub.ExpiryDate });
     }
 
-    private static string SanitizePromoCode(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-        string normalized = value.Trim().ToUpperInvariant();
-        if (normalized.Length > 32) normalized = normalized.Substring(0, 32);
-        // Minimum length 6 raises the keyspace enough that enumeration is impractical
-        // even before the per-IP/global brute-force throttle kicks in, while still
-        // allowing memorable referral codes (e.g. SUMMER, NOEL26).
-        if (!System.Text.RegularExpressions.Regex.IsMatch(normalized, "^[A-Z0-9_-]{6,32}$"))
-        {
-            return string.Empty;
-        }
-        return normalized;
-    }
-
     private Guid? GetCurrentUserId()
     {
         // Jellyfin exposes the user id via "Jellyfin-UserId", NameIdentifier or "sub".
@@ -1514,9 +1207,6 @@ public class NoPayNoPlayController : ControllerBase
 
         return null;
     }
-
-    private static string HtmlEncode(string? value) =>
-        System.Net.WebUtility.HtmlEncode(value ?? string.Empty);
 
     /// <summary>
     /// Best-effort client IP: prefers the first <c>X-Forwarded-For</c> entry (typical
@@ -1693,15 +1383,6 @@ public class NoPayNoPlayController : ControllerBase
             "tags=" + sanitized.Count, persist: false);
         _service.Save();
         return Ok(Cfg.Tags);
-    }
-
-    private static string SanitizeColor(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-        string trimmed = value.Trim();
-        return System.Text.RegularExpressions.Regex.IsMatch(trimmed, "^#[0-9a-fA-F]{3,8}$")
-            ? trimmed
-            : string.Empty;
     }
 
     /// <summary>Assigns a tag to a member (admin). Empty value clears it.</summary>

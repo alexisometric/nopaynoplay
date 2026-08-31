@@ -68,13 +68,12 @@ public class PluginEntryPoint : IHostedService
     /// Force a re-registration. Called by the admin /RetryRegistration endpoint.
     /// Resets the registered flag so the call is actually performed again.
     /// </summary>
-    public static bool ForceRetry(ILogger logger)
+    public static bool ForceRetry(ILogger<PluginEntryPoint> logger)
     {
         lock (_registrationLock)
         {
             FileTransformationRegistered = false;
-            var entry = new PluginEntryPoint(logger as ILogger<PluginEntryPoint> ?? new LoggerWrapper(logger));
-            return entry.TryRegisterFileTransformation();
+            return TryRegisterFileTransformationCore(logger);
         }
     }
 
@@ -82,11 +81,11 @@ public class PluginEntryPoint : IHostedService
     {
         lock (_registrationLock)
         {
-            return TryRegisterFileTransformationCore();
+            return TryRegisterFileTransformationCore(_logger);
         }
     }
 
-    private bool TryRegisterFileTransformationCore()
+    private static bool TryRegisterFileTransformationCore(ILogger<PluginEntryPoint> logger)
     {
         var diag = new FtDiagnostics
         {
@@ -143,7 +142,7 @@ public class PluginEntryPoint : IHostedService
             if (ftAssembly == null)
             {
                 diag.Notes.Add("File Transformation assembly not loaded yet (PluginInterface type not found).");
-                _logger.LogWarning(
+                logger.LogWarning(
                     "NoPayNoPlay: 'File Transformation' plugin not found. Loaded matching assemblies: [{Matches}]",
                     string.Join(", ", matches));
                 LastDiagnostics = diag;
@@ -157,7 +156,7 @@ public class PluginEntryPoint : IHostedService
             if (register == null)
             {
                 diag.Notes.Add("PluginInterface.RegisterTransformation method not found in FT assembly.");
-                _logger.LogWarning("NoPayNoPlay: could not locate PluginInterface.RegisterTransformation");
+                logger.LogWarning("NoPayNoPlay: could not locate PluginInterface.RegisterTransformation");
                 LastDiagnostics = diag;
                 return false;
             }
@@ -180,7 +179,7 @@ public class PluginEntryPoint : IHostedService
             FileTransformationRegistered = true;
             diag.Registered = true;
             diag.Notes.Add("RegisterTransformation invoked successfully.");
-            _logger.LogInformation(
+            logger.LogInformation(
                 "NoPayNoPlay: index.html transformation registered with File Transformation (assembly={Assembly})",
                 diag.FoundAssembly);
 
@@ -213,7 +212,7 @@ public class PluginEntryPoint : IHostedService
             catch (Exception verifyEx)
             {
                 diag.Notes.Add("Verification step threw: " + verifyEx.GetType().Name + ": " + verifyEx.Message);
-                _logger.LogDebug(verifyEx, "NoPayNoPlay: post-registration verification failed");
+                logger.LogDebug(verifyEx, "NoPayNoPlay: post-registration verification failed");
             }
 
             LastDiagnostics = diag;
@@ -227,20 +226,9 @@ public class PluginEntryPoint : IHostedService
                 diag.Notes.Add("Inner: " + ex.InnerException.GetType().Name + ": " + ex.InnerException.Message);
             }
             LastDiagnostics = diag;
-            _logger.LogError(ex, "NoPayNoPlay: failed to register File Transformation callback");
+            logger.LogError(ex, "NoPayNoPlay: failed to register File Transformation callback");
             return false;
         }
-    }
-
-    /// <summary>Adapter so static helpers can use any ILogger as ILogger&lt;PluginEntryPoint&gt;.</summary>
-    private sealed class LoggerWrapper : ILogger<PluginEntryPoint>
-    {
-        private readonly ILogger _inner;
-        public LoggerWrapper(ILogger inner) { _inner = inner; }
-        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => _inner.BeginScope(state);
-        public bool IsEnabled(LogLevel logLevel) => _inner.IsEnabled(logLevel);
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-            => _inner.Log(logLevel, eventId, state, exception, formatter);
     }
 }
 

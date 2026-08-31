@@ -168,11 +168,9 @@ public sealed class Localizer
             && httpContext.Request.Query.TryGetValue("lang", out var explicitLang)
             && !string.IsNullOrWhiteSpace(explicitLang))
         {
-            string match = MatchAvailable(explicitLang.ToString());
-            if (match != DefaultCulture || _bundles.ContainsKey(DefaultCulture))
-            {
-                return match;
-            }
+            // MatchAvailable already falls back to the default culture when nothing
+            // matches, so the explicit override is authoritative.
+            return MatchAvailable(explicitLang.ToString());
         }
 
         // 2. Jellyfin server UI culture (global setting): the plugin follows the
