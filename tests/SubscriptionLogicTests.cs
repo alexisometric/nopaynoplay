@@ -81,9 +81,19 @@ public class SubscriptionLogicTests
 
         var sub = cfg.Subscriptions.Single(s => s.UserId == uid);
         // Anchored on the payment date's day (now.Day), NOT the expiry day (10)
-        // and NOT the signup day (25).
-        Assert.Equal(now.Day, sub.ExpiryDate.Day);
-        Assert.Equal(SubscriptionService.ComputeNextExpiry(future, 1, now.Day), sub.ExpiryDate);
+        // and NOT the signup day (25). ApplyPayment anchors on its own
+        // DateTime.UtcNow, which can roll to the next UTC day between the capture
+        // above and the call (midnight boundary) — accept either day in that window.
+        int preDay = now.Day;
+        int postDay = DateTime.UtcNow.Day;
+        var expected = new[]
+        {
+            SubscriptionService.ComputeNextExpiry(future, 1, preDay),
+            SubscriptionService.ComputeNextExpiry(future, 1, postDay)
+        };
+        Assert.Contains(sub.ExpiryDate, expected);
+        Assert.NotEqual(25, sub.ExpiryDate.Day); // never the signup day
+        Assert.NotEqual(10, sub.ExpiryDate.Day); // never the expiry day
     }
 
     [Fact]
