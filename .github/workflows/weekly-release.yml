@@ -58,7 +58,12 @@ jobs:
           LAST_TAG: v${{ steps.ver.outputs.last }}
         run: |
           set -euo pipefail
-          if git tag --list "$LAST_TAG" | grep -q . && [[ -z "$(git log --oneline "$LAST_TAG"..HEAD)" ]]; then
+          # Ignore the previous release's housekeeping commit ("publish <ver> in
+          # manifest [skip ci]") which is pushed AFTER its tag — otherwise every
+          # weekly run sees it as a change and re-releases a patch with nothing new.
+          CHANGES=$(git log --oneline "$LAST_TAG"..HEAD \
+            --grep='^chore: publish .* in manifest' --invert-grep 2>/dev/null || true)
+          if git tag --list "$LAST_TAG" | grep -q . && [[ -z "$CHANGES" ]]; then
             echo "No changes since $LAST_TAG — skipping this week's release."
             echo "has_changes=false" >> "$GITHUB_OUTPUT"
           else
