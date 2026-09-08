@@ -56,7 +56,7 @@ data["targetAbi"] = abi
 print(json.dumps(data, indent=2, ensure_ascii=False))
 PY
 
-cp "src/bin/Release/net9.0/Jellyfin.Plugin.NoPayNoPlay.dll" "$WORK_DIR/"
+cp "src/bin/Release/net10.0/Jellyfin.Plugin.NoPayNoPlay.dll" "$WORK_DIR/"
 
 ZIP="$OUT_DIR/nopaynoplay_${VERSION}.zip"
 rm -f "$ZIP"

@@ -1,13 +1,13 @@
 {
   "category": "General",
-  "changelog": "See https://github.com/alexisometric/nopaynoplay/releases/tag/v1.5.2.0",
+  "changelog": "See https://github.com/alexisometric/nopaynoplay/releases/tag/v2.0.0.0",
   "description": "Manual-validation monthly subscription tracking for Jellyfin with playback enforcement on expiry, an admin page and an in-app user UI.",
   "guid": "f3b4d2c1-7e9a-4b1e-9c6d-9a1b2c3d4e5f",
   "name": "NoPayNoPlay",
   "overview": "Manual-validation monthly subscription tracking for Jellyfin. Admins validate payments manually; playback is blocked on expiry without deleting the account. Features live theme preview, ElegantFin adaptation, i18n (8 languages), subscription tiers, promo codes, member tags, audit log, and responsive mobile UI.",
   "owner": "alexisometric",
   "imageUrl": "https://raw.githubusercontent.com/alexisometric/nopaynoplay/main/images/logo.png",
-  "targetAbi": "10.11.11.0",
-  "framework": "net9.0",
-  "version": "1.5.2.0"
+  "targetAbi": "12.0.0.0",
+  "framework": "net10.0",
+  "version": "2.0.0.0"
 }
