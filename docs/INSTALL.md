@@ -4,7 +4,7 @@
 
 - **Jellyfin 10.11.x** or compatible version
 - **Administrator access** to the Jellyfin dashboard
-- _(Recommended)_ [**File Transformation**](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin for the user-facing UI (banner, modal, header button)
+- _(Recommended)_ [**File Transformation**](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin for the user-facing UI (banner, modal, “My subscription” entry / header button)
 
 ---
 
@@ -33,12 +33,12 @@
 
 ### Step 3 — Install the companion plugin (recommended)
 
-The user-facing UI (header button, subscription banner, payment modal) requires the **[File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)** plugin.
+The user-facing UI (the “My subscription” user-menu entry / header button, subscription banner, payment modal) requires the **[File Transformation](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation)** plugin.
 
 1. Install **File Transformation** from the same Catalog or from its [releases page](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases)
 2. Restart Jellyfin
 
-> **Without File Transformation**, the plugin still works server-side (enforcement, notifications, admin dashboard), but users won't see the header button, banner, or modal.
+> **Without File Transformation**, the plugin still works server-side (enforcement, notifications, admin dashboard), but users won't see the “My subscription” entry / header button, banner, or modal.
 
 ### Step 4 — Configure
 

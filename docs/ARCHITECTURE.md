@@ -95,7 +95,7 @@ src/
 │
 └── Web/
     ├── client.js                     # Injected user UI
-    │   ├── Header button              # 💳 icon
+    │   ├── My subscription entry   # 💳 in user menu (Modern) / header (Legacy)
     │   ├── Banner                     # Sticky bar — home tab only (JellyFlare-style route filter)
     │   ├── Modal                      # Subscription management
     │   ├── Toast system               # Feedback notifications

@@ -644,13 +644,13 @@
             + '.npnp-header-btn{background:transparent;border:none;color:inherit;cursor:pointer;'
             + 'padding:8px;display:inline-flex;align-items:center;justify-content:center;}'
             + '.npnp-header-btn .material-icons{font-size:24px;}'
-            // Modern (Jellyfin 12 MUI) app bar: round 40px target like the MUI IconButtons
-            // around it, with a theme-neutral hover. The glyph is an inline SVG that
-            // inherits currentColor from the toolbar (matches the surrounding MUI icons).
-            + 'header.MuiAppBar-root .npnp-header-btn{width:40px;height:40px;padding:8px;border-radius:50%;flex:0 0 auto;color:inherit;}'
-            + 'header.MuiAppBar-root .npnp-header-btn svg{display:block;flex:0 0 auto;}'
-            + 'header.MuiAppBar-root .npnp-header-btn:hover{background:color-mix(in srgb,currentColor 12%,transparent);}'
-            + 'header.MuiAppBar-root .npnp-header-btn:focus-visible{outline:2px solid currentColor;outline-offset:-1px;}'
+            // Native user-menu "My subscription" row (Jellyfin 12 Modern). The row is
+            // built with MUI's own classes so it inherits the native look; these rules
+            // only guarantee flex layout and a keyboard/pointer hover ring regardless of
+            // the active MUI theme.
+            + '#npnp-user-menu-item{display:flex;align-items:center;}'
+            + '#npnp-user-menu-item .MuiListItemIcon-root svg{display:block;}'
+            + '#npnp-user-menu-item:focus-visible{outline:2px solid currentColor;outline-offset:-2px;}'
             // Modal
             + '.npnp-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);'
             + 'z-index:10000;display:flex;align-items:center;justify-content:center;'
@@ -2014,46 +2014,22 @@
         } catch (_) { return null; }
     }
 
-    // Adds the "My subscription" header button that opens the subscription modal in
-    // whatever header is actually visible: the Jellyfin 12 Modern MUI top bar when
-    // present (so the modal stays reachable in the new default layout, including for
-    // Ok/Exempt states that show no banner), otherwise the legacy .skinHeader (Legacy
-    // layout / 10.11). The global MutationObserver re-runs this whenever the app
-    // re-renders, so a button that React unmounts is re-added.
+    // Adds the "My subscription" entry point for the subscription modal. On the
+    // Jellyfin 12 Modern layout the entry is an item inside the native user menu (the
+    // menu opened from the avatar in the top bar) - the cleanest spot, since a dedicated
+    // header icon collides with other header plugins (e.g. Jellyfin-Enhanced) that reuse
+    // the same header area. On the legacy .skinHeader (Legacy layout / 10.11) it stays a
+    // header icon button. The global MutationObserver re-runs this after re-renders, so
+    // an entry that React unmounts is re-added.
     function ensureHeaderButton(data) {
-        if (document.querySelector('.npnp-header-btn')) return true;
         ensureStyles();
         var label = t(data, 'user.modal.headerButton', 'My subscription');
 
-        // Modern (Jellyfin 12 MUI) top bar: the button must be a clean, self-contained
-        // icon button. It deliberately uses an inline SVG glyph instead of the legacy
-        // "material-icons" ligature font (which the Modern UI does not load - it renders
-        // every icon as an inline SVG), and it must NOT carry the legacy
-        // "paper-icon-button-light" class: that name is a registered Jellyfin custom
-        // element, so legacy header code treats such a button as one of its own and
-        // nests stray buttons inside it (observed: the legacy "random item" casino
-        // button ending up inside the injected button on Jellyfin 12).
-        // The glyph lives in a (closed) shadow root so nothing in the page - Jellyfin's
-        // own legacy header code, themes or other plugins - can insert DOM into the
-        // button or restyle/break the icon: what you see is exactly what we render.
-        var makeModernBtn = function () {
-            var btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'npnp-header-btn';
-            btn.title = label;
-            btn.setAttribute('aria-label', label);
-            var svg =
-                '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true">'
-                + '<path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/>'
-                + '</svg>';
-            if (btn.attachShadow) {
-                btn.attachShadow({ mode: 'closed' }).innerHTML = svg;
-            } else {
-                btn.innerHTML = svg;
-            }
-            btn.addEventListener('click', function () { openModal(lastData || data); });
-            return btn;
-        };
+        // Jellyfin 12 Modern: add the entry to the native user menu.
+        if (isRendered(modernUserToolbar())) return ensureUserMenuItem(label);
+
+        // Legacy layout (and 10.11): header icon button inside the .skinHeader.
+        if (document.querySelector('.npnp-header-btn')) return true;
 
         // Legacy layout (and 10.11): Jellyfin loads the Material Icons font and styles
         // paper-icon-button-light there, so keep the classic markup for that header.
@@ -2067,48 +2043,6 @@
             btn.addEventListener('click', function () { openModal(lastData || data); });
             return btn;
         };
-
-        // Modern layout: insert the icon into the native right-side actions tray - the
-        // box holding SyncPlay/Cast/Search, directly before the user menu - rather than
-        // as a standalone toolbar item just before the user menu. Other header plugins
-        // (notably Jellyfin-Enhanced) locate that actions tray as "the element right
-        // before the user menu" and prepend their own buttons into it; a standalone
-        // button at that exact spot gets mistaken for the tray and has foreign buttons
-        // (Jellyfin-Enhanced's "random item" casino icon) nested inside it. Living
-        // inside the real tray keeps the icon grouped with the native buttons and lets
-        // those plugins keep using their own tray untouched.
-        var toolbar = modernUserToolbar();
-        if (isRendered(toolbar)) {
-            var btnModern = makeModernBtn();
-            var tray = null;
-            try {
-                var userMenu = toolbar.querySelector('[aria-controls="app-user-menu"]');
-                var userBox = userMenu;
-                while (userBox && userBox.parentElement !== toolbar) userBox = userBox.parentElement;
-                var prev = userBox && userBox.previousElementSibling;
-                // Only treat the preceding sibling as the actions tray if it really hosts
-                // native icon buttons, so we never inject into the left-side stack.
-                if (prev && prev.querySelector
-                    && prev.querySelector('[aria-controls="app-sync-play-menu"],'
-                        + ' [aria-controls="app-remote-play-menu"], a[href="#/search"]')) {
-                    tray = prev;
-                }
-            } catch (_) {}
-            if (tray && tray !== btnModern && tray !== btnModern.parentNode) {
-                tray.appendChild(btnModern);
-            } else {
-                // No native actions tray (rare pages): fall back to appending before the
-                // user menu, which is safe because in that case Jellyfin-Enhanced also has
-                // no tray and uses its own synthetic container instead of our button.
-                var menuAnchor = toolbar.lastElementChild;
-                if (menuAnchor && menuAnchor !== btnModern) {
-                    toolbar.insertBefore(btnModern, menuAnchor);
-                } else {
-                    toolbar.appendChild(btnModern);
-                }
-            }
-            return true;
-        }
 
         // Legacy layout (and 10.11): only when the .skinHeader chrome is visible.
         var skin = document.querySelector('.skinHeader');
@@ -2127,6 +2061,62 @@
         var btn = makeLegacyBtn();
         if (anchor) container.insertBefore(btn, anchor);
         else container.appendChild(btn);
+        return true;
+    }
+
+    // Locates the <ul role="menu"> of Jellyfin 12's native user menu (the MUI Menu
+    // whose id is "app-user-menu", opened from the avatar button). Which element carries
+    // that id depends on the MUI version (the list itself or its popover wrapper), so
+    // unwrap the list defensively.
+    function userMenuList() {
+        var root = document.getElementById('app-user-menu');
+        if (!root || !root.querySelector) return null;
+        var list = root.querySelector('ul[role="menu"], .MuiMenu-list');
+        if (list) return list;
+        return (root.matches && root.matches('ul, [role="menu"]')) ? root : null;
+    }
+
+    // Adds a "My subscription" row to the native user menu, right after the "Settings"
+    // row. It is built with MUI's own classes so it looks and behaves exactly like the
+    // native rows. Clicking (or pressing Enter/Space on) it opens the subscription modal
+    // and closes the menu. Guarded by an id so repeated runs do not duplicate it; the
+    // MutationObserver re-adds it if React ever remounts the menu.
+    function ensureUserMenuItem(label) {
+        if (document.getElementById('npnp-user-menu-item')) return true;
+        var list = userMenuList();
+        if (!list || !list.children || list.children.length < 2) return false;
+        var item = document.createElement('li');
+        item.id = 'npnp-user-menu-item';
+        item.className = 'MuiMenuItem-root MuiMenuItem-gutters';
+        item.setAttribute('role', 'menuitem');
+        item.tabIndex = -1;
+        item.innerHTML =
+            '<div class="MuiListItemIcon-root">'
+            + '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true">'
+            + '<path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/>'
+            + '</svg></div>'
+            + '<div class="MuiListItemText-root"><span class="MuiTypography-root MuiTypography-body1">'
+            + label + '</span></div>';
+        var openAndClose = function () {
+            if (lastData) {
+                openModal(lastData);
+            } else if (typeof refresh === 'function') {
+                refresh().then(function () { if (lastData) openModal(lastData); });
+            }
+            // Close the native menu the same way pressing Escape would.
+            try {
+                var menuEl = document.getElementById('app-user-menu') || list;
+                menuEl.dispatchEvent(new KeyboardEvent('keydown',
+                    { key: 'Escape', bubbles: true, cancelable: true }));
+            } catch (_) {}
+        };
+        item.addEventListener('click', openAndClose);
+        item.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAndClose(); }
+        });
+        // Place it after the second native row ("Settings"), with the other per-user
+        // actions (Profile / Settings), before the divider/log-out area.
+        list.insertBefore(item, list.children[2] || null);
         return true;
     }
 
@@ -2177,6 +2167,8 @@
         if (banner) banner.parentNode.removeChild(banner);
         var hb = document.querySelector('.npnp-header-btn');
         if (hb) hb.parentNode.removeChild(hb);
+        var umi = document.getElementById('npnp-user-menu-item');
+        if (umi) umi.parentNode.removeChild(umi);
         document.body.classList.remove('npnp-has-banner');
         document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
         document.documentElement.style.setProperty('--npnp-header-h', '0px');

@@ -125,7 +125,7 @@ After installing and restarting Jellyfin:
 
 ### 👤 User experience
 
-The subscription banner is injected into each member's home screen; the **💳** header button opens the payment modal.
+The subscription banner is injected into each member's home screen; on Jellyfin 12 (Modern UI) the payment modal opens from **My subscription** in the **user menu** (click your avatar, top right), and on the Legacy UI from the **💳** header button.
 
 | ⏰ Expiring soon | ⏳ Grace period | 🚫 Blocked |
 |---|---|---|
@@ -188,7 +188,7 @@ The subscription banner is injected into each member's home screen; the **💳**
 
 | Feature | Description |
 |---|---|
-| **💳 Header button** | Opens the subscription modal from anywhere in Jellyfin |
+| **My subscription 💳** | Opens the subscription modal from anywhere: **My subscription** in the user menu (Jellyfin 12 Modern) or the 💳 header button (Legacy) |
 | **Subscription banner** | Sticky banner on warning, grace, and blocked states with a **live countdown** |
 | **Hero card** | Visual status with a **live countdown** (days·hours·min·sec) and progress gauge |
 | **Tier picker** | Choose a plan with per-month savings shown |
@@ -257,7 +257,7 @@ If you're a **user** of this plugin (not an admin), here's what you need to know
 
 | Topic | Summary |
 |---|---|
-| **Header button 💳** | Click to open your subscription modal |
+| **My subscription 💳** | Open it from the user menu (avatar) on Jellyfin 12, or the 💳 header button on Legacy |
 | **Banner** | Sticky bar appears when your subscription is about to expire or has expired |
 | **Paying** | Click PayPal/Lydia links in the modal, send the money, then click **"I just paid"** |
 | **Promo codes** | Enter a code in the modal to get free months |

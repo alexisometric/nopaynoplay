@@ -2,16 +2,18 @@
 
 This guide explains how NoPayNoPlay works from a **member's perspective** — what you see, what you can do, and what happens when your subscription expires.
 
-> ⚠️ The user UI (header button, banner, modal) requires the **File Transformation** plugin to be installed on the server. If you don't see these elements, ask your admin to install it.
+> ⚠️ The user UI (the “My subscription” entry / 💳 header button, banner and modal) requires the **File Transformation** plugin to be installed on the server. If you don't see these elements, ask your admin to install it.
 
 ---
 
-## 💳 Header Button
+## 💳 My subscription
 
-Once logged into Jellyfin, look for the **💳** (monetization) icon in the top-right header area.
+Once logged in, your subscription modal is one click away:
 
-- **Click it** to open your subscription modal
-- Shows all relevant information about your plan and payments
+- **Jellyfin 12 (Modern UI):** click your **avatar** in the top-right → the **user menu** opens → choose **My subscription**.
+- **Legacy UI (and Jellyfin 10.11):** look for the **💳** (monetization) icon in the top-right header area and click it.
+
+Either way, the modal shows all the relevant information about your plan and payments.
 
 ---
 
