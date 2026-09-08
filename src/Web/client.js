@@ -1820,12 +1820,22 @@
     // the banner is only shown on the Jellyfin home tab. Jellyfin resolves the home
     // tab at #/home.html (legacy) or #/home (newer builds); an empty hash also lands
     // on home. All other pages (library, detail, settings, admin…) never show it.
+    // Jellyfin 12 also hosts sibling tabs on the home screen under #/home?tab=N (e.g.
+    // "Favorites" = ?tab=1): the banner belongs on the bare home overview only, not on
+    // those tabs, so a home route carrying a real tab selector is treated as non-home.
     function isHomePage() {
         try {
-            var h = (window.location.hash || '').replace(/^#!?\/?/, '').split('?')[0].toLowerCase();
+            var rawHash = (window.location.hash || '').replace(/^#!?\/?/, '').toLowerCase();
+            var base = rawHash.split('?')[0];
             // Empty hash / root route → Jellyfin loads the home tab.
-            if (!h) return true;
-            return h === 'home' || h === 'home.html' || h.indexOf('home.html') === 0;
+            if (!base) return true;
+            var isHome = base === 'home' || base === 'home.html' || base.indexOf('home.html') === 0;
+            if (!isHome) return false;
+            var query = rawHash.indexOf('?') >= 0 ? rawHash.slice(rawHash.indexOf('?') + 1) : '';
+            var tabMatch = query.match(/(?:^|&)tab=([0-9]*)/);
+            // No tab selector, or the implicit overview tab (0), counts as the home
+            // root; any other tab (Favorites = 1, …) hides the banner.
+            return !tabMatch || tabMatch[1] === '' || tabMatch[1] === '0';
         } catch (_) { return true; }
     }
 
