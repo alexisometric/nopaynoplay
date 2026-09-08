@@ -2068,16 +2068,44 @@
             return btn;
         };
 
-        // Modern layout: insert into the user top bar just before its last child (the
-        // user menu) so the icon sits next to the other action buttons.
+        // Modern layout: insert the icon into the native right-side actions tray - the
+        // box holding SyncPlay/Cast/Search, directly before the user menu - rather than
+        // as a standalone toolbar item just before the user menu. Other header plugins
+        // (notably Jellyfin-Enhanced) locate that actions tray as "the element right
+        // before the user menu" and prepend their own buttons into it; a standalone
+        // button at that exact spot gets mistaken for the tray and has foreign buttons
+        // (Jellyfin-Enhanced's "random item" casino icon) nested inside it. Living
+        // inside the real tray keeps the icon grouped with the native buttons and lets
+        // those plugins keep using their own tray untouched.
         var toolbar = modernUserToolbar();
         if (isRendered(toolbar)) {
             var btnModern = makeModernBtn();
-            var menuAnchor = toolbar.lastElementChild;
-            if (menuAnchor && menuAnchor !== btnModern) {
-                toolbar.insertBefore(btnModern, menuAnchor);
+            var tray = null;
+            try {
+                var userMenu = toolbar.querySelector('[aria-controls="app-user-menu"]');
+                var userBox = userMenu;
+                while (userBox && userBox.parentElement !== toolbar) userBox = userBox.parentElement;
+                var prev = userBox && userBox.previousElementSibling;
+                // Only treat the preceding sibling as the actions tray if it really hosts
+                // native icon buttons, so we never inject into the left-side stack.
+                if (prev && prev.querySelector
+                    && prev.querySelector('[aria-controls="app-sync-play-menu"],'
+                        + ' [aria-controls="app-remote-play-menu"], a[href="#/search"]')) {
+                    tray = prev;
+                }
+            } catch (_) {}
+            if (tray && tray !== btnModern && tray !== btnModern.parentNode) {
+                tray.appendChild(btnModern);
             } else {
-                toolbar.appendChild(btnModern);
+                // No native actions tray (rare pages): fall back to appending before the
+                // user menu, which is safe because in that case Jellyfin-Enhanced also has
+                // no tray and uses its own synthetic container instead of our button.
+                var menuAnchor = toolbar.lastElementChild;
+                if (menuAnchor && menuAnchor !== btnModern) {
+                    toolbar.insertBefore(btnModern, menuAnchor);
+                } else {
+                    toolbar.appendChild(btnModern);
+                }
             }
             return true;
         }
