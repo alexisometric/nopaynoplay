@@ -33,19 +33,24 @@
         exempt: 'Exempt'
     };
 
+    // Resolves the API client used to reach the plugin's own /NoPayNoPlay endpoints.
+    // Jellyfin 12 (all layouts) still assigns window.ApiClient on sign-in via
+    // ServerConnections.setLocalApiClient — it is the supported bridge that plugin
+    // config pages and Jellyfin's own code rely on, and it already handles the server
+    // address, an optional base-url and the Authorization header — so it is tried
+    // first. No dependency is taken on the old window.connectionManager global, which
+    // jellyfin-web no longer assigns (it was removed in the 10.x -> 12 React rework).
     function getApiClient() {
         try {
             if (window.ApiClient) return window.ApiClient;
-            if (window.connectionManager && window.connectionManager.currentApiClient) {
-                return window.connectionManager.currentApiClient();
-            }
         } catch (_) {}
 
-        // Jellyfin 12's web UI is a React/MUI app that uses the TypeScript SDK and no
-        // longer exposes the legacy window.ApiClient. Fall back to a minimal fetch-based
-        // client driven by the persisted server credentials (the same mechanism the Media
-        // Bar plugin uses), so the subscription UI keeps working there. This path only
-        // runs when the legacy client is absent, so 10.11 behaviour is untouched.
+        // Jellyfin 12 native fallback: drive the plugin's own endpoints with a minimal
+        // fetch-based client authenticated from the SDK credential store
+        // (localStorage "jellyfin_credentials", the same store the TS SDK reads on
+        // boot) so the subscription UI keeps working even if the window.ApiClient
+        // bridge is ever dropped. Same-origin, fully self-contained. This path only
+        // runs when window.ApiClient is absent, so 10.11 behaviour is untouched.
         try {
             var creds = readJellyfinCredentials();
             if (creds) return makeFallbackClient(creds);
@@ -639,6 +644,10 @@
             + '.npnp-header-btn{background:transparent;border:none;color:inherit;cursor:pointer;'
             + 'padding:8px;display:inline-flex;align-items:center;justify-content:center;}'
             + '.npnp-header-btn .material-icons{font-size:24px;}'
+            // Modern (Jellyfin 12 MUI) app bar: round 40px target like the MUI IconButtons
+            // around it, with a theme-neutral hover.
+            + 'header.MuiAppBar-root .npnp-header-btn{width:40px;height:40px;padding:8px;border-radius:50%;flex:0 0 auto;}'
+            + 'header.MuiAppBar-root .npnp-header-btn:hover{background:color-mix(in srgb,currentColor 12%,transparent);}'
             // Modal
             + '.npnp-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);'
             + 'z-index:10000;display:flex;align-items:center;justify-content:center;'
@@ -1976,31 +1985,83 @@
         });
     }
 
+    // True when an element is actually rendered (has visible layout boxes). Presence in
+    // the DOM is not enough: Jellyfin 12 keeps a .skinHeader in the DOM even in the
+    // Modern layout (legacy views still bind to it) but wraps it in a display:none
+    // container, while its own header is a position:fixed MUI AppBar (offsetParent is
+    // null on fixed elements, so we measure layout boxes instead of offsetParent).
+    function isRendered(el) {
+        if (!el) return false;
+        try {
+            if (getComputedStyle(el).display === 'none') return false;
+            var rects = el.getClientRects();
+            return !!(rects && rects.length > 0
+                && (rects[0].width > 0 || rects[0].height > 0));
+        } catch (_) { return false; }
+    }
+
+    // Finds the Modern (Jellyfin 12) user top bar. Its layout renders
+    // <header class="MuiAppBar-root"> containing a <div class="MuiToolbar-root
+    // padded-left padded-right"> that holds the Search / Cast / SyncPlay buttons and
+    // the user menu. The admin dashboard toolbar uses class "dashboard-appBar" and the
+    // video OSD "videoOsd-appBar" instead, so this selector never matches those.
+    function modernUserToolbar() {
+        try {
+            return document.querySelector('header.MuiAppBar-root > .MuiToolbar-root.padded-left.padded-right');
+        } catch (_) { return null; }
+    }
+
+    // Adds the "My subscription" header button that opens the subscription modal in
+    // whatever header is actually visible: the Jellyfin 12 Modern MUI top bar when
+    // present (so the modal stays reachable in the new default layout, including for
+    // Ok/Exempt states that show no banner), otherwise the legacy .skinHeader (Legacy
+    // layout / 10.11). The global MutationObserver re-runs this whenever the app
+    // re-renders, so a button that React unmounts is re-added.
     function ensureHeaderButton(data) {
         if (document.querySelector('.npnp-header-btn')) return true;
+        ensureStyles();
         var label = t(data, 'user.modal.headerButton', 'My subscription');
 
-        var search = document.querySelector(
-            '.skinHeader .headerSearchButton, .skinHeader [is="emby-button"][title="Search"], '
-            + '.skinHeader button[title*="earch"]');
+        var makeBtn = function () {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'npnp-header-btn paper-icon-button-light';
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
+            btn.innerHTML = '<span class="material-icons" aria-hidden="true">payments</span>';
+            btn.addEventListener('click', function () { openModal(lastData || data); });
+            return btn;
+        };
+
+        // Modern layout: insert into the user top bar just before its last child (the
+        // user menu) so the icon sits next to the other action buttons.
+        var toolbar = modernUserToolbar();
+        if (isRendered(toolbar)) {
+            var btnModern = makeBtn();
+            var menuAnchor = toolbar.lastElementChild;
+            if (menuAnchor && menuAnchor !== btnModern) {
+                toolbar.insertBefore(btnModern, menuAnchor);
+            } else {
+                toolbar.appendChild(btnModern);
+            }
+            return true;
+        }
+
+        // Legacy layout (and 10.11): only when the .skinHeader chrome is visible.
+        var skin = document.querySelector('.skinHeader');
+        if (!isRendered(skin)) return false;
+        var search = skin.querySelector(
+            '.headerSearchButton, [is="emby-button"][title="Search"], button[title*="earch"]');
         var container = null;
         var anchor = null;
         if (search && search.parentNode) {
             container = search.parentNode;
             anchor = search;
         } else {
-            container = document.querySelector('.headerRight, .skinHeader .headerRight, .skinHeader-content, .skinHeader');
-            if (!container) return false;
+            container = skin.querySelector('.headerRight, .skinHeader-content') || skin;
         }
 
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'npnp-header-btn paper-icon-button-light';
-        btn.title = label;
-        btn.setAttribute('aria-label', label);
-        btn.innerHTML = '<span class="material-icons" aria-hidden="true">payments</span>';
-        btn.addEventListener('click', function () { openModal(lastData || data); });
-
+        var btn = makeBtn();
         if (anchor) container.insertBefore(btn, anchor);
         else container.appendChild(btn);
         return true;
