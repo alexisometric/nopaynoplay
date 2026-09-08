@@ -276,6 +276,12 @@
             url += (url.indexOf('?') >= 0 ? '&' : '?') + 'strings=' + encodeURIComponent(lastData.stringsHash);
         }
         return api.ajax({ type: 'GET', url: url, dataType: 'json' }).then(function (raw) {
+            // Normalise the response keys to camelCase up front (Jellyfin 12 serialises
+            // plugin API payloads in PascalCase - Strings/Lang/… - unlike the camelCase
+            // Jellyfin 10.11 used). The unchanged-bundle guard below must run against
+            // these normalised names, otherwise every "no change" reply (empty Strings,
+            // same hash) blanks the cached translations and the UI falls back to English.
+            raw = normalizeMe(raw);
             // When the server reports the strings bundle is unchanged (empty object),
             // keep our cached copy instead of blanking the translations.
             if (raw && raw.stringsHash && raw.strings && typeof raw.strings === 'object'
