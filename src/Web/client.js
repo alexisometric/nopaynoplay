@@ -645,9 +645,12 @@
             + 'padding:8px;display:inline-flex;align-items:center;justify-content:center;}'
             + '.npnp-header-btn .material-icons{font-size:24px;}'
             // Modern (Jellyfin 12 MUI) app bar: round 40px target like the MUI IconButtons
-            // around it, with a theme-neutral hover.
-            + 'header.MuiAppBar-root .npnp-header-btn{width:40px;height:40px;padding:8px;border-radius:50%;flex:0 0 auto;}'
+            // around it, with a theme-neutral hover. The glyph is an inline SVG that
+            // inherits currentColor from the toolbar (matches the surrounding MUI icons).
+            + 'header.MuiAppBar-root .npnp-header-btn{width:40px;height:40px;padding:8px;border-radius:50%;flex:0 0 auto;color:inherit;}'
+            + 'header.MuiAppBar-root .npnp-header-btn svg{display:block;flex:0 0 auto;}'
             + 'header.MuiAppBar-root .npnp-header-btn:hover{background:color-mix(in srgb,currentColor 12%,transparent);}'
+            + 'header.MuiAppBar-root .npnp-header-btn:focus-visible{outline:2px solid currentColor;outline-offset:-1px;}'
             // Modal
             + '.npnp-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);'
             + 'z-index:10000;display:flex;align-items:center;justify-content:center;'
@@ -2022,7 +2025,39 @@
         ensureStyles();
         var label = t(data, 'user.modal.headerButton', 'My subscription');
 
-        var makeBtn = function () {
+        // Modern (Jellyfin 12 MUI) top bar: the button must be a clean, self-contained
+        // icon button. It deliberately uses an inline SVG glyph instead of the legacy
+        // "material-icons" ligature font (which the Modern UI does not load - it renders
+        // every icon as an inline SVG), and it must NOT carry the legacy
+        // "paper-icon-button-light" class: that name is a registered Jellyfin custom
+        // element, so legacy header code treats such a button as one of its own and
+        // nests stray buttons inside it (observed: the legacy "random item" casino
+        // button ending up inside the injected button on Jellyfin 12).
+        // The glyph lives in a (closed) shadow root so nothing in the page - Jellyfin's
+        // own legacy header code, themes or other plugins - can insert DOM into the
+        // button or restyle/break the icon: what you see is exactly what we render.
+        var makeModernBtn = function () {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'npnp-header-btn';
+            btn.title = label;
+            btn.setAttribute('aria-label', label);
+            var svg =
+                '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true">'
+                + '<path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/>'
+                + '</svg>';
+            if (btn.attachShadow) {
+                btn.attachShadow({ mode: 'closed' }).innerHTML = svg;
+            } else {
+                btn.innerHTML = svg;
+            }
+            btn.addEventListener('click', function () { openModal(lastData || data); });
+            return btn;
+        };
+
+        // Legacy layout (and 10.11): Jellyfin loads the Material Icons font and styles
+        // paper-icon-button-light there, so keep the classic markup for that header.
+        var makeLegacyBtn = function () {
             var btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'npnp-header-btn paper-icon-button-light';
@@ -2037,7 +2072,7 @@
         // user menu) so the icon sits next to the other action buttons.
         var toolbar = modernUserToolbar();
         if (isRendered(toolbar)) {
-            var btnModern = makeBtn();
+            var btnModern = makeModernBtn();
             var menuAnchor = toolbar.lastElementChild;
             if (menuAnchor && menuAnchor !== btnModern) {
                 toolbar.insertBefore(btnModern, menuAnchor);
@@ -2061,7 +2096,7 @@
             container = skin.querySelector('.headerRight, .skinHeader-content') || skin;
         }
 
-        var btn = makeBtn();
+        var btn = makeLegacyBtn();
         if (anchor) container.insertBefore(btn, anchor);
         else container.appendChild(btn);
         return true;
