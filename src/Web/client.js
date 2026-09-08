@@ -295,13 +295,19 @@
             if (explicit) return explicit;
         } catch (_) {}
         // Otherwise follow Jellyfin's active UI language: jellyfin-web sets
-        // document.documentElement.lang to the resolved per-user/server culture.
-        // Forwarding it as ?lang= makes the plugin speak the language the user
-        // actually sees in Jellyfin, instead of falling back to the browser's
-        // Accept-Language header on the server.
+        // document.documentElement.lang to the resolved per-user/server culture (and,
+        // before that, exposes the server culture in a data-culture attribute - the
+        // same fallback jellyfin-web's own getDefaultLanguage() uses). Forwarding it as
+        // ?lang= makes the plugin speak the language the user actually sees in Jellyfin,
+        // instead of falling back to the browser's Accept-Language header on the server.
         try {
-            var docLang = document.documentElement && document.documentElement.getAttribute('lang');
-            if (docLang) return docLang;
+            var html = document.documentElement;
+            if (html) {
+                var docLang = html.getAttribute('lang');
+                if (docLang) return docLang;
+                var dataCulture = html.getAttribute('data-culture');
+                if (dataCulture) return dataCulture;
+            }
         } catch (_) {}
         return '';
     }
@@ -2077,26 +2083,56 @@
     }
 
     // Adds a "My subscription" row to the native user menu, right after the "Settings"
-    // row. It is built with MUI's own classes so it looks and behaves exactly like the
-    // native rows. Clicking (or pressing Enter/Space on) it opens the subscription modal
-    // and closes the menu. Guarded by an id so repeated runs do not duplicate it; the
-    // MutationObserver re-adds it if React ever remounts the menu.
+    // row. MUI (v6) styles its menu rows through Emotion-generated classes that are
+    // created at runtime, so instead of guessing class names it copies the real classes
+    // from a native row - the injected item then looks pixel-identical to the menu's own
+    // items (spacing, hover, focus) whatever the MUI version injects. Clicking (or
+    // pressing Enter/Space on) it opens the subscription modal and closes the menu.
+    // Guarded by an id so repeated runs do not duplicate it; the MutationObserver
+    // re-adds it if React ever remounts the menu.
     function ensureUserMenuItem(label) {
         if (document.getElementById('npnp-user-menu-item')) return true;
         var list = userMenuList();
         if (!list || !list.children || list.children.length < 2) return false;
+
+        // Pick a native row that has the icon + text structure (Profile / Settings) to
+        // use as a styling template.
+        var template = null;
+        for (var i = 0; i < list.children.length; i++) {
+            var cand = list.children[i];
+            if (cand && cand.querySelector && cand.querySelector('.MuiListItemIcon-root')
+                && cand.querySelector('.MuiListItemText-root')) {
+                template = cand;
+                break;
+            }
+        }
+        if (!template) return false;
+
+        var iconEl = template.querySelector('.MuiListItemIcon-root');
+        var textEl = template.querySelector('.MuiListItemText-root');
+        var typeEl = textEl && textEl.querySelector('.MuiTypography-root');
+
         var item = document.createElement('li');
         item.id = 'npnp-user-menu-item';
-        item.className = 'MuiMenuItem-root MuiMenuItem-gutters';
+        item.className = template.className || 'MuiMenuItem-root MuiMenuItem-gutters';
         item.setAttribute('role', 'menuitem');
         item.tabIndex = -1;
-        item.innerHTML =
-            '<div class="MuiListItemIcon-root">'
-            + '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true">'
+
+        var icon = document.createElement('div');
+        icon.className = iconEl ? iconEl.className : 'MuiListItemIcon-root';
+        icon.innerHTML =
+            '<svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor" aria-hidden="true">'
             + '<path d="M19 14V6c0-1.1-.9-2-2-2H3c-1.1 0-2 .9-2 2v8c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zm-9-1c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm13-6v11c0 1.1-.9 2-2 2H4v-2h17V7h2z"/>'
-            + '</svg></div>'
-            + '<div class="MuiListItemText-root"><span class="MuiTypography-root MuiTypography-body1">'
-            + label + '</span></div>';
+            + '</svg>';
+        var text = document.createElement('div');
+        text.className = textEl ? textEl.className : 'MuiListItemText-root';
+        var type = document.createElement('span');
+        type.className = typeEl ? typeEl.className : 'MuiTypography-root MuiTypography-body1';
+        type.textContent = label;
+        text.appendChild(type);
+        item.appendChild(icon);
+        item.appendChild(text);
+
         var openAndClose = function () {
             if (lastData) {
                 openModal(lastData);
@@ -2114,9 +2150,10 @@
         item.addEventListener('keydown', function (e) {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAndClose(); }
         });
-        // Place it after the second native row ("Settings"), with the other per-user
-        // actions (Profile / Settings), before the divider/log-out area.
-        list.insertBefore(item, list.children[2] || null);
+
+        // Place it right after the native row we templated (Settings), with the other
+        // per-user actions (Profile / Settings), before the divider/log-out area.
+        list.insertBefore(item, template.nextSibling);
         return true;
     }
 
