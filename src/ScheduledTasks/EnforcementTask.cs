@@ -74,6 +74,15 @@ public class EnforcementTask : IScheduledTask
     /// <inheritdoc />
     public IEnumerable<TaskTriggerInfo> GetDefaultTriggers()
     {
+        // Run once shortly after startup (Jellyfin fires startup triggers ~2 min in):
+        // users who expired while the server was down are blocked without waiting a
+        // whole day, and the interval is re-anchored instead of drifting a full
+        // period later after every restart.
+        yield return new TaskTriggerInfo
+        {
+            Type = TaskTriggerInfoType.StartupTrigger
+        };
+
         yield return new TaskTriggerInfo
         {
             Type = TaskTriggerInfoType.IntervalTrigger,
@@ -87,45 +96,91 @@ public class EnforcementTask : IScheduledTask
         var users = _userManager.GetUsers().ToList();
         int total = users.Count;
         int done = 0;
+        int failures = 0;
         string culture = ServerCulture;
+
+        // Create the missing subscription records up-front with a single save: the
+        // per-user EnsureUserTracked call used to serialize the whole XML config once
+        // per new user (a first run on a large server rewrote the file hundreds of
+        // times, every write racing the HTTP endpoints).
+        _subscriptionService.EnsureUsersTracked(users.Select(u => u.Id));
 
         // Process users in bounded parallel batches: the DB writes (policy updates,
         // activity inserts) are independent per user and the biggest cost, so serializing
         // one awaited round-trip at a time makes a large run needlessly slow. Config
         // mutations stay serialized by SubscriptionService's internal lock.
         const int batchSize = 16;
-        for (int offset = 0; offset < users.Count; offset += batchSize)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var batch = users.Skip(offset).Take(batchSize).ToList();
-            var tasks = batch.Select(user => Task.Run(async () =>
+            for (int offset = 0; offset < users.Count; offset += batchSize)
             {
-                try
-                {
-                    UserSubscription sub = _subscriptionService.EnsureUserTracked(user.Id);
-                    SubscriptionState state = _subscriptionService.EvaluateState(sub);
-                    await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
-                    await NotifyIfNeededAsync(sub, state, user.Username, culture).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "NoPayNoPlay: error processing user {UserId}", user.Id);
-                }
-                finally
-                {
-                    int d = Interlocked.Increment(ref done);
-                    progress.Report(100.0 * d / Math.Max(1, total));
-                }
-            })).ToList();
+                cancellationToken.ThrowIfCancellationRequested();
+                var batch = users.Skip(offset).Take(batchSize).ToList();
+                var tasks = batch.Select(user => Task.Run(
+                    async () =>
+                    {
+                        try
+                        {
+                            UserSubscription sub = _subscriptionService.EnsureUserTracked(user.Id);
+                            SubscriptionState state = _subscriptionService.EvaluateState(sub);
+                            await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
+                            await NotifyIfNeededAsync(sub, state, user.Username, culture).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            Interlocked.Increment(ref failures);
+                            _logger.LogError(ex, "NoPayNoPlay: error processing user {UserId}", user.Id);
+                        }
+                        finally
+                        {
+                            int d = Interlocked.Increment(ref done);
+                            progress.Report(100.0 * d / Math.Max(1, total));
+                        }
+                    },
+                    cancellationToken)).ToList();
 
-            await Task.WhenAll(tasks).ConfigureAwait(false);
+                await Task.WhenAll(tasks).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            // Drop subscription records whose Jellyfin user has since been deleted so
+            // dead state (history, admin notes, policy snapshots) doesn't accumulate.
+            try
+            {
+                _subscriptionService.PurgeOrphanedSubscriptions(users.Select(u => u.Id).ToList());
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref failures);
+                _logger.LogError(ex, "NoPayNoPlay: failed to purge orphaned subscriptions");
+            }
+
+            // Always persist — including when the task was cancelled or a batch threw.
+            // The per-user policy flags were already applied to the database; losing
+            // them here is exactly what left blocked users un-restorable.
+            try
+            {
+                _subscriptionService.Save();
+            }
+            catch (Exception ex)
+            {
+                Interlocked.Increment(ref failures);
+                _logger.LogError(ex, "NoPayNoPlay: failed to persist enforcement results");
+            }
         }
 
-        // Drop subscription records whose Jellyfin user has since been deleted so
-        // dead state (history, admin notes, policy snapshots) doesn't accumulate.
-        _subscriptionService.PurgeOrphanedSubscriptions(users.Select(u => u.Id).ToList());
-
-        _subscriptionService.Save();
+        if (failures > 0 && !cancellationToken.IsCancellationRequested)
+        {
+            // Surface partial failures in the dashboard instead of reporting a green
+            // "Completed" run while some users were silently left unenforced.
+            throw new InvalidOperationException(
+                $"NoPayNoPlay: {failures} error(s) during the enforcement pass; see the server log for details.");
+        }
     }
 
     private async Task NotifyIfNeededAsync(
