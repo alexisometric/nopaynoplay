@@ -193,6 +193,13 @@ public class MarkPaidDto
     public string Method { get; set; } = string.Empty;
 }
 
+/// <summary>Toggle for trusting reverse-proxy forwarding headers.</summary>
+public class ForwardedHeadersDto
+{
+    /// <summary>When true, the left-most <c>X-Forwarded-For</c> entry is used as the client IP.</summary>
+    public bool Enabled { get; set; }
+}
+
 /// <summary>Promo code creation / update payload.</summary>
 public class PromoCodeDto
 {

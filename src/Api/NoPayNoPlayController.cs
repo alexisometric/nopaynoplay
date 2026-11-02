@@ -60,18 +60,25 @@ public class NoPayNoPlayController : ControllerBase
     /// (DB lock, IO) surface as a 500 *after* the subscription change has already
     /// been persisted. The gap is logged; the 12 h scheduled task reconciles it.
     /// </summary>
-    private async Task ApplyEnforcementSafelyAsync(UserSubscription sub, SubscriptionState state)
+    private async Task<bool> ApplyEnforcementSafelyAsync(UserSubscription sub, SubscriptionState state)
     {
         try
         {
             await _enforcer.ApplyAsync(sub, state).ConfigureAwait(false);
+            return true;
         }
         catch (Exception ex)
         {
+            // The subscription change is persisted; only the policy write failed.
+            // Do not turn the whole request into a 500 (the admin would retry and
+            // duplicate the payment) — advertise the deferred state instead, so a
+            // client or a log reader can tell that the user is not blocked yet.
+            Response.Headers["X-NoPayNoPlay-Policy"] = "deferred";
             _logger.LogWarning(
                 ex,
                 "NoPayNoPlay: subscription updated for {UserId} but playback policy could not be applied; the scheduled task will reconcile within 12h",
                 sub.UserId);
+            return false;
         }
     }
 
@@ -304,7 +311,7 @@ public class NoPayNoPlayController : ControllerBase
 
         // Idempotent retry (double-click / browser retry): if this payment form's key was
         // already recorded, return the current state instead of charging months twice.
-        if (IsIdempotencySeen(userId, body.IdempotencyKey))
+        if (!TryReserveIdempotencyKey(userId, body.IdempotencyKey))
         {
             return Ok(Project(_service.EnsureUserTracked(userId), ResolveCulture()));
         }
@@ -324,7 +331,6 @@ public class NoPayNoPlayController : ControllerBase
             $"amount={body.Amount} months={body.MonthsAdded} method={body.Method}",
             persist: false);
         _service.Save();
-        MarkIdempotencySeen(userId, body.IdempotencyKey);
 
         return Ok(Project(sub, ResolveCulture()));
     }
@@ -395,7 +401,7 @@ public class NoPayNoPlayController : ControllerBase
             cfg.GraceDays = Math.Clamp(body.GraceDays, 0, 365);
             cfg.TrialDays = Math.Clamp(body.TrialDays, 0, 365);
             cfg.WarningDaysBefore = Math.Clamp(body.WarningDaysBefore, 0, 90);
-            cfg.AuditLogMaxEntries = Math.Clamp(body.AuditLogMaxEntries, 50, 2000);
+            cfg.AuditLogMaxEntries = Math.Clamp(body.AuditLogMaxEntries, 50, 5000);
             cfg.PaypalMeUrl = SanitizeUrl(body.PaypalMeUrl);
             cfg.LydiaUrl = SanitizeUrl(body.LydiaUrl);
             cfg.CustomNote = Truncate(body.CustomNote, 1000);
@@ -404,6 +410,33 @@ public class NoPayNoPlayController : ControllerBase
             return true;
         });
         return Ok(Cfg);
+    }
+
+    /// <summary>Enables or disables trusting the left-most X-Forwarded-For entry (admin).</summary>
+    /// <remarks>
+    /// Off by default: anyone can send that header, so trusting it without a reverse
+    /// proxy that overwrites it lets a client spoof its address and dodge the
+    /// per-IP throttle. Kept as a separate endpoint so a settings save from a front
+    /// end that does not know the field cannot silently reset it.
+    /// </remarks>
+    [HttpPost("Settings/ForwardedHeaders")]
+    [Authorize(Policy = Policies.RequiresElevation)]
+    public ActionResult<object> UpdateForwardedHeaders([FromBody] ForwardedHeadersDto body)
+    {
+        if (body is null)
+        {
+            return BadRequest();
+        }
+
+        _service.MutateConfig(cfg =>
+        {
+            cfg.TrustForwardedHeaders = body.Enabled;
+            return true;
+        });
+        _service.Audit(ResolveActor(), "settings.forwardedHeaders", null, string.Empty,
+            "enabled=" + body.Enabled, persist: false);
+        _service.Save();
+        return Ok(new { trustForwardedHeaders = Cfg.TrustForwardedHeaders });
     }
 
     /// <summary>Returns the current user's subscription state and payment info.</summary>
@@ -923,6 +956,17 @@ public class NoPayNoPlayController : ControllerBase
             }
         }
 
+        if (!accepted)
+        {
+            // A claim was already pending: nothing changed, so skip the XML rewrite
+            // (the cooldown guard above makes this the common repeated-click path).
+            return Ok(new { ok = true });
+        }
+
+        _service.Audit(ResolveActor(), "payment.claim", userId.Value,
+            _userManager.GetUserById(userId.Value)?.Username ?? string.Empty,
+            "method=" + method,
+            persist: false);
         _service.Save();
         return Ok(new { ok = true });
     }
@@ -1006,7 +1050,7 @@ public class NoPayNoPlayController : ControllerBase
     [Authorize(Policy = Policies.RequiresElevation)]
     public async Task<ActionResult<object>> BulkNotify([FromBody] BulkUserDto body)
     {
-        if (body?.UserIds is null) return BadRequest();
+        if (body?.UserIds is null || body.UserIds.Count > MaxBulkUsers) return BadRequest();
         string culture = ResolveCulture();
         int sent = 0;
         foreach (var id in body.UserIds.Distinct())
@@ -1042,7 +1086,7 @@ public class NoPayNoPlayController : ControllerBase
         if (_userManager.GetUserById(userId) is null) return NotFound();
 
         // Idempotent retry protection, same as Pay.
-        if (IsIdempotencySeen(userId, body.IdempotencyKey))
+        if (!TryReserveIdempotencyKey(userId, body.IdempotencyKey))
         {
             return Ok(Project(_service.EnsureUserTracked(userId), ResolveCulture()));
         }
@@ -1060,7 +1104,6 @@ public class NoPayNoPlayController : ControllerBase
             $"amount={body.Amount} months={body.MonthsAdded}",
             persist: false);
         _service.Save();
-        MarkIdempotencySeen(userId, body.IdempotencyKey);
         return Ok(Project(sub, ResolveCulture()));
     }
 
@@ -1151,17 +1194,25 @@ public class NoPayNoPlayController : ControllerBase
         string lockKey = "redeem-fail:" + userId.Value.ToString("N");
         string clientIp = GetClientIp();
         string ipKey = "redeem-fail:ip:" + clientIp;
-        const string globalKey = "redeem-fail:global";
 
-        // Aggregated throttle: a per-user lockout alone can be sidestepped by
-        // creating many accounts, so we also gate on a per-IP and a global failure
-        // budget that the per-user reset can't clear. The per-IP budget uses the real
-        // client IP (X-Forwarded-For when present) and is sized so a shared reverse
-        // proxy can't be turned into a server-wide lockout by a handful of mistakes.
-        if (_rateLimiter.IsLocked(lockKey) || _rateLimiter.IsLocked(ipKey) || _rateLimiter.IsLocked(globalKey))
+        // The per-IP budget only makes sense when the client address is real. Behind
+        // a reverse proxy without TrustForwardedHeaders every request shares the
+        // proxy address, so locking on it would let one abusive client lock the whole
+        // server out. The per-user budget always applies.
+        bool perIp = Cfg.TrustForwardedHeaders;
+
+        if (_rateLimiter.IsLocked(lockKey) || (perIp && _rateLimiter.IsLocked(ipKey)))
         {
             return StatusCode(StatusCodes.Status429TooManyRequests,
                 new { ok = false, locked = true });
+        }
+
+        // Server-wide *rate* guard (no lockout): a distributed brute force is capped
+        // at a handful of attempts per second, and it cannot be abused to keep every
+        // other user locked out for 15 minutes the way a global failure lockout could.
+        if (!_rateLimiter.TryAcquire("redeem:server", TimeSpan.FromMilliseconds(200)))
+        {
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { ok = false });
         }
 
         // Hard floor between consecutive calls (UX-friendly debounce, prevents
@@ -1175,13 +1226,15 @@ public class NoPayNoPlayController : ControllerBase
         int months = _service.RedeemPromoCode(userId.Value, body.Code);
         if (months <= 0)
         {
-            // Track failed attempts: 5/user, 100/IP, 500 global within the window all
-            // trigger a 15-minute lockout, defeating slow brute-force enumeration without
-            // letting one user's mistakes (or a shared NAT/proxy IP) lock the whole server.
+            // 5 failed attempts lock the account for 15 minutes; the per-IP budget
+            // (30) stops someone cycling through many accounts on one address.
             bool locked = _rateLimiter.RegisterFailureAndShouldLock(
                 lockKey, threshold: 5, lockout: TimeSpan.FromMinutes(15));
-            _rateLimiter.RegisterFailureAndShouldLock(ipKey, threshold: 100, lockout: TimeSpan.FromMinutes(15));
-            _rateLimiter.RegisterFailureAndShouldLock(globalKey, threshold: 500, lockout: TimeSpan.FromMinutes(15));
+            if (perIp)
+            {
+                _rateLimiter.RegisterFailureAndShouldLock(ipKey, threshold: 30, lockout: TimeSpan.FromMinutes(15));
+            }
+
             return Ok(new { ok = false, locked });
         }
 
@@ -1209,27 +1262,32 @@ public class NoPayNoPlayController : ControllerBase
     }
 
     /// <summary>
-    /// Best-effort client IP: prefers the first <c>X-Forwarded-For</c> entry (typical
-    /// behind a reverse proxy) so the per-IP promo budget applies to individual clients
-    /// rather than the shared proxy address, and falls back to the TCP peer.
+    /// Best-effort client IP. <c>X-Forwarded-For</c> is only honoured when the admin
+    /// explicitly enabled <see cref="PluginConfiguration.TrustForwardedHeaders"/>:
+    /// the header is client-controlled, so trusting it by default lets an attacker
+    /// choose the bucket they are throttled in (and lock an arbitrary IP out).
     /// </summary>
     private string GetClientIp()
     {
-        try
+        if (Cfg.TrustForwardedHeaders)
         {
-            string? xff = Request.Headers["X-Forwarded-For"].ToString();
-            if (!string.IsNullOrWhiteSpace(xff))
+            try
             {
-                string first = xff.Split(',')[0].Trim();
-                if (System.Net.IPAddress.TryParse(first, out _))
+                string? xff = Request.Headers["X-Forwarded-For"].ToString();
+                if (!string.IsNullOrWhiteSpace(xff))
                 {
-                    return first;
+                    // Right-most entry: the one appended by the nearest trusted proxy.
+                    string candidate = xff.Split(',')[^1].Trim();
+                    if (System.Net.IPAddress.TryParse(candidate, out _))
+                    {
+                        return candidate;
+                    }
                 }
             }
-        }
-        catch (Exception)
-        {
-            // fall through to the TCP peer
+            catch (Exception)
+            {
+                // fall through to the TCP peer
+            }
         }
 
         return HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -1259,18 +1317,35 @@ public class NoPayNoPlayController : ControllerBase
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _idempotencyKeys = new();
 
-    private bool IsIdempotencySeen(Guid userId, string? key)
+    /// <summary>
+    /// Atomically reserves an idempotency key, returning <c>false</c> when the same
+    /// (user, key) pair was already accepted within the retention window.
+    /// </summary>
+    /// <remarks>
+    /// Reserving up-front (instead of "check now, record after the work") closes the
+    /// TOCTOU window in which a double-click or a proxy retry could deliver two
+    /// concurrent requests that both passed the check and recorded the payment twice.
+    /// The key is kept even if the work later fails: refusing a duplicate is always
+    /// safer than charging a member twice.
+    /// </remarks>
+    private bool TryReserveIdempotencyKey(Guid userId, string? key)
     {
-        if (string.IsNullOrWhiteSpace(key)) return false;
+        if (string.IsNullOrWhiteSpace(key)) return true;
         PruneIdempotency();
         string k = userId.ToString("N") + ":" + key.Trim();
-        return _idempotencyKeys.TryGetValue(k, out var until) && until > DateTime.UtcNow;
-    }
-
-    private void MarkIdempotencySeen(Guid userId, string? key)
-    {
-        if (string.IsNullOrWhiteSpace(key)) return;
-        _idempotencyKeys[userId.ToString("N") + ":" + key.Trim()] = DateTime.UtcNow.AddMinutes(5);
+        DateTime now = DateTime.UtcNow;
+        while (true)
+        {
+            if (_idempotencyKeys.TryGetValue(k, out var until))
+            {
+                if (until > now) return false;
+                if (_idempotencyKeys.TryUpdate(k, now.AddMinutes(5), until)) return true;
+            }
+            else if (_idempotencyKeys.TryAdd(k, now.AddMinutes(5)))
+            {
+                return true;
+            }
+        }
     }
 
     private static void PruneIdempotency()

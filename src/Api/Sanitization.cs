@@ -19,7 +19,21 @@ public static class Sanitization
             return string.Empty;
         }
 
-        return value.Length <= max ? value : value.Substring(0, max);
+        if (value.Length <= max)
+        {
+            return value;
+        }
+
+        // Never split a surrogate pair: the result would be invalid UTF-16 and the
+        // XML serializer refuses to write it (ArgumentException), aborting the save
+        // after the admin action was already applied in memory.
+        int length = Math.Max(0, max);
+        if (length > 0 && char.IsHighSurrogate(value[length - 1]))
+        {
+            length--;
+        }
+
+        return value.Substring(0, length);
     }
 
     /// <summary>
