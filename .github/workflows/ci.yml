@@ -80,10 +80,12 @@ jobs:
         # coverlet.collector produces an all-zero report on .NET 10, so coverage is
         # collected out-of-process with dotnet-coverage (pinned in
         # .config/dotnet-tools.json) instead of --collect:"XPlat Code Coverage".
-        run: >
-          dotnet tool run dotnet-coverage collect
-          "dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj -c Release --no-build --logger 'trx;LogFileName=test-results.trx' --no-restore"
-          -f cobertura -o tests/TestResults/coverage.cobertura.xml
+        # No nested quotes: the command runs through a YAML block scalar, so an
+        # inner 'trx;LogFileName=...' would reach VSTest verbatim and fail.
+        run: |
+          dotnet tool run dotnet-coverage collect \
+            "dotnet test tests/Jellyfin.Plugin.NoPayNoPlay.Tests.csproj -c Release --no-build --no-restore --logger trx" \
+            -f cobertura -o tests/TestResults/coverage.cobertura.xml
 
       - name: Enforce coverage threshold
         # Previous CI never measured coverage at all, so the 43 % baseline silently
