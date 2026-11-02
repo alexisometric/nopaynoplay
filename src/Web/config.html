@@ -24,14 +24,26 @@
             --npnp-ok: #2ecc71;
             --npnp-warn: #f39c12;
             --npnp-danger: #e74c3c;
-            --npnp-surface-1: color-mix(in srgb, currentColor 5%, transparent);
-            --npnp-surface-2: color-mix(in srgb, currentColor 10%, transparent);
-            --npnp-border: color-mix(in srgb, currentColor 12%, transparent);
-            --npnp-border-strong: color-mix(in srgb, currentColor 22%, transparent);
+            /* Solid fallbacks for browsers without color-mix(); the @supports
+               block below overrides them when color-mix() is available. */
+            --npnp-surface-1: rgba(128, 128, 128, 0.06);
+            --npnp-surface-2: rgba(128, 128, 128, 0.12);
+            --npnp-border: rgba(128, 128, 128, 0.18);
+            --npnp-border-strong: rgba(128, 128, 128, 0.28);
             --npnp-modal-bg: var(--theme-body-background-color, var(--background-color, #202020));
             --npnp-modal-fg: var(--theme-body-color, inherit);
-            --npnp-glass-bg: color-mix(in srgb, currentColor 3%, transparent);
+            --npnp-glass-bg: rgba(128, 128, 128, 0.05);
             --npnp-blur: var(--blurDefault, none);
+        }
+
+        @supports (color: color-mix(in srgb, red 50%, blue)) {
+            #NoPayNoPlayConfigPage {
+                --npnp-surface-1: color-mix(in srgb, currentColor 5%, transparent);
+                --npnp-surface-2: color-mix(in srgb, currentColor 10%, transparent);
+                --npnp-border: color-mix(in srgb, currentColor 12%, transparent);
+                --npnp-border-strong: color-mix(in srgb, currentColor 22%, transparent);
+                --npnp-glass-bg: color-mix(in srgb, currentColor 3%, transparent);
+            }
         }
 
         /* --- Navigation tabs --- */
@@ -637,7 +649,7 @@
                         </div>
                         <div class="npnp-sort-dir-wrap">
                             <button is="emby-button" type="button" id="npnpSortDir" class="button-alt npnp-sort-dir"
-                                title="Ascending" aria-label="Ascending">
+                                data-i18n-title="admin.users.sort.asc" data-i18n-aria-label="admin.users.sort.asc">
                                 <span class="material-icons" aria-hidden="true">arrow_upward</span>
                             </button>
                         </div>
@@ -821,6 +833,7 @@
                         </button>
                     </div>
                     <div class="inputContainer" style="margin-top:12px;">
+                        <label for="npnpTestUrl" data-i18n="admin.test.url">Test URL</label>
                         <input is="emby-input" id="npnpTestUrl" type="text" readonly />
                     </div>
                 </div>

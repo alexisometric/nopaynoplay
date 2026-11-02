@@ -405,5 +405,12 @@
   "admin.test.theme.jellyfin": "Jellyfin по умолчанию",
   "admin.test.theme.elegantfin": "ElegantFin",
   "user.modal.history.showAll": "Показать все ({n})",
-  "user.modal.trial.pill": "Бесплатный пробный период"
+  "user.modal.trial.pill": "Бесплатный пробный период",
+  "admin.diag.copyFailed": "Не удалось скопировать в буфер обмена.",
+  "admin.test.copyFailed": "Не удалось скопировать URL.",
+  "admin.error.forbidden": "Доступ запрещён (403): вашей учётной записи не разрешено это действие.",
+  "admin.error.http": "Запрос не выполнен (HTTP {0}).",
+  "admin.error.noApi": "API Jellyfin недоступен.",
+  "admin.error.request": "Не удалось выполнить запрос.",
+  "admin.unsaved.title": "Несохранённые изменения"
 }

@@ -389,5 +389,12 @@
   "admin.test.theme.jellyfin": "Jellyfin par défaut",
   "admin.test.theme.elegantfin": "ElegantFin",
   "user.modal.history.showAll": "Tout afficher ({n})",
-  "user.modal.trial.pill": "Essai gratuit"
+  "user.modal.trial.pill": "Essai gratuit",
+  "admin.diag.copyFailed": "Impossible de copier dans le presse-papiers.",
+  "admin.test.copyFailed": "Impossible de copier l'URL.",
+  "admin.error.forbidden": "Accès refusé (403) : votre compte n'est pas autorisé à effectuer cette action.",
+  "admin.error.http": "La requête a échoué (HTTP {0}).",
+  "admin.error.noApi": "L'API Jellyfin n'est pas disponible.",
+  "admin.error.request": "La requête n'a pas pu être menée à bien.",
+  "admin.unsaved.title": "Modifications non enregistrées"
 }

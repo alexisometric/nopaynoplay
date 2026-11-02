@@ -387,5 +387,12 @@
   "admin.test.theme.jellyfin": "Jellyfin 默认",
   "admin.test.theme.elegantfin": "ElegantFin",
   "user.modal.history.showAll": "显示全部（{n}）",
-  "user.modal.trial.pill": "免费试用"
+  "user.modal.trial.pill": "免费试用",
+  "admin.diag.copyFailed": "无法复制到剪贴板。",
+  "admin.test.copyFailed": "无法复制该 URL。",
+  "admin.error.forbidden": "访问被拒绝（403）：你的账户无权执行此操作。",
+  "admin.error.http": "请求失败（HTTP {0}）。",
+  "admin.error.noApi": "Jellyfin API 不可用。",
+  "admin.error.request": "无法完成该请求。",
+  "admin.unsaved.title": "未保存的更改"
 }

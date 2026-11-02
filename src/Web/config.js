@@ -38,6 +38,95 @@
 
     function api() { return window.ApiClient; }
 
+    // Native names for the eight shipped cultures, so the selector never shows
+    // raw codes (and stays sorted by the name the user actually reads).
+    var LANG_NAMES = {
+        de: 'Deutsch', en: 'English', es: 'Español', fr: 'Français',
+        it: 'Italiano', pt: 'Português', ru: 'Русский', zh: '中文'
+    };
+    var RTL_LANGS = { ar: 1, fa: 1, he: 1, ur: 1 };
+
+    // Keeps the document language/direction in sync with the culture the page
+    // is displayed in (WCAG 3.1.1 Language of Page).
+    function applyDocumentLang() {
+        var lang = i18n.lang || detectLang() || 'en';
+        try {
+            document.documentElement.lang = lang;
+            document.documentElement.dir = RTL_LANGS[String(lang).split('-')[0].toLowerCase()] ? 'rtl' : 'ltr';
+        } catch (_) {}
+    }
+
+    // Human readable request error, with a dedicated message for 403 (the API
+    // returns it when the current user no longer has the admin permission).
+    function requestErrorMessage(err) {
+        var status = err && (err.status || err.statusCode);
+        var detail = '';
+        if (err && err.data && typeof err.data === 'object') {
+            detail = err.data.message || err.data.Message || '';
+        }
+        if (status === 403) {
+            return t('admin.error.forbidden', 'Access denied (403): your account is not allowed to perform this action.');
+        }
+        var base = status
+            ? t('admin.error.http', 'Request failed (HTTP {0}).').replace('{0}', String(status))
+            : t('admin.error.request', 'The request could not be completed.');
+        return detail ? base + ' ' + detail : base;
+    }
+
+    // Single mutation path for admin actions: one explicit error toast, the
+    // button's busy state always restored, and no success UI on failure.
+    // Resolves with { ok, value } and never rejects.
+    function mutate(page, options) {
+        var opts = options || {};
+        var btn = opts.button || null;
+        var request = {};
+        Object.keys(opts).forEach(function (key) {
+            if (key !== 'button') request[key] = opts[key];
+        });
+        if (btn) setBusyButton(btn, true);
+        if (!api()) {
+            flash(page, t('admin.error.noApi', 'Jellyfin API is not available.'), true);
+            if (btn) setBusyButton(btn, false);
+            return Promise.resolve({ ok: false });
+        }
+        return api().ajax(request).then(function (value) {
+            if (btn) setBusyButton(btn, false);
+            return { ok: true, value: value };
+        }, function (err) {
+            if (btn) setBusyButton(btn, false);
+            flash(page, requestErrorMessage(err), true);
+            if (window.console && window.console.error) {
+                window.console.error('NoPayNoPlay: request failed', request.url, err);
+            }
+            return { ok: false, error: err };
+        });
+    }
+
+    // Clipboard write with a legacy fallback; resolves to true only when the
+    // copy really happened, so callers can avoid a misleading success message.
+    function legacyCopy(text) {
+        var area = document.createElement('textarea');
+        var ok = false;
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.top = '-1000px';
+        document.body.appendChild(area);
+        area.select();
+        try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+        document.body.removeChild(area);
+        return ok;
+    }
+
+    function copyText(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text).then(function () { return true; }, function () {
+                return legacyCopy(text);
+            });
+        }
+        return Promise.resolve(legacyCopy(text));
+    }
+
     function detectLang() {
         try {
             var docLang = document.documentElement && document.documentElement.lang;
@@ -124,6 +213,13 @@
             var fallback = el.textContent;
             el.textContent = t(key, fallback);
         });
+        page.querySelectorAll('[data-i18n-title]').forEach(function (el) {
+            el.setAttribute('title', t(el.getAttribute('data-i18n-title'), el.getAttribute('title') || ''));
+        });
+        page.querySelectorAll('[data-i18n-aria-label]').forEach(function (el) {
+            el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label'), el.getAttribute('aria-label') || ''));
+        });
+        applyDocumentLang();
     }
 
     function flash(page, message, isError) {
@@ -166,8 +262,15 @@
         if (!sel) return;
         var cur = sel.value;
         var options = ['<option value="">' + escapeHtml(t('admin.settings.uiCulture.auto', 'Auto')) + '</option>'];
-        i18n.available.slice().sort().forEach(function (code) {
-            options.push('<option value="' + escapeHtml(code) + '">' + escapeHtml(code) + '</option>');
+        i18n.available.slice().sort(function (a, b) {
+            var an = LANG_NAMES[String(a).split('-')[0].toLowerCase()] || a;
+            var bn = LANG_NAMES[String(b).split('-')[0].toLowerCase()] || b;
+            return an < bn ? -1 : (an > bn ? 1 : 0);
+        }).forEach(function (code) {
+            var base = String(code).split('-')[0].toLowerCase();
+            var name = LANG_NAMES[base] || code;
+            options.push('<option value="' + escapeHtml(code) + '" dir="' +
+                (RTL_LANGS[base] ? 'rtl' : 'ltr') + '">' + escapeHtml(name) + '</option>');
         });
         sel.innerHTML = options.join('');
         if (cur) sel.value = cur;
@@ -304,7 +407,7 @@
             ['admin.stats.active', 'Active subscribers', s.activeSubscribers, true]
         ];
         el.innerHTML = cards.map(function (card) {
-            var val = card[3] ? String(card[2] || 0) : (formatPrice(card[2]) + ' ' + escapeHtml(c));
+            var val = card[3] ? String(card[2] || 0) : (formatPrice(card[2]) + ' ' + c);
             return '<div class="npnp-stat-card">'
                 + '<span class="npnp-stat-num">' + escapeHtml(val) + '</span>'
                 + '<span class="npnp-stat-lbl">' + escapeHtml(t(card[0], card[1])) + '</span>'
@@ -741,8 +844,12 @@
         if (btn) {
             var ic = btn.querySelector('.material-icons');
             if (ic) ic.textContent = state.sortDir > 0 ? 'arrow_upward' : 'arrow_downward';
-            var lbl = t(state.sortDir > 0 ? 'admin.users.sort.asc' : 'admin.users.sort.desc',
-                state.sortDir > 0 ? 'Ascending' : 'Descending');
+            var dirKey = state.sortDir > 0 ? 'admin.users.sort.asc' : 'admin.users.sort.desc';
+            var lbl = t(dirKey, state.sortDir > 0 ? 'Ascending' : 'Descending');
+            // Keep the static-i18n attributes in sync so a later pageshow does not
+            // reset the direction label back to "Ascending".
+            btn.setAttribute('data-i18n-title', dirKey);
+            btn.setAttribute('data-i18n-aria-label', dirKey);
             btn.setAttribute('aria-label', lbl);
             btn.title = lbl;
         }
@@ -933,14 +1040,18 @@
             if (tagSel) {
                 tagSel.addEventListener('change', function () {
                     var newTag = tagSel.value || '';
-                    api().ajax({
+                    mutate(page, {
                         type: 'POST',
                         url: api().getUrl('NoPayNoPlay/Users/' + userId + '/Tag'),
                         data: JSON.stringify({ Tag: newTag }),
                         contentType: 'application/json'
-                    }).then(function () {
-                        flash(page, t(newTag ? 'admin.users.tag.set' : 'admin.users.tag.cleared',
-                            newTag ? 'Tag updated.' : 'Tag removed.'));
+                    }).then(function (res) {
+                        if (res.ok) {
+                            flash(page, t(newTag ? 'admin.users.tag.set' : 'admin.users.tag.cleared',
+                                newTag ? 'Tag updated.' : 'Tag removed.'));
+                        }
+                        // Reload either way: on failure the select must show the
+                        // server value again instead of the optimistic one.
                         return loadUsers(page);
                     });
                 });
@@ -951,7 +1062,8 @@
             if (historyBtn) historyBtn.addEventListener('click', function () { openHistoryModal(page, user); });
             var exemptBtn = tr.querySelector('.npnp-exempt');
             if (exemptBtn) exemptBtn.addEventListener('click', function () {
-                api().ajax({
+                mutate(page, {
+                    button: exemptBtn,
                     type: 'POST',
                     url: api().getUrl('NoPayNoPlay/Users/' + userId + '/Exempt'),
                     data: JSON.stringify({ IsExempt: !user.IsExempt }),
@@ -963,8 +1075,9 @@
                 openConfirmModal(page,
                     t('admin.users.action.reset', 'Reset trial'),
                     t('admin.users.confirm.reset', 'Reset this user back to a fresh trial?'),
-                    function () {
-                        api().ajax({
+                    function (confirmBtn) {
+                        return mutate(page, {
+                            button: confirmBtn,
                             type: 'POST',
                             url: api().getUrl('NoPayNoPlay/Users/' + userId + '/Reset')
                         }).then(function () { return loadUsers(page); });
@@ -979,11 +1092,12 @@
             var rejectBtn = tr.querySelector('.npnp-reject-pending');
             if (rejectBtn) {
                 rejectBtn.addEventListener('click', function () {
-                    api().ajax({
+                    mutate(page, {
+                        button: rejectBtn,
                         type: 'POST',
                         url: api().getUrl('NoPayNoPlay/Users/' + userId + '/RejectPending')
-                    }).then(function () {
-                        flash(page, t('admin.users.pending.rejected', 'Claim rejected.'));
+                    }).then(function (res) {
+                        if (res.ok) flash(page, t('admin.users.pending.rejected', 'Claim rejected.'));
                         return loadUsers(page);
                     });
                 });
@@ -1043,6 +1157,9 @@
         if (state.activityPage > totalPages) state.activityPage = totalPages;
         var start = (state.activityPage - 1) * state.activityPageSize;
         var pageRows = rows.slice(start, start + state.activityPageSize);
+        // One currency for the whole column, always displayed (the amount alone
+        // was ambiguous when several currencies are configured).
+        var activityCurrency = (state.stats && state.stats.currency) || state.settings.Currency || 'EUR';
 
         var html = '<table class="npnp-table">'
             + '<thead><tr>'
@@ -1057,7 +1174,7 @@
             html += '<tr>'
                 + '<td>' + escapeHtml(formatDateTime(r.Date)) + '</td>'
                 + '<td>' + escapeHtml(r.Username || '') + '</td>'
-                + '<td>' + escapeHtml(formatPrice(r.Amount)) + '</td>'
+                + '<td>' + escapeHtml(formatPrice(r.Amount) + ' ' + (r.Currency || activityCurrency)) + '</td>'
                 + '<td>' + escapeHtml(r.Method || '') + '</td>'
                 + '<td>' + escapeHtml(String(r.MonthsAdded || 0)) + '</td>'
                 + '<td>' + escapeHtml(r.AdminNote || '') + '</td>'
@@ -1106,11 +1223,28 @@
 
     function uuid() {
         if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-            var r = Math.random() * 16 | 0;
-            var v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
+        var bytes = null;
+        if (window.crypto && typeof crypto.getRandomValues === 'function') {
+            try {
+                bytes = new Uint8Array(16);
+                crypto.getRandomValues(bytes);
+            } catch (_) { bytes = null; }
+        }
+        if (!bytes) {
+            // Last resort on ancient engines: Math.random is not cryptographic,
+            // but the key only prevents accidental double submission.
+            bytes = new Uint8Array(16);
+            for (var i = 0; i < 16; i++) bytes[i] = Math.random() * 256 | 0;
+        }
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
+        var hex = [];
+        for (var j = 0; j < 16; j++) {
+            hex.push((bytes[j] + 0x100).toString(16).slice(1));
+        }
+        return hex.slice(0, 4).join('') + '-' + hex.slice(4, 6).join('') + '-'
+            + hex.slice(6, 8).join('') + '-' + hex.slice(8, 10).join('') + '-'
+            + hex.slice(10, 16).join('');
     }
 
     function closeModal(page) {
@@ -1118,14 +1252,67 @@
         if (root) root.innerHTML = '';
     }
 
+    // Only http(s), mailto and relative URLs are kept; anything else (notably
+    // javascript: and data:) collapses to '#'. Leading/trailing control
+    // characters are stripped so "java\nscript:" cannot slip through.
+    function safeModalUrl(value) {
+        var url = String(value == null ? '' : value).replace(/^[\s\u0000-\u001f]+|[\s\u0000-\u001f]+$/g, '');
+        // Browsers ignore ASCII whitespace/control characters *inside* a scheme
+        // ("java\nscript:"), so detect the scheme on a compacted copy; the original
+        // value is kept for legitimate relative URLs.
+        var compact = url.replace(/[\u0000-\u0020]+/g, '');
+        var match = /^([a-z][a-z0-9+.-]*):/i.exec(compact);
+        if (!match) return url;
+        var scheme = match[1].toLowerCase();
+        if (scheme === 'http' || scheme === 'https' || scheme === 'mailto') return url;
+        return '#';
+    }
+
     // Defense-in-depth for buildModal: modal content is pre-escaped by every caller,
-    // but strip any <script> block, inline event handler or javascript: URL that a
-    // future caller (or a compromised server response) could slip through.
+    // but a real DOM sanitizer is used instead of regexes, which are bypassable
+    // (e.g. <svg/onload=...>). Script/style/iframe/object/embed/link/meta are
+    // removed, every on* handler is dropped and URL attributes are normalised.
     function sanitizeModalHtml(html) {
-        return String(html == null ? '' : html)
-            .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, '')
-            .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-            .replace(/(\bhref|\bsrc)\s*=\s*(["'])\s*javascript:[^"']*\2/gi, '$1=$2#');
+        var source = String(html == null ? '' : html);
+        var template = document.createElement('template');
+        if (!('content' in template)) {
+            // Very old engines: fall back to an inert document.
+            var doc = document.implementation.createHTMLDocument('');
+            var fallback = doc.createElement('div');
+            fallback.innerHTML = source;
+            return sanitizeModalTree(fallback) ? fallback.innerHTML : '';
+        }
+        template.innerHTML = source;
+        sanitizeModalTree(template.content);
+        return template.innerHTML;
+    }
+
+    var MODAL_BLOCKED_TAGS = { SCRIPT: 1, STYLE: 1, IFRAME: 1, OBJECT: 1, EMBED: 1, LINK: 1, META: 1 };
+
+    function sanitizeModalTree(root) {
+        var elements = root.querySelectorAll('*');
+        for (var i = elements.length - 1; i >= 0; i--) {
+            var el = elements[i];
+            var tag = String(el.tagName || '').toUpperCase();
+            if (MODAL_BLOCKED_TAGS[tag]) {
+                if (el.parentNode) el.parentNode.removeChild(el);
+                continue;
+            }
+            var attrs = Array.prototype.slice.call(el.attributes || []);
+            for (var j = 0; j < attrs.length; j++) {
+                var name = attrs[j].name;
+                var lower = name.toLowerCase();
+                if (lower.indexOf('on') === 0) {
+                    el.removeAttribute(name);
+                } else if (lower === 'href' || lower === 'src' || lower === 'xlink:href'
+                    || lower === 'formaction' || lower === 'poster') {
+                    el.setAttribute(name, safeModalUrl(attrs[j].value));
+                } else if (lower === 'srcdoc') {
+                    el.removeAttribute(name);
+                }
+            }
+        }
+        return true;
     }
 
     function buildModal(page, titleHtml, bodyHtml, footerHtml) {
@@ -1197,9 +1384,30 @@
             '<button is="emby-button" type="button" class="button-alt" data-npnp-cancel>' + escapeHtml(t('common.cancel', 'Cancel')) + '</button>'
             + '<button is="emby-button" type="button" class="raised button-submit" data-npnp-confirm>' + escapeHtml(t('common.ok', 'OK')) + '</button>');
         modal.querySelector('[data-npnp-cancel]').addEventListener('click', function () { closeModal(page); });
-        modal.querySelector('[data-npnp-confirm]').addEventListener('click', function () {
-            closeModal(page);
-            onConfirm();
+        var confirmBtn = modal.querySelector('[data-npnp-confirm]');
+        confirmBtn.addEventListener('click', function () {
+            // Give the handler the confirm button so a slow request can show a
+            // busy state; keep the dialog open until an returned promise settles.
+            var result;
+            try {
+                result = onConfirm(confirmBtn);
+            } catch (err) {
+                if (window.console && window.console.error) console.error('NoPayNoPlay: confirm handler failed', err);
+                closeModal(page);
+                return;
+            }
+            if (result && typeof result.then === 'function') {
+                result.then(function (value) {
+                    // A handler that reports { ok: false } (the `mutate` contract)
+                    // failed: keep the dialog open so the error toast stays contextual.
+                    if (value && value.ok === false) return;
+                    closeModal(page);
+                }, function () {
+                    // The handler owns its error reporting; leave the dialog open.
+                });
+            } else {
+                closeModal(page);
+            }
         });
     }
 
@@ -1246,11 +1454,13 @@
                 openConfirmModal(page,
                     t('admin.users.tx.delete', 'Delete'),
                     t('admin.users.tx.confirm.delete', 'Delete this transaction? The expiry date will be recomputed.'),
-                    function () {
-                        api().ajax({
+                    function (confirmBtn) {
+                        return mutate(page, {
+                            button: confirmBtn,
                             type: 'DELETE',
                             url: api().getUrl('NoPayNoPlay/Users/' + user.UserId + '/Transactions/' + txId)
-                        }).then(function () {
+                        }).then(function (res) {
+                            if (!res.ok) return res;
                             closeModal(page);
                             return loadUsers(page).then(function () { return loadActivity(page); });
                         });
@@ -1447,11 +1657,13 @@
                 openConfirmModal(page,
                     t('admin.promo.delete', 'Delete'),
                     t('admin.promo.deleteConfirm', 'Delete this promo code?'),
-                    function () {
-                        api().ajax({
+                    function (confirmBtn) {
+                        return mutate(page, {
+                            button: confirmBtn,
                             type: 'DELETE',
                             url: api().getUrl('NoPayNoPlay/PromoCodes/' + encodeURIComponent(id))
-                        }).then(function () {
+                        }).then(function (res) {
+                            if (!res.ok) return res;
                             flash(page, t('admin.promo.deleted', 'Promo code deleted.'));
                             return loadPromoCodes(page);
                         });
@@ -1505,7 +1717,15 @@
 
     // Detect unsaved changes in the Tiers or Tags inline editors by comparing
     // the current DOM values against the last-saved state snapshot.
+    // Set right before a confirmed "leave without saving": the resumed tab switch
+    // must not re-detect the very edits the user just agreed to discard.
+    var discardPendingEdits = false;
+
     function hasUnsavedEdits() {
+        if (discardPendingEdits) {
+            discardPendingEdits = false;
+            return false;
+        }
         try {
             var tiersTable = document.querySelector('#npnpTiersTable');
             if (tiersTable) {
@@ -1555,7 +1775,18 @@
         var currentActive = page.querySelector('.npnp-tab-panel.active');
         var currentTabId = currentActive ? currentActive.id.replace('npnpTab-', '') : '';
         if ((currentTabId === 'tiers' || currentTabId === 'tags') && tab !== currentTabId && hasUnsavedEdits()) {
-            if (!confirm(t('admin.unsaved.confirm', 'You have unsaved changes. Leave without saving?'))) return;
+            // Native confirm() ignored the admin theme, could not be translated by
+            // the plugin and blocked the page; use the same themed dialog as every
+            // other destructive action. The switch resumes from the callback.
+            openConfirmModal(
+                page,
+                t('admin.unsaved.title', 'Unsaved changes'),
+                t('admin.unsaved.confirm', 'You have unsaved changes. Leave without saving?'),
+                function () {
+                    discardPendingEdits = true;
+                    activateTab(page, tab, moveFocus, skipLazyLoad);
+                });
+            return;
         }
 
         var btns = Array.prototype.slice.call(page.querySelectorAll('.npnp-tab-btn'));
@@ -1701,14 +1932,16 @@
         if (saveBtn) {
             saveBtn.addEventListener('click', function () {
                 var payload = collectTiers(page);
-                api().ajax({
+                mutate(page, {
+                    button: saveBtn,
                     type: 'PUT',
                     url: api().getUrl('NoPayNoPlay/Tiers'),
                     data: JSON.stringify(payload),
                     contentType: 'application/json',
                     dataType: 'json'
-                }).then(function (rows) {
-                    state.tiers = rows || [];
+                }).then(function (res) {
+                    if (!res.ok) return;
+                    state.tiers = res.value || [];
                     renderTiers(page);
                     snapshotSavedState();
                     flash(page, t('admin.tiers.saved', 'Tiers saved.'));
@@ -1790,14 +2023,16 @@
         if (saveBtn) {
             saveBtn.addEventListener('click', function () {
                 var payload = collectTags(page);
-                api().ajax({
+                mutate(page, {
+                    button: saveBtn,
                     type: 'PUT',
                     url: api().getUrl('NoPayNoPlay/Tags'),
                     data: JSON.stringify(payload),
                     contentType: 'application/json',
                     dataType: 'json'
-                }).then(function (rows) {
-                    state.tags = rows || [];
+                }).then(function (res) {
+                    if (!res.ok) return;
+                    state.tags = res.value || [];
                     renderTags(page);
                     snapshotSavedState();
                     flash(page, t('admin.tags.saved', 'Tags saved.'));
@@ -1882,8 +2117,11 @@
         page.querySelector('#npnpTestCopy').addEventListener('click', function () {
             refreshUrl();
             var url = page.querySelector('#npnpTestUrl').value;
-            if (navigator.clipboard) navigator.clipboard.writeText(url);
-            flash(page, t('admin.test.copied', 'URL copied!'));
+            copyText(url).then(function (ok) {
+                flash(page, ok
+                    ? t('admin.test.copied', 'URL copied!')
+                    : t('admin.test.copyFailed', 'Could not copy the URL.'), !ok);
+            });
         });
         refreshUrl();
     }
@@ -2192,7 +2430,9 @@
                 Amount: parseFloat(modal.querySelector('#npnpBulkAmount').value || '0'),
                 MonthsAdded: parseInt(modal.querySelector('#npnpBulkMonths').value || '1', 10),
                 Method: modal.querySelector('#npnpBulkMethod').value || 'Other',
-                Note: ''
+                Note: '',
+                // Same idempotency contract as the single payment endpoint.
+                IdempotencyKey: uuid()
             };
             setBusyButton(confirmBtn, true);
             api().ajax({
@@ -2233,6 +2473,8 @@
                         : t('admin.diag.retry.ko', 'Registration failed — see notes below.'),
                         !(resp && resp.ok));
                     return loadStatus(page);
+                }).catch(function (err) {
+                    flash(page, requestErrorMessage(err), true);
                 }).finally(function () { Dashboard.hideLoadingMsg(); });
             });
         }
@@ -2242,8 +2484,11 @@
         if (copyBtn) {
             copyBtn.addEventListener('click', function () {
                 var json = JSON.stringify(state.diagnostics || {}, null, 2);
-                if (navigator.clipboard) navigator.clipboard.writeText(json);
-                flash(page, t('admin.diag.copied', 'Diagnostics copied to clipboard.'));
+                copyText(json).then(function (ok) {
+                    flash(page, ok
+                        ? t('admin.diag.copied', 'Diagnostics copied to clipboard.')
+                        : t('admin.diag.copyFailed', 'Could not copy to clipboard.'), !ok);
+                });
             });
         }
     }

@@ -388,5 +388,12 @@
   "admin.test.theme": "Preview theme",
   "admin.test.theme.auto": "Auto (current theme)",
   "admin.test.theme.jellyfin": "Jellyfin default",
-  "admin.test.theme.elegantfin": "ElegantFin"
+  "admin.test.theme.elegantfin": "ElegantFin",
+  "admin.diag.copyFailed": "Could not copy to clipboard.",
+  "admin.test.copyFailed": "Could not copy the URL.",
+  "admin.error.forbidden": "Access denied (403): your account is not allowed to perform this action.",
+  "admin.error.http": "Request failed (HTTP {0}).",
+  "admin.error.noApi": "Jellyfin API is not available.",
+  "admin.error.request": "The request could not be completed.",
+  "admin.unsaved.title": "Unsaved changes"
 }

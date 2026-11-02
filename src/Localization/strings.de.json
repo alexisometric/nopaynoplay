@@ -387,5 +387,12 @@
   "admin.test.theme.jellyfin": "Jellyfin-Standard",
   "admin.test.theme.elegantfin": "ElegantFin",
   "user.modal.history.showAll": "Alle anzeigen ({n})",
-  "user.modal.trial.pill": "Kostenlose Testphase"
+  "user.modal.trial.pill": "Kostenlose Testphase",
+  "admin.diag.copyFailed": "Kopieren in die Zwischenablage fehlgeschlagen.",
+  "admin.test.copyFailed": "URL konnte nicht kopiert werden.",
+  "admin.error.forbidden": "Zugriff verweigert (403): Ihr Konto darf diese Aktion nicht ausführen.",
+  "admin.error.http": "Anfrage fehlgeschlagen (HTTP {0}).",
+  "admin.error.noApi": "Die Jellyfin-API ist nicht verfügbar.",
+  "admin.error.request": "Die Anfrage konnte nicht abgeschlossen werden.",
+  "admin.unsaved.title": "Nicht gespeicherte Änderungen"
 }

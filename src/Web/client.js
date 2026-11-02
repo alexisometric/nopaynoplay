@@ -33,6 +33,33 @@
         exempt: 'Exempt'
     };
 
+    // Forced by ?npnpTestTheme=elegantfin. Declared before applyTestThemeOverride
+    // so its assignment is not reset by a later `var` initializer.
+    var _forcedEfSkin = false;
+
+    // Storage can throw (Safari private mode, disabled cookies, quota). Every
+    // access goes through this wrapper so a missing sessionStorage degrades to
+    // "not persisted" instead of surfacing as a fake network error on refresh.
+    var safeSession = {
+        available: function () {
+            try {
+                var key = '__npnp_probe__';
+                window.sessionStorage.setItem(key, '1');
+                window.sessionStorage.removeItem(key);
+                return true;
+            } catch (_) { return false; }
+        },
+        get: function (key) {
+            try { return window.sessionStorage.getItem(key); } catch (_) { return null; }
+        },
+        set: function (key, value) {
+            try { window.sessionStorage.setItem(key, value); return true; } catch (_) { return false; }
+        },
+        remove: function (key) {
+            try { window.sessionStorage.removeItem(key); return true; } catch (_) { return false; }
+        }
+    };
+
     // Resolves the API client used to reach the plugin's own /NoPayNoPlay endpoints.
     // Jellyfin 12 (all layouts) still assigns window.ApiClient on sign-in via
     // ServerConnections.setLocalApiClient — it is the supported bridge that plugin
@@ -64,7 +91,8 @@
         var raw = null;
         try { raw = localStorage.getItem('jellyfin_credentials'); } catch (_) {}
         if (!raw) return null;
-        var parsed = JSON.parse(raw);
+        var parsed = null;
+        try { parsed = JSON.parse(raw); } catch (_) { return null; }
         var server = (parsed && parsed.Servers) ? parsed.Servers[0] : null;
         if (!server || !server.AccessToken || !server.UserId) return null;
         return { token: server.AccessToken, userId: server.UserId };
@@ -94,7 +122,15 @@
                 if (opts.data && init.method !== 'GET') {
                     init.body = typeof opts.data === 'string' ? opts.data : JSON.stringify(opts.data);
                 }
-                return fetch(this.getUrl(opts.url), init).then(function (res) {
+                // Abort a stalled request after 15 s (no new dependency: the
+                // native API is feature-detected, older engines just skip it).
+                var timeoutId = null;
+                if (typeof window.AbortController === 'function') {
+                    var controller = new window.AbortController();
+                    init.signal = controller.signal;
+                    timeoutId = setTimeout(function () { controller.abort(); }, 15000);
+                }
+                var request = fetch(this.getUrl(opts.url), init).then(function (res) {
                     return res.text().then(function (text) {
                         if (!res.ok) {
                             var err = new Error('HTTP ' + res.status);
@@ -105,6 +141,20 @@
                         if (opts.dataType === 'json') return text ? JSON.parse(text) : null;
                         return text;
                     });
+                });
+                if (!timeoutId) return request;
+                return request.then(function (value) {
+                    clearTimeout(timeoutId);
+                    return value;
+                }, function (err) {
+                    clearTimeout(timeoutId);
+                    if (err && err.name === 'AbortError') {
+                        var timeoutErr = new Error('Request timed out');
+                        timeoutErr.status = 0;
+                        timeoutErr.timeout = true;
+                        throw timeoutErr;
+                    }
+                    throw err;
                 });
             }
         };
@@ -182,7 +232,6 @@
     // surfaces) so the banner / modal blend with ElegantFin's gradient background.
     // Detection is re-evaluated on every refresh so the skin applies even if the
     // theme's CSS loads after the plugin's.
-    var _forcedEfSkin = false;
     function isElegantFin() {
         try {
             var cs = getComputedStyle(document.documentElement);
@@ -263,6 +312,27 @@
         return state !== 'Exempt' && state !== 'Blocked';
     }
 
+    // Upper bound for API calls so a stalled request never leaves the UI in a
+    // loading state forever. The fallback fetch client additionally aborts the
+    // underlying request with AbortController.
+    function withTimeout(promise, ms) {
+        return new Promise(function (resolve, reject) {
+            var timer = setTimeout(function () {
+                var err = new Error('Request timed out');
+                err.status = 0;
+                err.timeout = true;
+                reject(err);
+            }, ms || 15000);
+            promise.then(function (value) {
+                clearTimeout(timer);
+                resolve(value);
+            }, function (err) {
+                clearTimeout(timer);
+                reject(err);
+            });
+        });
+    }
+
     function fetchMe() {
         var api = getApiClient();
         if (!api) return Promise.reject(new Error('ApiClient unavailable'));
@@ -275,7 +345,7 @@
         if (lastData && lastData.stringsHash && lastData.strings) {
             url += (url.indexOf('?') >= 0 ? '&' : '?') + 'strings=' + encodeURIComponent(lastData.stringsHash);
         }
-        return api.ajax({ type: 'GET', url: url, dataType: 'json' }).then(function (raw) {
+        return withTimeout(api.ajax({ type: 'GET', url: url, dataType: 'json' }).then(function (raw) {
             // Normalise the response keys to camelCase up front (Jellyfin 12 serialises
             // plugin API payloads in PascalCase - Strings/Lang/… - unlike the camelCase
             // Jellyfin 10.11 used). The unchanged-bundle guard below must run against
@@ -290,7 +360,7 @@
                 raw.strings = lastData.strings;
             }
             return raw;
-        });
+        }));
     }
 
     function getLangParam() {
@@ -318,29 +388,45 @@
         return '';
     }
 
+    // Keep the document language in sync with the culture actually rendered by the
+    // plugin (WCAG 3.1.1). ?lang= / data-culture may differ from the browser default,
+    // and screen readers must be told; `dir` is set for RTL locales.
+    var RTL_LANGS = { ar: 1, fa: 1, he: 1, ur: 1 };
+    function applyDocumentLang(lang) {
+        var code = String(lang || '').toLowerCase().split('-')[0];
+        if (!code) return;
+        try {
+            document.documentElement.lang = code;
+            // Only force a direction for RTL plugin locales: setting dir="ltr" on
+            // every page would override Jellyfin's own RTL UI (e.g. Arabic web
+            // client) even though the plugin itself has no RTL strings.
+            if (RTL_LANGS[code]) document.documentElement.dir = 'rtl';
+        } catch (_) {}
+    }
+
     function postJson(path, body) {
         var api = getApiClient();
         if (!api) return Promise.reject(new Error('ApiClient unavailable'));
-        return api.ajax({
+        return withTimeout(api.ajax({
             type: 'POST',
             url: api.getUrl('NoPayNoPlay/' + path),
             contentType: 'application/json',
             data: JSON.stringify(body || {}),
             dataType: 'json'
-        });
+        }));
     }
 
     // Persist simulated test-mode actions across the auto-refresh that happens
     // every few minutes (and after simulated successes). Stored only for the
     // current tab/session and only honoured while ?npnpTest=… is in the URL.
     function readTestSession() {
+        var raw = safeSession.get('npnpTestSession');
         try {
-            var raw = sessionStorage.getItem('npnpTestSession');
             return raw ? JSON.parse(raw) : {};
         } catch (_) { return {}; }
     }
     function writeTestSession(obj) {
-        try { sessionStorage.setItem('npnpTestSession', JSON.stringify(obj || {})); } catch (_) {}
+        safeSession.set('npnpTestSession', JSON.stringify(obj || {}));
     }
 
     function applyTestOverride(data) {
@@ -494,17 +580,18 @@
         var done = function () { toast(okMsg, 'success', dismissLabel); };
         var fail = function () { toast(failMsg, 'error', dismissLabel); };
         var fallback = function () {
+            var ta = document.createElement('textarea');
+            var ok = false;
             try {
-                var ta = document.createElement('textarea');
                 ta.value = text;
                 ta.style.position = 'fixed';
                 ta.style.opacity = '0';
                 document.body.appendChild(ta);
                 ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                done();
-            } catch (_) { fail(); }
+                ok = document.execCommand('copy');
+            } catch (_) { ok = false; }
+            if (ta.parentNode) ta.parentNode.removeChild(ta);
+            if (ok) done(); else fail();
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(text).then(done).catch(fallback);
@@ -606,23 +693,36 @@
             + '--npnp-bg:var(--theme-body-background-color,var(--background-color,#1a1a1a));'
             + '--npnp-fg:var(--theme-body-color,var(--theme-text-color,inherit));'
             + '--npnp-font:system-ui,-apple-system,"Segoe UI",sans-serif;'
-            + '--npnp-surface:color-mix(in srgb, currentColor 6%, transparent);'
-            + '--npnp-surface-hover:color-mix(in srgb, currentColor 12%, transparent);'
-            + '--npnp-border:color-mix(in srgb, currentColor 18%, transparent);'
-            + '--npnp-border-strong:color-mix(in srgb, currentColor 28%, transparent);'
-            + '--npnp-input-bg:color-mix(in srgb, currentColor 4%, transparent);'
+            + '--npnp-surface:rgba(128,128,128,0.06);'
+            + '--npnp-surface-hover:rgba(128,128,128,0.12);'
+            + '--npnp-border:rgba(128,128,128,0.18);'
+            + '--npnp-border-strong:rgba(128,128,128,0.28);'
+            + '--npnp-input-bg:rgba(128,128,128,0.04);'
             + '--npnp-ok:#2ecc71;'
             + '--npnp-warn:#f39c12;'
             + '--npnp-danger:#e74c3c;'
             + '--npnp-radius:var(--smallRadius,10px);'
             + '--npnp-large-radius:var(--largeRadius,16px);'
             + '--npnp-blur:var(--blurDefault,blur(4px));';
+        // Progressive override: only browsers that parse color-mix() get the
+        // currentColor-derived translucent surfaces; the rest keep the solid rgba
+        // fallbacks above (otherwise every var() using them is invalid at
+        // computed-value time and the surfaces disappear).
+        var themeVarsColorMix = ''
+            + '--npnp-surface:color-mix(in srgb, currentColor 6%, transparent);'
+            + '--npnp-surface-hover:color-mix(in srgb, currentColor 12%, transparent);'
+            + '--npnp-border:color-mix(in srgb, currentColor 18%, transparent);'
+            + '--npnp-border-strong:color-mix(in srgb, currentColor 28%, transparent);'
+            + '--npnp-input-bg:color-mix(in srgb, currentColor 4%, transparent);';
         var css = ''
             + '.npnp-modal-backdrop,#npnp-banner,.npnp-toast-stack{' + themeVars + '}'
+            + '@supports (color: color-mix(in srgb, red 50%, blue)){'
+            + '.npnp-modal-backdrop,#npnp-banner,.npnp-toast-stack{' + themeVarsColorMix + '}}'
             // Banner
             + '#npnp-banner{position:fixed;left:0;right:0;z-index:998;'
             + 'top:var(--npnp-header-h,0px);'
             + 'padding:12px 18px;font:600 14px/1.4 var(--npnp-font,system-ui,-apple-system,sans-serif);color:#fff;'
+            + 'background-color:#b1611a;'
             + 'display:flex;align-items:center;justify-content:space-between;gap:14px;'
             + 'box-shadow:0 4px 14px rgba(0,0,0,.35);'
             + 'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}'
@@ -1004,10 +1104,38 @@
         el.innerHTML = '<span style="flex:1;">' + escapeHtml(message) + '</span>'
             + '<button type="button" class="npnp-toast-close" aria-label="'
             + escapeHtml(dismissLabel || 'Dismiss') + '">&times;</button>';
-        var close = function () { if (el.parentNode) el.parentNode.removeChild(el); };
+        var timer = null;
+        var remaining = 4500;
+        var startedAt = 0;
+        var close = function () {
+            if (timer) clearTimeout(timer);
+            timer = null;
+            if (el.parentNode) el.parentNode.removeChild(el);
+        };
+        function start() {
+            startedAt = Date.now();
+            timer = setTimeout(close, remaining);
+        }
+        function pause() {
+            if (!timer) return;
+            clearTimeout(timer);
+            timer = null;
+            remaining = Math.max(0, remaining - (Date.now() - startedAt));
+        }
+        function resume() {
+            if (!el.parentNode || timer) return;
+            if (remaining <= 0) { close(); return; }
+            start();
+        }
+        // WCAG 2.2.1: reading time is not stolen while the toast is hovered or
+        // keyboard-focused.
+        el.addEventListener('mouseenter', pause);
+        el.addEventListener('mouseleave', resume);
+        el.addEventListener('focusin', pause);
+        el.addEventListener('focusout', resume);
         el.querySelector('.npnp-toast-close').addEventListener('click', close);
         stack.appendChild(el);
-        setTimeout(close, 4500);
+        start();
     }
 
     // Elements this plugin marked inert while a modal was open. closeModal restores
@@ -1108,7 +1236,25 @@
             var dl = Number(data.daysLeft || 0);
             var frac;
             if (data.state === 'Ok' || data.state === 'WarningSoon') {
-                frac = Math.max(0, Math.min(1, dl / 30));
+                // Scale the gauge on the actual paid period, not a hardcoded 30-day
+                // month: match the current price to a configured tier first, then
+                // fall back to the latest transaction's monthsAdded.
+                var months = 0;
+                var currentPrice = Number(data.price || 0);
+                var tierList = data.tiers || [];
+                for (var ti = 0; ti < tierList.length; ti++) {
+                    var tier = normalizeKeys(tierList[ti] || {});
+                    if (currentPrice > 0
+                        && Math.abs(Number(tier.price || 0) - currentPrice) < 0.005) {
+                        months = Number(tier.months || 0);
+                        break;
+                    }
+                }
+                if (!months && data.transactions && data.transactions.length) {
+                    months = Number(data.transactions[0].monthsAdded || 0);
+                }
+                var periodDays = months > 0 ? months * 30 : 30;
+                frac = Math.max(0, Math.min(1, dl / periodDays));
             } else if (data.state === 'InGrace') {
                 var grace = Math.max(1, Number(data.graceDays || 1));
                 frac = Math.max(0, Math.min(1, (grace - Math.max(0, -dl)) / grace));
@@ -1398,9 +1544,9 @@
 
         var html = ''
             + '<div class="npnp-modal-backdrop" id="npnp-modal-backdrop">'
-            + '  <div class="npnp-modal" role="dialog" aria-modal="true" tabindex="-1" aria-label="' + escapeHtml(modalTitle) + '">'
+            + '  <div class="npnp-modal" role="dialog" aria-modal="true" tabindex="-1" aria-labelledby="npnp-modal-title">'
             + '    <div class="npnp-modal-header">'
-            + '      <h2>' + escapeHtml(modalTitle) + '</h2>'
+            + '      <h2 id="npnp-modal-title">' + escapeHtml(modalTitle) + '</h2>'
             + '      <button class="close" type="button" aria-label="'
             +          escapeHtml(t(data, 'user.modal.close', 'Close')) + '">&times;</button>'
             + '    </div>'
@@ -1436,6 +1582,9 @@
         // closeModal can restore exactly those elements.
         Array.prototype.forEach.call(document.body.children, function (el) {
             if (el.id === 'npnp-modal-backdrop') return;
+            // Toasts (including their close buttons) stay usable and readable
+            // while the dialog is open, so the live region is never inert.
+            if (el.id === 'npnp-toast-stack') return;
             if (el.hasAttribute('inert')) return;
             el.setAttribute('inert', '');
             _pluginInerted.push(el);
@@ -1561,32 +1710,10 @@
         var copyBtn = document.getElementById('npnp-copy-note');
         if (copyBtn) {
             copyBtn.addEventListener('click', function () {
-                var text = data.customNote || '';
-                var done = function () {
-                    toast(t(data, 'user.modal.copyNote.done', 'Copied to clipboard.'),
-                        'success', t(data, 'user.toast.dismiss', 'Dismiss'));
-                };
-                var fallback = function () {
-                    try {
-                        var ta = document.createElement('textarea');
-                        ta.value = text;
-                        ta.style.position = 'fixed';
-                        ta.style.opacity = '0';
-                        document.body.appendChild(ta);
-                        ta.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(ta);
-                        done();
-                    } catch (_) {
-                        toast(t(data, 'user.modal.copyNote.fail', 'Copy failed.'),
-                            'error', t(data, 'user.toast.dismiss', 'Dismiss'));
-                    }
-                };
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(text).then(done).catch(fallback);
-                } else {
-                    fallback();
-                }
+                copyToClipboard(data.customNote || '',
+                    t(data, 'user.modal.copyNote.done', 'Copied to clipboard.'),
+                    t(data, 'user.modal.copyNote.fail', 'Copy failed.'),
+                    t(data, 'user.toast.dismiss', 'Dismiss'));
             });
         }
         // Copy the payment reference (username) to the clipboard.
@@ -1652,10 +1779,15 @@
                     // Distinguish a real rate-limit (429) from a transport/server error
                     // instead of telling the user their payment was recorded either way.
                     var isRate = !!(err && err.status === 429);
-                    var key = isRate ? 'user.modal.markPaid.rateLimited' : 'user.modal.markPaid.error';
-                    var fallback = isRate
-                        ? 'You already declared a payment recently. Try again later.'
-                        : 'Something went wrong. Please try again.';
+                    var isForbidden = !!(err && err.status === 403);
+                    var key = isForbidden
+                        ? 'user.modal.markPaid.forbidden'
+                        : (isRate ? 'user.modal.markPaid.rateLimited' : 'user.modal.markPaid.error');
+                    var fallback = isForbidden
+                        ? 'You are not allowed to declare a payment for this account.'
+                        : (isRate
+                            ? 'You already declared a payment recently. Try again later.'
+                            : 'Something went wrong. Please try again.');
                     toast(t(data, key, fallback), isRate ? 'warn' : 'error',
                         t(data, 'user.toast.dismiss', 'Dismiss'));
                     iPaid.disabled = false;
@@ -1716,15 +1848,20 @@
                     // 5 s floor); anything else is a network/server error. Never report
                     // these as "invalid code" — that is misleading.
                     var isRate = !!(err && err.status === 429);
+                    var isForbidden = !!(err && err.status === 403);
                     var locked = !!(err && ((err.data && err.data.locked) || err.locked));
-                    var key = isRate
-                        ? (locked ? 'user.modal.promo.locked' : 'user.modal.promo.rateLimited')
-                        : 'user.modal.promo.network';
-                    var fallback = isRate
-                        ? (locked
-                            ? 'Too many attempts. Please wait and try again later.'
-                            : 'Please wait a moment before trying again.')
-                        : 'Network error. Check your connection and try again.';
+                    var key = isForbidden
+                        ? 'user.modal.promo.forbidden'
+                        : (isRate
+                            ? (locked ? 'user.modal.promo.locked' : 'user.modal.promo.rateLimited')
+                            : 'user.modal.promo.network');
+                    var fallback = isForbidden
+                        ? 'You are not allowed to redeem a code.'
+                        : (isRate
+                            ? (locked
+                                ? 'Too many attempts. Please wait and try again later.'
+                                : 'Please wait a moment before trying again.')
+                            : 'Network error. Check your connection and try again.');
                     toast(t(data, key, fallback), isRate ? 'warn' : 'error',
                         t(data, 'user.toast.dismiss', 'Dismiss'));
                     redeem.disabled = false;
@@ -1747,9 +1884,43 @@
     // WCAG AA (4.5:1) on every state while keeping the colour recognisable.
     function bannerBackground(state) {
         var c = STATE_COLORS[state] || '#e67e22';
-        var darken = { WarningSoon: 35, InGrace: 30, Blocked: 10 }[state] || 20;
+        var darken = bannerDarkenWeight(state);
         return 'linear-gradient(90deg,color-mix(in srgb,' + c + ' 100%,#000 ' + darken
             + '%),color-mix(in srgb,' + c + ' 100%,#000 ' + (darken + 8) + '%))';
+    }
+
+    // color-mix() weight of black for each state. WarningSoon uses 50 (not 35):
+    // white text on the resulting colour measures 4.64:1, above WCAG AA 4.5:1,
+    // whereas the previous 35 gave 3.86:1.
+    function bannerDarkenWeight(state) {
+        return ({ WarningSoon: 50, InGrace: 30, Blocked: 10 })[state] || 20;
+    }
+
+    function hexToRgb(hex) {
+        var m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(hex || ''));
+        if (!m) return null;
+        var h = m[1];
+        if (h.length === 3) h = h.charAt(0) + h.charAt(0) + h.charAt(1) + h.charAt(1) + h.charAt(2) + h.charAt(2);
+        return {
+            r: parseInt(h.slice(0, 2), 16),
+            g: parseInt(h.slice(2, 4), 16),
+            b: parseInt(h.slice(4, 6), 16)
+        };
+    }
+
+    // Solid equivalent of the gradient's darker stop, used as background-color so
+    // browsers without color-mix() still get an opaque, readable banner.
+    function bannerSolidColor(state) {
+        var rgb = hexToRgb(STATE_COLORS[state] || '#e67e22');
+        var darken = bannerDarkenWeight(state) + 8;
+        var factor = 100 / (100 + darken);
+        if (!rgb) return '#8a4b12';
+        var out = '#';
+        [rgb.r, rgb.g, rgb.b].forEach(function (v) {
+            var s = Math.round(v * factor).toString(16);
+            out += s.length === 1 ? '0' + s : s;
+        });
+        return out;
     }
 
     function bannerTitle(data) {
@@ -1775,7 +1946,8 @@
     // animation doesn't replay on every page navigation / 5-min refresh.
     function updateBannerContent(banner, data) {
         banner.setAttribute('data-state', data.state);
-        banner.style.background = bannerBackground(data.state);
+        banner.style.backgroundColor = bannerSolidColor(data.state);
+        banner.style.backgroundImage = bannerBackground(data.state);
         var titleEl = banner.querySelector('.npnp-banner-title');
         if (titleEl) {
             var badge = titleEl.querySelector('.npnp-test-badge');
@@ -1913,7 +2085,7 @@
         }
 
         // Honour user-dismiss for the WarningSoon banner only (informational).
-        if (data.state === 'WarningSoon' && sessionStorage.getItem('npnpBannerDismissed') === '1' && !data.__testMode) {
+        if (data.state === 'WarningSoon' && safeSession.get('npnpBannerDismissed') === '1' && !data.__testMode) {
             if (existing) existing.parentNode.removeChild(existing);
             document.body.classList.remove('npnp-has-banner');
             document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
@@ -1938,7 +2110,8 @@
         banner.setAttribute('data-state', data.state);
         // Urgent states (expired) are announced assertively; the soft warning is polite.
         banner.setAttribute('role', data.state === 'WarningSoon' ? 'status' : 'alert');
-        banner.style.background = bannerBackground(data.state);
+        banner.style.backgroundColor = bannerSolidColor(data.state);
+        banner.style.backgroundImage = bannerBackground(data.state);
         var bannerIcons = { WarningSoon: 'schedule', InGrace: 'warning', Blocked: 'block' };
         var bannerIcon = '<span class="material-icons npnp-banner-icon" aria-hidden="true">'
             + (bannerIcons[data.state] || 'info') + '</span>';
@@ -1970,7 +2143,7 @@
         var d = document.getElementById('npnp-banner-dismiss');
         if (d) {
             d.addEventListener('click', function () {
-                try { sessionStorage.setItem('npnpBannerDismissed', '1'); } catch (_) {}
+                safeSession.set('npnpBannerDismissed', '1');
                 banner.parentNode.removeChild(banner);
                 document.body.classList.remove('npnp-has-banner');
                 document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
@@ -2015,14 +2188,37 @@
     // Modern layout (legacy views still bind to it) but wraps it in a display:none
     // container, while its own header is a position:fixed MUI AppBar (offsetParent is
     // null on fixed elements, so we measure layout boxes instead of offsetParent).
+    // Rendering checks are needed on every SPA mutation, but measuring layout is a
+    // forced reflow. Cache the answer per element for a short window and only
+    // invalidate on a real change (navigation, resize, explicit refresh).
+    var _renderEpoch = 0;
+    function invalidateRenderCache() { _renderEpoch += 1; }
+
     function isRendered(el) {
         if (!el) return false;
+        // Cheap, always-correct short-circuit: an element removed from the document
+        // can never be rendered, whatever the cache says.
+        if (el.isConnected === false) return false;
+        var now = Date.now();
+        if (el.__npnpRenderedEpoch === _renderEpoch
+            && el.__npnpRenderedAt
+            && (now - el.__npnpRenderedAt) < 300) {
+            return !!el.__npnpRendered;
+        }
+        var result = false;
         try {
-            if (getComputedStyle(el).display === 'none') return false;
-            var rects = el.getClientRects();
-            return !!(rects && rects.length > 0
-                && (rects[0].width > 0 || rects[0].height > 0));
-        } catch (_) { return false; }
+            if (getComputedStyle(el).display === 'none') {
+                result = false;
+            } else {
+                var rects = el.getClientRects();
+                result = !!(rects && rects.length > 0
+                    && (rects[0].width > 0 || rects[0].height > 0));
+            }
+        } catch (_) { result = false; }
+        el.__npnpRendered = result;
+        el.__npnpRenderedAt = now;
+        el.__npnpRenderedEpoch = _renderEpoch;
+        return result;
     }
 
     // Finds the Modern (Jellyfin 12) user top bar. Its layout renders
@@ -2032,7 +2228,10 @@
     // video OSD "videoOsd-appBar" instead, so this selector never matches those.
     function modernUserToolbar() {
         try {
-            return document.querySelector('header.MuiAppBar-root > .MuiToolbar-root.padded-left.padded-right');
+            return document.querySelector('header.MuiAppBar-root > .MuiToolbar-root.padded-left.padded-right')
+                // Capability fallback: newer/older MUI may drop the padded-* classes.
+                // The header scope keeps this from matching the dashboard/OSD toolbars.
+                || document.querySelector('header.MuiAppBar-root .MuiToolbar-root');
         } catch (_) { return null; }
     }
 
@@ -2047,8 +2246,16 @@
         ensureStyles();
         var label = t(data, 'user.modal.headerButton', 'My subscription');
 
-        // Jellyfin 12 Modern: add the entry to the native user menu.
-        if (isRendered(modernUserToolbar())) return ensureUserMenuItem(label);
+        // Jellyfin 12 Modern: add the entry to the native user menu. If the MUI menu
+        // internals change or are missing, degrade to the legacy path instead of
+        // throwing out of the SPA's mutation callback.
+        if (isRendered(modernUserToolbar())) {
+            try {
+                return ensureUserMenuItem(label);
+            } catch (e) {
+                console.warn('NoPayNoPlay: native user menu entry unavailable', e);
+            }
+        }
 
         // Legacy layout (and 10.11): header icon button inside the .skinHeader.
         if (document.querySelector('.npnp-header-btn')) return true;
@@ -2241,6 +2448,7 @@
             var normalized = normalizeMe(raw);
             var data = applyTestOverride(normalized);
             lastData = data;
+            applyDocumentLang(data.lang || getLangParam());
             // Re-evaluate the ElegantFin skin: its CSS may load after the plugin's.
             applyEfSkin();
             showTestNotificationPreview(data);
@@ -2265,6 +2473,12 @@
             }
             // Never fail silently: log and surface a lightweight, throttled notice.
             console.error('NoPayNoPlay: failed to load subscription status', err);
+            if (err.status === 403 || err.statusCode === 403) {
+                toast(t(lastData || {}, 'user.modal.forbidden',
+                    'Access denied (403). Your account is not allowed to view this subscription.'),
+                    'error', t(lastData || {}, 'user.toast.dismiss', 'Dismiss'));
+                return;
+            }
             var now = Date.now();
             if (now - _lastMeErrorShownAt > 5 * 60 * 1000) {
                 _lastMeErrorShownAt = now;
@@ -2276,42 +2490,127 @@
         return _meInFlight;
     }
 
+    var _cleanupHandlers = [];
+
+    function addCleanup(fn) { _cleanupHandlers.push(fn); }
+
+    // Restores every global the plugin patched (history methods, listeners, observers,
+    // timers) and removes its injected UI. Exposed so the host can unload the plugin at
+    // runtime (e.g. when Jellyfin disables it) without leaking a patched history.
+    function npnpTeardown() {
+        var handlers = _cleanupHandlers;
+        _cleanupHandlers = [];
+        handlers.forEach(function (fn) { try { fn(); } catch (_) {} });
+        try { closeModal(); } catch (_) {}
+        try {
+            var b = document.getElementById('npnp-banner');
+            if (b && b.parentNode) b.parentNode.removeChild(b);
+            var legacy = document.querySelector('.npnp-header-btn');
+            if (legacy && legacy.parentNode) legacy.parentNode.removeChild(legacy);
+            var item = document.getElementById('npnp-user-menu-item');
+            if (item && item.parentNode) item.parentNode.removeChild(item);
+            document.body.classList.remove('npnp-has-banner');
+            document.body.classList.remove('npnp-ef');
+            document.documentElement.style.setProperty('--npnp-banner-pad', '0px');
+            ['npnp-styles', 'npnp-ef-styles'].forEach(function (id) {
+                var st = document.getElementById(id);
+                if (st && st.parentNode) st.parentNode.removeChild(st);
+            });
+        } catch (_) {}
+        try { _pluginInerted.length = 0; } catch (_) {}
+        lastData = null;
+    }
+    window.npnpTeardown = npnpTeardown;
+
     function onReady() {
         applyEfSkin();
         refresh();
-        setInterval(refresh, 5 * 60 * 1000);
-        document.addEventListener('viewshow', refresh);
-        window.addEventListener('resize', positionBanner);
+
+        var refreshTimer = setInterval(refresh, 5 * 60 * 1000);
+        addCleanup(function () { clearInterval(refreshTimer); });
+
+        // Legacy jellyfin-web emits viewshow; Jellyfin 12's React router may not.
+        // Registering the listener is harmless when the event never fires.
+        var onViewShow = function () {
+            invalidateRenderCache();
+            positionBanner();
+            refresh();
+        };
+        document.addEventListener('viewshow', onViewShow);
+        addCleanup(function () { document.removeEventListener('viewshow', onViewShow); });
+
+        // Debounced: resize fires continuously while dragging; one run after it settles
+        // is enough to re-position the banner and re-check the header layout.
+        var resizeTimer = null;
+        var onResize = function () {
+            invalidateRenderCache();
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(function () {
+                resizeTimer = null;
+                positionBanner();
+                if (lastData) ensureHeaderButton(lastData);
+            }, 150);
+        };
+        window.addEventListener('resize', onResize);
+        addCleanup(function () {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            window.removeEventListener('resize', onResize);
+        });
+
         // Home-only banner: re-evaluate visibility when the SPA navigates (hash or
         // history pushState) so it disappears off the home tab and reappears on it.
-        window.addEventListener('hashchange', reconcileBanner);
-        window.addEventListener('popstate', reconcileBanner);
+        var onNavigate = function () {
+            invalidateRenderCache();
+            reconcileBanner();
+        };
+        window.addEventListener('hashchange', onNavigate);
+        window.addEventListener('popstate', onNavigate);
+        addCleanup(function () {
+            window.removeEventListener('hashchange', onNavigate);
+            window.removeEventListener('popstate', onNavigate);
+        });
 
         // Jellyfin 12's React web navigates via history.pushState/replaceState (no
         // viewshow/hashchange on every transition). Wrap them so the banner/modal
         // reconcile after each navigation, mirroring the legacy viewshow behaviour.
+        // Originals are restored by npnpTeardown.
         ['pushState', 'replaceState'].forEach(function (name) {
             try {
                 var orig = history[name];
-                if (!orig || history['__npnp_' + name]) return;
+                if (typeof orig !== 'function' || history['__npnp_' + name]) return;
                 history['__npnp_' + name] = true;
-                history[name] = function () {
+                var wrapper = function () {
                     var r = orig.apply(this, arguments);
-                    try { reconcileBanner(); } catch (_) {}
+                    try { onNavigate(); } catch (_) {}
                     return r;
                 };
+                history[name] = wrapper;
+                addCleanup(function () {
+                    // Restore only if nobody wrapped us afterwards; otherwise leave
+                    // the newer wrapper in place (it calls through to us anyway).
+                    if (history[name] === wrapper) {
+                        history[name] = orig;
+                        try { delete history['__npnp_' + name]; } catch (_) {}
+                    }
+                });
             } catch (_) {}
         });
 
         // Re-position the banner when the Jellyfin header resizes (theme switch,
         // responsive breakpoint) without polling layout every 2 seconds.
-        try {
-            var ro = new ResizeObserver(function () {
-                if (document.getElementById('npnp-banner')) positionBanner();
-            });
-            var headerEl = document.querySelector('.skinHeader');
-            if (headerEl) ro.observe(headerEl);
-        } catch (_) {}
+        if (typeof window.ResizeObserver === 'function') {
+            try {
+                var ro = new window.ResizeObserver(function () {
+                    invalidateRenderCache();
+                    if (document.getElementById('npnp-banner')) positionBanner();
+                });
+                // .skinHeader may be absent on the Modern layout; fall back to body
+                // so a late-mounted header still triggers a reposition.
+                var headerEl = document.querySelector('.skinHeader') || document.body;
+                if (headerEl) ro.observe(headerEl);
+                addCleanup(function () { try { ro.disconnect(); } catch (_) {} });
+            } catch (_) {}
+        }
 
         // Hash deep-link: opening Jellyfin with #!/npnp (or #npnp) auto-opens
         // the modal once data is loaded. Useful for bookmarks and emails.
@@ -2331,11 +2630,18 @@
             }
         }
         window.addEventListener('hashchange', checkHashOpen);
+        addCleanup(function () { window.removeEventListener('hashchange', checkHashOpen); });
         checkHashOpen();
+
+        // Unload hook: pagehide fires when the document goes away. Skip bfcache
+        // (persisted) so a restored page keeps its plugin UI working.
+        var onPageHide = function (e) { if (!e || !e.persisted) npnpTeardown(); };
+        window.addEventListener('pagehide', onPageHide);
+        addCleanup(function () { window.removeEventListener('pagehide', onPageHide); });
 
         // Observe DOM changes but coalesce with requestAnimationFrame so the header
         // button / banner work only runs once per frame, not on every single mutation
-        // Jellyfin's SPA makes.
+        // Jellyfin's SPA makes. isRendered() additionally caches measurements.
         var rafPending = false;
         function onDomChange() {
             if (rafPending) return;
@@ -2348,10 +2654,13 @@
                 }
             });
         }
-        try {
-            var mo = new MutationObserver(onDomChange);
-            mo.observe(document.body, { childList: true, subtree: true });
-        } catch (_) {}
+        if (typeof window.MutationObserver === 'function') {
+            try {
+                var mo = new window.MutationObserver(onDomChange);
+                mo.observe(document.body, { childList: true, subtree: true });
+                addCleanup(function () { try { mo.disconnect(); } catch (_) {} });
+            } catch (_) {}
+        }
     }
 
     if (document.readyState === 'loading') {

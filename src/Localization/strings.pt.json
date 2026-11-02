@@ -387,5 +387,12 @@
   "admin.test.theme.jellyfin": "Jellyfin padrão",
   "admin.test.theme.elegantfin": "ElegantFin",
   "user.modal.history.showAll": "Mostrar tudo ({n})",
-  "user.modal.trial.pill": "Teste gratuito"
+  "user.modal.trial.pill": "Teste gratuito",
+  "admin.diag.copyFailed": "Não foi possível copiar para a área de transferência.",
+  "admin.test.copyFailed": "Não foi possível copiar o URL.",
+  "admin.error.forbidden": "Acesso negado (403): a sua conta não tem permissão para efetuar esta ação.",
+  "admin.error.http": "O pedido falhou (HTTP {0}).",
+  "admin.error.noApi": "A API do Jellyfin não está disponível.",
+  "admin.error.request": "Não foi possível concluir o pedido.",
+  "admin.unsaved.title": "Alterações não guardadas"
 }
