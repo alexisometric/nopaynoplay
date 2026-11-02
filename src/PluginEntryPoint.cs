@@ -29,6 +29,9 @@ public class PluginEntryPoint : IHostedService
     /// <summary>Latest diagnostic snapshot (used by /Diagnostics endpoint).</summary>
     public static FtDiagnostics LastDiagnostics { get; private set; } = new();
 
+    /// <summary>Number of registration attempts so far (used to quieten the log).</summary>
+    private static int _attempts;
+
     public PluginEntryPoint(ILogger<PluginEntryPoint> logger)
     {
         _logger = logger;
@@ -40,26 +43,49 @@ public class PluginEntryPoint : IHostedService
         // File Transformation plugin assembly hasn't been loaded yet.
         if (!TryRegisterFileTransformation())
         {
-            _ = Task.Run(async () =>
-            {
-                int[] delaysSec = { 3, 8, 20, 45, 90, 180 };
-                foreach (int delay in delaysSec)
-                {
-                    try
-                    {
-                        await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken).ConfigureAwait(false);
-                    }
-                    catch (TaskCanceledException) { return; }
-
-                    if (TryRegisterFileTransformation())
-                    {
-                        return;
-                    }
-                }
-            }, cancellationToken);
+            _ = Task.Run(() => RetryLoopAsync(cancellationToken), cancellationToken);
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Retries the registration with an escalating back-off, then keeps a low-frequency
+    /// retry for two hours.
+    /// </summary>
+    /// <remarks>
+    /// The previous loop gave up for good after ~6 minutes. Jellyfin loads plugins in
+    /// an arbitrary order and an admin may install File Transformation later from the
+    /// catalogue; in both cases the UI stayed missing until the next server restart,
+    /// with the plugin reporting "not registered" and no automatic recovery.
+    /// </remarks>
+    private async Task RetryLoopAsync(CancellationToken cancellationToken)
+    {
+        int[] delaysSec = { 3, 8, 20, 45, 90, 180 };
+        try
+        {
+            foreach (int delay in delaysSec)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delay), cancellationToken).ConfigureAwait(false);
+                if (TryRegisterFileTransformation())
+                {
+                    return;
+                }
+            }
+
+            for (int i = 0; i < 8; i++)
+            {
+                await Task.Delay(TimeSpan.FromMinutes(15), cancellationToken).ConfigureAwait(false);
+                if (TryRegisterFileTransformation())
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Host is shutting down.
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -142,9 +168,18 @@ public class PluginEntryPoint : IHostedService
             if (ftAssembly == null)
             {
                 diag.Notes.Add("File Transformation assembly not loaded yet (PluginInterface type not found).");
-                logger.LogWarning(
-                    "NoPayNoPlay: 'File Transformation' plugin not found. Loaded matching assemblies: [{Matches}]",
-                    string.Join(", ", matches));
+                if (Interlocked.Increment(ref _attempts) <= 3)
+                {
+                    logger.LogWarning(
+                        "NoPayNoPlay: 'File Transformation' plugin not found. Loaded matching assemblies: [{Matches}]",
+                        string.Join(", ", matches));
+                }
+                else
+                {
+                    logger.LogDebug(
+                        "NoPayNoPlay: 'File Transformation' still not available (attempt {Attempt}); retrying in the background",
+                        _attempts);
+                }
                 LastDiagnostics = diag;
                 return false;
             }
@@ -163,7 +198,7 @@ public class PluginEntryPoint : IHostedService
 
             var payload = new Newtonsoft.Json.Linq.JObject
             {
-                ["id"] = Plugin.Instance!.Id.ToString(),
+                ["id"] = (Plugin.Instance?.Id ?? Guid.Empty).ToString(),
                 // NOTE: must match the literal key other FT consumers use ("index.html"),
                 // not an escaped regex. WebFileTransformationService.RunTransformation
                 // first does ContainsKey(path) and only falls back to regex matching when
@@ -200,9 +235,23 @@ public class PluginEntryPoint : IHostedService
                     var needs = readSvcInterface.GetMethod("NeedsTransformation");
                     bool? ack = needs?.Invoke(readSvc, new object?[] { "index.html" }) as bool?;
                     diag.NeedsTransformationAck = ack;
+                    if (ack == false)
+                    {
+                        // FT answered, and the answer is no: our registration was not
+                        // retained (pattern already owned, service not ready, …).
+                        // Keeping the flag set would make every later attempt return
+                        // "Already registered" and never retry.
+                        FileTransformationRegistered = false;
+                        diag.Registered = false;
+                        diag.Notes.Add("FT did NOT acknowledge our pattern (NeedsTransformation returned false); will retry.");
+                        LastDiagnostics = diag;
+                        logger.LogWarning("NoPayNoPlay: File Transformation did not acknowledge the 'index.html' pattern; retrying later");
+                        return false;
+                    }
+
                     diag.Notes.Add(ack == true
                         ? "FT confirmed: NeedsTransformation(\"index.html\") = true."
-                        : "FT did NOT acknowledge our pattern (NeedsTransformation returned false/null).");
+                        : "FT read service resolved but returned no answer; assuming registration succeeded.");
                 }
                 else
                 {
