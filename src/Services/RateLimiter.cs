@@ -17,6 +17,15 @@ public class RateLimiter
     private readonly ConcurrentDictionary<string, DateTime> _last = new();
     private readonly ConcurrentDictionary<string, FailureEntry> _failures = new();
 
+    /// <summary>Soft threshold above which the prune pass starts looking at the tables.</summary>
+    private const int PruneThreshold = 2048;
+
+    /// <summary>Hard bound: beyond this, the oldest entries are evicted outright.</summary>
+    private const int HardCap = 20000;
+
+    /// <summary>Number of acquisitions since the last prune (avoids an O(n) scan per call).</summary>
+    private int _opsSincePrune;
+
     private readonly struct FailureEntry
     {
         public readonly int Count;
@@ -162,10 +171,23 @@ public class RateLimiter
     /// </summary>
     private void PruneIfNeeded()
     {
-        if (_last.Count + _failures.Count < 2048)
+        int total = _last.Count + _failures.Count;
+        if (total < PruneThreshold)
         {
             return;
         }
+
+        // Once above the threshold, a full scan on *every* call turns the guard into
+        // an O(n) cost per request — the exact amplification an attacker wants. Scan
+        // at most every 256 operations while the tables are moderately sized, and
+        // skip the timer entirely when they are already huge (a victim of a flood
+        // needs the eviction, not a countdown).
+        if (total < PruneThreshold * 2 && Interlocked.Increment(ref _opsSincePrune) < 256)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref _opsSincePrune, 0);
 
         DateTime now = _now();
         // Cooldowns older than a day can never matter (all windows are ≤ 30 min).
@@ -186,6 +208,25 @@ public class RateLimiter
             {
                 _failures.TryRemove(kv.Key, out _);
             }
+        }
+
+        // Hard bound: an attacker sending unique keys keeps the tables above the
+        // threshold forever (no entry is ever old enough to expire). Evict the least
+        // recently used entries so memory and scan cost stay bounded.
+        int remaining = _last.Count + _failures.Count;
+        if (remaining <= HardCap)
+        {
+            return;
+        }
+
+        foreach (var kv in _last.OrderBy(k => k.Value).Take(Math.Max(0, remaining - HardCap)))
+        {
+            _last.TryRemove(kv.Key, out _);
+        }
+
+        foreach (var kv in _failures.OrderBy(k => k.Value.LastAt).Take(Math.Max(0, _last.Count + _failures.Count - HardCap)))
+        {
+            _failures.TryRemove(kv.Key, out _);
         }
     }
 }
