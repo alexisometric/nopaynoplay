@@ -33,6 +33,25 @@ public class UserPolicySnapshot
     public bool EnableAudioPlaybackTranscoding { get; set; } = true;
     public bool EnableVideoPlaybackTranscoding { get; set; } = true;
     public bool EnablePlaybackRemuxing { get; set; } = true;
+
+    /// <summary>Gets or sets the download permission at snapshot time.</summary>
+    public bool EnableContentDownloading { get; set; } = true;
+
+    /// <summary>Gets or sets the offline-sync permission at snapshot time.</summary>
+    public bool EnableSyncTranscoding { get; set; } = true;
+
+    /// <summary>Gets or sets the media-conversion permission at snapshot time.</summary>
+    public bool EnableMediaConversion { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this snapshot was captured while the
+    /// policy was already blocked (i.e. the real pre-block state is unknown, typically
+    /// after a configuration restore or an upgrade that lost the snapshot). Such a
+    /// snapshot must never be used to restore "false" values: restoring it literally
+    /// would keep the user blocked forever, so <see cref="Services.UserPolicyEnforcer"/>
+    /// re-enables the managed permissions instead.
+    /// </summary>
+    public bool Inferred { get; set; }
 }
 
 /// <summary>

@@ -164,7 +164,7 @@ public class UserPolicyEnforcerTests
     }
 
     [Fact]
-    public async Task Restore_WithMissingSnapshot_EnablesPlaybackOnly()
+    public async Task Restore_WithMissingSnapshot_EnablesAllManagedPermissions()
     {
         var user = MakeUser();
         // Simulate a config where the snapshot was lost and transcoding was left off.
@@ -178,11 +178,17 @@ public class UserPolicyEnforcerTests
 
         await enforcer.ApplyAsync(sub, SubscriptionState.Ok);
 
-        // Only the permission the block is guaranteed to have cleared is restored.
+        // Without a snapshot we cannot know what the user had before the block, so
+        // every managed permission is re-enabled: leaving a paying member unable to
+        // watch is worse than granting a permission an admin had denied.
         Assert.True(user.HasPermission(PermissionKind.EnableMediaPlayback));
-        Assert.False(user.HasPermission(PermissionKind.EnableAudioPlaybackTranscoding));
-        Assert.False(user.HasPermission(PermissionKind.EnablePlaybackRemuxing));
+        Assert.True(user.HasPermission(PermissionKind.EnableAudioPlaybackTranscoding));
+        Assert.True(user.HasPermission(PermissionKind.EnableVideoPlaybackTranscoding));
+        Assert.True(user.HasPermission(PermissionKind.EnablePlaybackRemuxing));
+        Assert.True(user.HasPermission(PermissionKind.EnableContentDownloading));
+        Assert.True(user.HasPermission(PermissionKind.EnableSyncTranscoding));
         Assert.False(sub.IsBlocked);
+        Assert.Null(sub.PolicySnapshot);
     }
 
     [Fact]
