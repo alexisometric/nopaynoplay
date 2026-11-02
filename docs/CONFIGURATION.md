@@ -59,7 +59,7 @@ A few safeguards are deliberately kept out of the dashboard because a wrong valu
 
 | Key | Default | Description |
 |---|---|---|
-| `TrustForwardedHeaders` | `false` | When `true`, the left-most `X-Forwarded-For` entry is treated as the client IP. Enable **only** behind a reverse proxy that overwrites that header; otherwise a client can spoof its address and dodge the per-IP throttle. Also available as `POST /NoPayNoPlay/Settings/ForwardedHeaders` (`{"enabled": true}`). |
+| `TrustForwardedHeaders` | `false` | When `true`, the right-most `X-Forwarded-For` entry is treated as the client IP (the address the nearest proxy saw, which a client cannot forge). Enable **only** behind a reverse proxy that sets or appends that header. Also available as `POST /NoPayNoPlay/Settings/ForwardedHeaders` (`{"enabled": true}`). |
 | `ConfigVersion` | `2` | Configuration schema version. Rewritten on every save; used to migrate older files. |
 | `AuditLogMaxEntries` | `1000` | Audit log ring size, clamped to 50–5000. |
 

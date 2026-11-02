@@ -412,12 +412,14 @@ public class NoPayNoPlayController : ControllerBase
         return Ok(Cfg);
     }
 
-    /// <summary>Enables or disables trusting the left-most X-Forwarded-For entry (admin).</summary>
+    /// <summary>Enables or disables trusting the X-Forwarded-For entry added by the nearest proxy (admin).</summary>
     /// <remarks>
     /// Off by default: anyone can send that header, so trusting it without a reverse
     /// proxy that overwrites it lets a client spoof its address and dodge the
-    /// per-IP throttle. Kept as a separate endpoint so a settings save from a front
-    /// end that does not know the field cannot silently reset it.
+    /// per-IP throttle. The right-most entry is used (the address the nearest proxy
+    /// actually saw), not the left-most one a client can forge. Kept as a separate
+    /// endpoint so a settings save from a front end that does not know the field
+    /// cannot silently reset it.
     /// </remarks>
     [HttpPost("Settings/ForwardedHeaders")]
     [Authorize(Policy = Policies.RequiresElevation)]

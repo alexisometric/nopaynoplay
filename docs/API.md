@@ -304,9 +304,10 @@ the dedicated endpoint below) and `ConfigVersion` (managed by the plugin).
 { "enabled": true }
 ```
 
-Enables or disables trusting the left-most `X-Forwarded-For` entry as the client
-address. Default is `false`; enable it only behind a reverse proxy that overwrites
-the header, otherwise a client can spoof its IP and dodge the per-IP throttle.
+Enables or disables trusting the `X-Forwarded-For` header as the client address.
+The **right-most** entry is used — the address the nearest proxy actually saw — so
+a client cannot forge its way into a fresh throttle bucket. Default is `false`;
+enable it only behind a reverse proxy that sets or appends the header.
 Audited as `settings.forwardedHeaders`.
 
 ### `GET /NoPayNoPlay/PromoCodes`

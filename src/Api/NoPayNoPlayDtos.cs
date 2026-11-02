@@ -196,7 +196,7 @@ public class MarkPaidDto
 /// <summary>Toggle for trusting reverse-proxy forwarding headers.</summary>
 public class ForwardedHeadersDto
 {
-    /// <summary>When true, the left-most <c>X-Forwarded-For</c> entry is used as the client IP.</summary>
+    /// <summary>When true, the right-most <c>X-Forwarded-For</c> entry is used as the client IP.</summary>
     public bool Enabled { get; set; }
 }
 
