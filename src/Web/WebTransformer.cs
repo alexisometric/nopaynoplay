@@ -20,7 +20,7 @@ public static class WebTransformer
 {
     // Hoisted + compiled so the strip step doesn't recompile the regex per request.
     private static readonly System.Text.RegularExpressions.Regex ScriptTagRegex = new(
-        "<script[^>]*src=\"/NoPayNoPlay/Web/client\\.js[^\"]*\"[^>]*></script>\\s*",
+        "<script[^>]*src=\"[^\"]*NoPayNoPlay/Web/client\\.js[^\"]*\"[^>]*></script>\\s*",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase
         | System.Text.RegularExpressions.RegexOptions.Compiled);
 
@@ -37,7 +37,10 @@ public static class WebTransformer
     /// </summary>
     private static string BuildScriptTag()
     {
-        return "<script defer src=\"/NoPayNoPlay/Web/client.js?v=" + WebAssetVersion.Value + "\"></script>";
+        // Relative to the document, not absolute: Jellyfin can be served under a base
+        // path (e.g. https://host/jellyfin/), where the absolute /NoPayNoPlay/... URL
+        // points outside the application and the script 404s (no UI at all).
+        return "<script defer src=\"NoPayNoPlay/Web/client.js?v=" + WebAssetVersion.Value + "\"></script>";
     }
 
     /// <summary>Static method matching the File Transformation callback contract.</summary>

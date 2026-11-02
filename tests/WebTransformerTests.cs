@@ -16,7 +16,7 @@ public class WebTransformerTests
 
         string result = WebTransformer.Transform(payload);
 
-        Assert.Contains("/NoPayNoPlay/Web/client.js", result);
+        Assert.Contains("NoPayNoPlay/Web/client.js", result);
         Assert.True(result.IndexOf("client.js") < result.IndexOf("</body>"));
     }
 
@@ -48,6 +48,6 @@ public class WebTransformerTests
     {
         var payload = new JObject { ["contents"] = "<html></html>" };
         string result = WebTransformer.Transform(payload);
-        Assert.Matches("/NoPayNoPlay/Web/client\\.js\\?v=[0-9a-f]+\"></script>$", result);
+        Assert.Matches("NoPayNoPlay/Web/client\\.js\\?v=[0-9a-f]+\"></script>$", result);
     }
 }

@@ -12,7 +12,7 @@ public class WebTransformerEdgeCaseTests
     {
         var payload = new JObject { ["contents"] = "<HTML><BODY>x</BODY></HTML>" };
         string result = WebTransformer.Transform(payload);
-        Assert.Contains("/NoPayNoPlay/Web/client.js", result);
+        Assert.Contains("NoPayNoPlay/Web/client.js", result);
         // Insertion happens just before the closing tag (case-insensitive).
         int scriptIdx = result.IndexOf("client.js", System.StringComparison.Ordinal);
         int bodyCloseIdx = result.IndexOf("</BODY>", System.StringComparison.OrdinalIgnoreCase);
@@ -30,7 +30,7 @@ public class WebTransformerEdgeCaseTests
         payload["contents"] = b;
         string c = WebTransformer.Transform(payload);
         // Only one occurrence of the script tag, no matter how many times we run.
-        int count = System.Text.RegularExpressions.Regex.Matches(c, "/NoPayNoPlay/Web/client\\.js").Count;
+        int count = System.Text.RegularExpressions.Regex.Matches(c, "NoPayNoPlay/Web/client\\.js").Count;
         Assert.Equal(1, count);
     }
 
@@ -59,7 +59,7 @@ public class WebTransformerEdgeCaseTests
         const string html = "<html><body><script>'</body>'</script></body></html>";
         var payload = new JObject { ["contents"] = html };
         string result = WebTransformer.Transform(payload);
-        int scriptIdx = result.IndexOf("/NoPayNoPlay/Web/client.js", System.StringComparison.Ordinal);
+        int scriptIdx = result.IndexOf("NoPayNoPlay/Web/client.js", System.StringComparison.Ordinal);
         int lastBody = result.LastIndexOf("</body>", System.StringComparison.OrdinalIgnoreCase);
         Assert.True(scriptIdx >= 0);
         Assert.True(scriptIdx < lastBody);
@@ -78,7 +78,7 @@ public class WebTransformerEdgeCaseTests
         var payload = new JObject { ["contents"] = js };
         string result = WebTransformer.Transform(payload);
         Assert.Equal(js, result);
-        Assert.DoesNotContain("/NoPayNoPlay/Web/client.js", result);
+        Assert.DoesNotContain("NoPayNoPlay/Web/client.js", result);
     }
 
     [Fact]
@@ -95,6 +95,6 @@ public class WebTransformerEdgeCaseTests
     {
         var payload = new JObject { ["contents"] = "<!DOCTYPE html>\n<html><body></body></html>" };
         string result = WebTransformer.Transform(payload);
-        Assert.Contains("/NoPayNoPlay/Web/client.js", result);
+        Assert.Contains("NoPayNoPlay/Web/client.js", result);
     }
 }

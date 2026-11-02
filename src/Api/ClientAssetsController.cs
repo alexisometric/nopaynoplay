@@ -3,6 +3,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.NoPayNoPlay.Api;
@@ -52,8 +53,8 @@ public class ClientAssetsController : ControllerBase
             using var ms = new MemoryStream();
             stream.CopyTo(ms);
             byte[] raw = ms.ToArray();
-            // Strong ETag (SHA-1 of the bytes) so conditional requests revalidate accurately.
-            string etag = "\"" + Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(raw)) + "\"";
+            // Strong ETag (SHA-256 of the bytes) so conditional requests revalidate accurately.
+            string etag = "\"" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(raw)) + "\"";
             return (raw, etag);
         });
 
@@ -64,6 +65,28 @@ public class ClientAssetsController : ControllerBase
 
         Response.Headers["Cache-Control"] = cacheControl;
         Response.Headers["ETag"] = asset.Etag;
+        // The representation depends on Accept-Encoding for every client, including
+        // the uncompressed branch: without an unconditional Vary, a shared proxy can
+        // hand a gzip payload to a client that did not ask for it.
+        Response.Headers["Vary"] = "Accept-Encoding";
+
+        // Honour conditional requests. The controller used to send a fresh ETag while
+        // ignoring If-None-Match, so every page load re-downloaded the 250 KB script
+        // even though the browser already had the exact bytes.
+        string? ifNoneMatch = Request.Headers.IfNoneMatch.ToString();
+        if (!string.IsNullOrEmpty(ifNoneMatch))
+        {
+            foreach (string candidate in ifNoneMatch.Split(','))
+            {
+                string token = candidate.Trim();
+                if (token == "*"
+                    || string.Equals(token, asset.Etag, System.StringComparison.Ordinal)
+                    || string.Equals(token, "W/" + asset.Etag, System.StringComparison.Ordinal))
+                {
+                    return StatusCode(StatusCodes.Status304NotModified);
+                }
+            }
+        }
 
         string? acceptEncoding = Request.Headers.AcceptEncoding.ToString();
         if (acceptEncoding != null && acceptEncoding.Contains("gzip", System.StringComparison.OrdinalIgnoreCase))
@@ -79,7 +102,6 @@ public class ClientAssetsController : ControllerBase
                 return ms.ToArray();
             });
             Response.Headers["Content-Encoding"] = "gzip";
-            Response.Headers["Vary"] = "Accept-Encoding";
             return File(gz, "application/javascript");
         }
 
