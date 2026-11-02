@@ -11,7 +11,7 @@ body:
     id: jellyfin-version
     attributes:
       label: Jellyfin version
-      placeholder: "10.11.8"
+      placeholder: "12.0.0"
     validations:
       required: true
   - type: input

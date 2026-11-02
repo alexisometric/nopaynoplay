@@ -11,7 +11,7 @@ This guide explains how NoPayNoPlay works from a **member's perspective** — wh
 Once logged in, your subscription modal is one click away:
 
 - **Jellyfin 12 (Modern UI):** click your **avatar** in the top-right → the **user menu** opens → choose **My subscription**.
-- **Legacy UI (and Jellyfin 10.11):** look for the **💳** (monetization) icon in the top-right header area and click it.
+- **Legacy UI:** look for the **💳** (monetization) icon in the top-right header area and click it.
 
 Either way, the modal shows all the relevant information about your plan and payments.
 

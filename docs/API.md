@@ -290,7 +290,24 @@ Returns the current global plugin settings.
 
 ### `POST /NoPayNoPlay/Settings`
 
-Updates global plugin settings. Same schema as the configuration object.
+Updates global plugin settings. Same schema as the configuration object. Server-side
+values are clamped (`MonthlyPrice` 0–100000, `GraceDays`/`TrialDays` 0–365,
+`WarningDaysBefore` 0–90, `AuditLogMaxEntries` 50–5000), URLs are restricted to
+`http`/`https`, and `Currency` must be a three-letter code (otherwise `EUR`).
+
+Two fields are deliberately **not** writable here: `TrustForwardedHeaders` (see
+the dedicated endpoint below) and `ConfigVersion` (managed by the plugin).
+
+### `POST /NoPayNoPlay/Settings/ForwardedHeaders`
+
+```json
+{ "enabled": true }
+```
+
+Enables or disables trusting the left-most `X-Forwarded-For` entry as the client
+address. Default is `false`; enable it only behind a reverse proxy that overwrites
+the header, otherwise a client can spoof its IP and dodge the per-IP throttle.
+Audited as `settings.forwardedHeaders`.
 
 ### `GET /NoPayNoPlay/PromoCodes`
 
@@ -333,8 +350,29 @@ Returns File Transformation registration diagnostics.
 
 ### `GET /NoPayNoPlay/Health`
 
-Lightweight health probe. Returns `200 OK` with `{ "status": "healthy" }`.
+Admin health snapshot. Returns `200 OK` with the plugin version, the File
+Transformation registration flag and its last check time, the number of tracked
+users and the server time:
+
+```json
+{
+  "ok": true,
+  "version": "2.1.0.0",
+  "ftRegistered": true,
+  "ftLastCheck": "2026-11-03T00:20:00Z",
+  "trackedUsers": 15,
+  "serverTime": "2026-11-03T00:21:00Z"
+}
+```
+
+### `GET /NoPayNoPlay/Public/Health`
+
+Anonymous liveness probe for monitoring tools (Uptime Kuma, healthchecks…).
+Returns `200 OK` with the plain text body `ok`. It exposes no user count, no
+version and no configuration, which is why it is the only unauthenticated
+endpoint besides the embedded web assets.
 
 ### `POST /NoPayNoPlay/RetryRegistration`
 
-Re-attempts File Transformation registration without restarting.
+Re-attempts File Transformation registration without restarting the server.
+Requires admin.

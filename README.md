@@ -12,7 +12,7 @@
 [![Downloads](https://img.shields.io/github/downloads/alexisometric/nopaynoplay/total?color=success&logo=github)](https://github.com/alexisometric/nopaynoplay/releases)
 [![CI](https://github.com/alexisometric/nopaynoplay/actions/workflows/ci.yml/badge.svg)](https://github.com/alexisometric/nopaynoplay/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/alexisometric/nopaynoplay?display_name=tag&sort=semver)](https://github.com/alexisometric/nopaynoplay/releases/latest)
-[![Jellyfin](https://img.shields.io/badge/Jellyfin-10.11.x-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org)
+[![Jellyfin](https://img.shields.io/badge/Jellyfin-12.x-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org)
 [![ElegantFin](https://img.shields.io/badge/ElegantFin-Ready-756fe2?logo=jellyfin&logoColor=white)](https://github.com/lscambo13/ElegantFin)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](docs/DEVELOPMENT.md)
@@ -72,7 +72,7 @@ You self-host Jellyfin for your family / friends / housemates and you'd like the
 
 | Requirement | Details |
 |---|---|
-| **Jellyfin** | Version 10.11.x or compatible |
+| **Jellyfin** | Version 12.x (ABI `12.0.0.0`) or compatible |
 | **File Transformation** *(recommended)* | Required for the user UI (banner, modal, header button) — [install from GitHub](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) |
 
 ### Method 1 — from the plugin catalog *(recommended)*
@@ -121,7 +121,7 @@ After installing and restarting Jellyfin:
 
 ## � Screenshots
 
-> Live captures from a real Jellyfin server (v10.11.11) — each user was signed in with their own account.
+> Live captures from a real Jellyfin 12 server — each user was signed in with their own account.
 
 ### 👤 User experience
 
@@ -296,9 +296,10 @@ All routes under `/NoPayNoPlay/`.
 | `POST` | `/NoPayNoPlay/PromoCodes` | admin | Create promo code |
 | `DELETE` | `/NoPayNoPlay/PromoCodes/{id}` | admin | Delete promo code |
 | `GET` | `/NoPayNoPlay/Status` | admin | Plugin runtime status |
-| `GET` | `/NoPayNoPlay/Health` | public | Health probe |
+| `GET` | `/NoPayNoPlay/Health` | admin | Detailed health snapshot |
+| `GET` | `/NoPayNoPlay/Public/Health` | public | Anonymous liveness probe (plain text `ok`) |
 | `GET` | `/NoPayNoPlay/Diagnostics` | admin | FT registration diagnostics |
-| `POST` | `/NoPayNoPlay/Diagnostics/Retry` | admin | Retry FT registration |
+| `POST` | `/NoPayNoPlay/Diagnostics/RetryRegistration` | admin | Retry FT registration |
 
 > 📖 **Full API reference with request/response schemas → [docs/API.md](docs/API.md)**
 
@@ -385,7 +386,7 @@ Yes. The price is read at the time a payment is recorded. Already-computed expir
 <details>
 <summary><b>Is it compatible with Jellyfin 10.10?</b></summary>
 
-No, the API has changed. This release targets Jellyfin **10.11.x** (`targetAbi` 10.11.11.0).
+No, the API has changed. This release targets Jellyfin **12.x** (`targetAbi` 12.0.0.0) and `net10.0`.
 </details>
 
 ---

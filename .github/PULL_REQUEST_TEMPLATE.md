@@ -14,7 +14,7 @@ Thanks for sending a pull request! Please make sure CI is green and the descript
 
 - [ ] `dotnet build` passes
 - [ ] `dotnet test` passes
-- [ ] Manually tested on a local Jellyfin Server 10.11.x
+- [ ] Manually tested on a local Jellyfin Server 12.x
 
 ## Checklist
 

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Jellyfin 10.11.x** or compatible version
+- **Jellyfin 12.x** or compatible version (ABI `12.0.0.0`)
 - **Administrator access** to the Jellyfin dashboard
 - _(Recommended)_ [**File Transformation**](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation) plugin for the user-facing UI (banner, modal, “My subscription” entry / header button)
 

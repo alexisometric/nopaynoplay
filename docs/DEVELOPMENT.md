@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - [.NET SDK 9.0+](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Jellyfin Server 10.11.x](https://jellyfin.org/downloads) (Docker or native, for local testing)
+- [Jellyfin Server 12.x](https://jellyfin.org/downloads) (Docker or native, for local testing)
 - A code editor (VS Code, Rider, or any C# IDE)
 
 ---
@@ -125,14 +125,14 @@ docker run -d \
   --name jellyfin-test \
   -p 8096:8096 \
   -v /path/to/your/plugins:/jellyfin/plugins \
-  jellyfin/jellyfin:10.11.0
+  jellyfin/jellyfin:12.0.0
 
 # Or mount a single DLL for quick iteration
 docker run -d \
   --name jellyfin-dev \
   -p 8096:8096 \
   -v $(pwd)/src/bin/Debug/net9.0/Jellyfin.Plugin.NoPayNoPlay.dll:/jellyfin/plugins/NoPayNoPlay/Jellyfin.Plugin.NoPayNoPlay.dll \
-  jellyfin/jellyfin:10.11.0
+  jellyfin/jellyfin:12.0.0
 ```
 
 > 💡 **User UI note:** the plugin's user-facing UI (💳 button, banner, payment modal) is injected into the web app by the external **File Transformation** plugin. To test it locally, install File Transformation from its [releases page](https://github.com/IAmParadox27/jellyfin-plugin-file-transformation/releases), restart Jellyfin, and check **Dashboard → Plugins → NoPayNoPlay** for the green "File Transformation OK" badge. The admin dashboard works regardless of File Transformation.

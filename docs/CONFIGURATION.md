@@ -53,6 +53,25 @@ The banner is compatible with the **Media Bar** plugin: when the fullscreen slid
 
 The **sticky save button** at the bottom persists all settings immediately. Configuration backups are created automatically (retention: 10 backups) in `config/NoPayNoPlay.backups/`. The save bar adapts to ElegantFin with `--headerColor` and `backdrop-filter: blur()`.
 
+### Advanced settings (not in the dashboard)
+
+A few safeguards are deliberately kept out of the dashboard because a wrong value can lock members out or weaken a throttle. They live in `config/config.xml` and are validated on every load:
+
+| Key | Default | Description |
+|---|---|---|
+| `TrustForwardedHeaders` | `false` | When `true`, the left-most `X-Forwarded-For` entry is treated as the client IP. Enable **only** behind a reverse proxy that overwrites that header; otherwise a client can spoof its address and dodge the per-IP throttle. Also available as `POST /NoPayNoPlay/Settings/ForwardedHeaders` (`{"enabled": true}`). |
+| `ConfigVersion` | `2` | Configuration schema version. Rewritten on every save; used to migrate older files. |
+| `AuditLogMaxEntries` | `1000` | Audit log ring size, clamped to 50–5000. |
+
+Out-of-range values are clamped on load and on save (`Normalize()`): price `0–100000`, grace/trial `0–365` days, warning window `0–90` days, audit ring `50–5000`. A currency code that is not three letters falls back to `EUR`.
+
+### Saving, backups and corruption handling
+
+- **Atomic writes** — the configuration is serialized to `config.xml.tmp-<guid>`, flushed to disk, then swapped in with `File.Replace`. A crash or a full disk mid-write cannot leave a truncated live file.
+- **Backups** — before each write, a timestamped copy is stored in `NoPayNoPlay.backups/config.xml.bak-<yyyyMMddHHmmssfff>` (retention 10, mode `600` on Unix, files above 32 MiB are skipped).
+- **Suspect files are preserved** — if `config.xml` is larger than 512 bytes but contains no subscriptions, promo codes or audit entries, it is first copied to `config.xml.unreadable-<stamp>`. A corrupt or foreign file is kept for inspection instead of being silently replaced by defaults.
+- **No destructive merge** — a save refuses to overwrite a populated live configuration with one whose `Subscriptions`, `Tiers`, `Tags`, `PromoCodes` or `AuditLog` lists are empty.
+
 ---
 
 ## 👥 Members Tab

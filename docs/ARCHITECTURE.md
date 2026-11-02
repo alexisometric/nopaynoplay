@@ -174,20 +174,30 @@ Plus:
 
 ### UserPolicy Enforcement
 
-Before blocking a user, a **snapshot** saves the current playback permissions:
+A block removes **seven** permissions, not just playback: media playback, audio and video transcoding, remuxing, content downloading, sync transcoding and media conversion. Dropping only the first four left downloads and offline sync open, which was the most valuable path for a lapsed member.
+
+Before blocking, a **snapshot** records the current value of those seven permissions:
 
 ```json
 {
-  "enableMediaPlayback": false,
-  "enableAudioPlaybackTranscoding": false,
-  "enableVideoPlaybackTranscoding": false,
-  "enablePlaybackRemuxing": false
+  "enableMediaPlayback": true,
+  "enableAudioPlaybackTranscoding": true,
+  "enableVideoPlaybackTranscoding": true,
+  "enablePlaybackRemuxing": true,
+  "enableContentDownloading": true,
+  "enableSyncTranscoding": true,
+  "enableMediaConversion": true,
+  "inferred": false
 }
 ```
 
-On restore, **only flags matching the snapshot** are reverted — preserving any admin changes made during the block period.
+The snapshot is taken **once**, the first time the user is blocked; later passes reuse it instead of recording the already-cleared policy (which would otherwise turn a permanent block into a silent revocation of the account's permissions). If every managed permission is already `false` when the snapshot is taken, `inferred` is set: the pre-block state is unknown, so the restore re-enables everything rather than "restoring" `false` and leaving the member blocked forever.
 
-Active sessions are stopped immediately via `SendPlaystateCommand(Stop)`.
+On restore, **only flags matching the snapshot** are reverted — a permission the admin granted during the block is kept, and a permission the admin denied is not re-granted.
+
+The state change is **persisted immediately** (`SubscriptionService.Save()`) from every caller — the authentication consumer, the admin endpoints and the scheduled task — so a block applied at sign-in survives a restart.
+
+Active sessions are stopped immediately via `SendPlaystateCommand(Stop)` with a 5-second timeout per session, and only when the block becomes effective (a repeated pass does not interrupt anything).
 
 ### File Transformation (JS Injection)
 
@@ -195,9 +205,9 @@ The `WebTransformer` class registers a callback with the File Transformation plu
 
 1. Looks for `index.html` in the transformable files
 2. Only modifies payloads that look like HTML documents (`<!doctype html` or `<html` start) — avoids corrupting Webpack JS chunks
-3. Injects `<script defer src="/NoPayNoPlay/Web/client.js?v=HASH">` before `</body>` — `HASH` is a 12-hex **content hash** of the embedded `client.js` + `qrcode.js` (`WebAssetVersion`), not the assembly version, so even a hotfix that keeps the same version invalidates browser caches
+3. Injects `<script defer src="NoPayNoPlay/Web/client.js?v=HASH">` before `</body>` — the path is **relative** so the plugin keeps working when Jellyfin is served under a base URL. `HASH` is a 12-hex **content hash** of the embedded `client.js` + `qrcode.js` (`WebAssetVersion`), not the assembly version, so even a hotfix that keeps the same version invalidates browser caches
 4. Strips previously injected scripts (cache-busting on update)
-5. Retries with back-off (3s→180s) if FT assembly isn't loaded yet
+5. Retries with back-off (3/8/20/45/90/180 s, then every 15 min for two hours) if the FT assembly isn't loaded yet — Jellyfin loads plugins in an arbitrary order and an admin may install File Transformation after this plugin. The `registered` flag is only kept when FT actually acknowledges the `index.html` pattern, so a failed registration cannot pin the plugin into "already registered" and block every later retry.
 
 ### Banner placement & theme compatibility
 
