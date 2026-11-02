@@ -56,17 +56,16 @@ public class SubscriptionLogicTests
     }
 
     [Fact]
-    public void ApplyPayment_AnchorsOnPaymentDay()
+    public void ApplyPayment_PreservesExpiryAnchorDay()
     {
-        // Regression for the trial -> first-payment over-grant: the signup day (25)
-        // differs from the trial-end day. The renewed expiry must anchor on the
-        // payment date's day (now.Day) — NOT the signup day, and NOT the expiry day.
+        // Regression for the "pay on the 5th, lose 15 days" bug: while the current
+        // period is still active, a payment must extend from the existing expiry and
+        // keep its anchor day. Anchoring on now.Day used to move a period ending on
+        // the 10th to the 5th of the next month, silently shortening access.
         var cfg = Config(trial: 7);
         var svc = TestSupport.Service(cfg);
         var uid = Guid.NewGuid();
 
-        // Future expiry on day 10 of a month two months out: definitely after "now",
-        // and day 10 always exists so no end-of-month clamping noise.
         DateTime now = DateTime.UtcNow;
         DateTime future = new DateTime(now.Year, now.Month, 1, 23, 59, 59, DateTimeKind.Utc)
             .AddMonths(2).AddDays(9); // day 10
@@ -80,20 +79,27 @@ public class SubscriptionLogicTests
         svc.ApplyPayment(uid, 10m, "PayPal", 1, string.Empty);
 
         var sub = cfg.Subscriptions.Single(s => s.UserId == uid);
-        // Anchored on the payment date's day (now.Day), NOT the expiry day (10)
-        // and NOT the signup day (25). ApplyPayment anchors on its own
-        // DateTime.UtcNow, which can roll to the next UTC day between the capture
-        // above and the call (midnight boundary) — accept either day in that window.
-        int preDay = now.Day;
-        int postDay = DateTime.UtcNow.Day;
-        var expected = new[]
-        {
-            SubscriptionService.ComputeNextExpiry(future, 1, preDay),
-            SubscriptionService.ComputeNextExpiry(future, 1, postDay)
-        };
-        Assert.Contains(sub.ExpiryDate, expected);
+        Assert.Equal(SubscriptionService.ComputeNextExpiry(future, 1, 10), sub.ExpiryDate);
+        Assert.True(sub.ExpiryDate > future);
         Assert.NotEqual(25, sub.ExpiryDate.Day); // never the signup day
-        Assert.NotEqual(10, sub.ExpiryDate.Day); // never the expiry day
+    }
+
+    [Fact]
+    public void ApplyPayment_NeverShortensAnActivePeriod()
+    {
+        var cfg = Config(trial: 7);
+        var svc = TestSupport.Service(cfg);
+        var uid = Guid.NewGuid();
+        DateTime now = DateTime.UtcNow;
+        DateTime future = new DateTime(now.Year, now.Month, 1, 23, 59, 59, DateTimeKind.Utc)
+            .AddMonths(1).AddDays(19); // day 20, still active
+        cfg.Subscriptions.Add(new UserSubscription { UserId = uid, ExpiryDate = future });
+
+        svc.ApplyPayment(uid, 10m, "PayPal", 1, string.Empty);
+
+        var sub = cfg.Subscriptions.Single(s => s.UserId == uid);
+        Assert.True(sub.ExpiryDate > future, "a payment must never move the expiry backwards");
+        Assert.Equal(20, sub.ExpiryDate.Day);
     }
 
     [Fact]

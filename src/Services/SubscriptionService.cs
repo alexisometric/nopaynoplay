@@ -183,13 +183,123 @@ public class SubscriptionService
     }
 
     /// <summary>
+    /// Backfills the missing <c>Id</c> of every entity that supports addressing by id
+    /// (transactions, audit entries, promo codes, tiers, tags). Older configurations
+    /// predate those fields; without this pass, every restart generated fresh ids and
+    /// any admin action targeted at an id failed after a reboot. Runs in memory only —
+    /// the caller persists once.
+    /// </summary>
+    /// <returns><c>true</c> when at least one id was patched.</returns>
+    internal static bool MigrateEntityIds(PluginConfiguration config)
+    {
+        bool changed = false;
+
+        foreach (var sub in config.Subscriptions)
+        {
+            changed |= MigrateTransactionIds(sub);
+        }
+
+        foreach (var entry in config.AuditLog)
+        {
+            if (entry.Id == Guid.Empty)
+            {
+                entry.Id = Guid.NewGuid();
+                changed = true;
+            }
+        }
+
+        foreach (var promo in config.PromoCodes)
+        {
+            if (promo.Id == Guid.Empty)
+            {
+                promo.Id = Guid.NewGuid();
+                changed = true;
+            }
+        }
+
+        foreach (var tier in config.Tiers)
+        {
+            if (tier.Id == Guid.Empty)
+            {
+                tier.Id = Guid.NewGuid();
+                changed = true;
+            }
+        }
+
+        foreach (var tag in config.Tags)
+        {
+            if (tag.Id == Guid.Empty)
+            {
+                tag.Id = Guid.NewGuid();
+                changed = true;
+            }
+        }
+
+        return changed;
+    }
+
+    /// <summary>
+    /// Truncates a value to at most <paramref name="maxLength"/> UTF-16 code units
+    /// without splitting a surrogate pair. A naive <see cref="string.Substring(int, int)"/>
+    /// that cuts an emoji in half produces an invalid UTF-16 string and makes the XML
+    /// serializer throw <c>ArgumentException</c> on the next save — losing the change
+    /// that was just applied in memory.
+    /// </summary>
+    internal static string SafeTruncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        int length = Math.Max(0, maxLength);
+        if (length > 0 && char.IsHighSurrogate(value[length - 1]))
+        {
+            length--;
+        }
+
+        return value.Substring(0, length);
+    }
+
+    /// <summary>
     /// Computes the next expiry date while preserving the anchor day (handles end-of-month).
     /// </summary>
+    /// <remarks>
+    /// The result is always expressed in UTC. An <see cref="DateTimeKind.Unspecified"/>
+    /// input is treated as UTC (XML round-trips lose the kind), so a hand-edited or
+    /// migrated timestamp cannot shift the computed day through a local-time conversion.
+    /// </remarks>
     public static DateTime ComputeNextExpiry(DateTime current, int monthsToAdd, int anchorDay)
     {
-        DateTime target = current.AddMonths(monthsToAdd);
-        int day = Math.Min(anchorDay, DateTime.DaysInMonth(target.Year, target.Month));
+        DateTime basis = current.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(current, DateTimeKind.Utc)
+            : current.ToUniversalTime();
+        DateTime target = basis.AddMonths(monthsToAdd);
+        int day = Math.Clamp(anchorDay, 1, DateTime.DaysInMonth(target.Year, target.Month));
         return new DateTime(target.Year, target.Month, day, 23, 59, 59, DateTimeKind.Utc);
+    }
+
+    /// <summary>
+    /// Extends <paramref name="expiry"/> by <paramref name="months"/> for a payment made
+    /// "now", without ever shortening the period already paid.
+    /// </summary>
+    /// <remarks>
+    /// The anchor day is the current expiry day when the subscription is still active
+    /// (so a member who pays on the 5th while their period runs to the 20th keeps the
+    /// 20th and gains a full month), and the payment day only when the subscription has
+    /// already lapsed (there is no period left to preserve).
+    /// </remarks>
+    private static DateTime ExtendFromNow(DateTime expiry, DateTime now, int months)
+    {
+        DateTime baseDate = expiry < now ? now : expiry;
+        int anchor = expiry >= now ? expiry.Day : now.Day;
+        DateTime candidate = ComputeNextExpiry(baseDate, months, anchor);
+        return candidate > expiry ? candidate : expiry;
     }
 
     /// <summary>
@@ -286,19 +396,19 @@ public class SubscriptionService
             }
             else
             {
-                // Regular "current payment": extend from current expiry, or from now
-                // if the subscription has already lapsed. Anchor on the payment date's
-                // own day (now.Day) so that paying on the 15th always extends to the
-                // 15th of the target month, regardless of the current expiry day.
-                DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
-                sub.ExpiryDate = ComputeNextExpiry(baseDate, months, now.Day);
+                // Regular "current payment": extend from the current expiry without
+                // ever moving the anchor backwards. Anchoring on now.Day used to
+                // shorten an already-paid period (paying on the 5th while the period
+                // runs to the 20th moved the expiry to the 5th of the next month).
+                sub.ExpiryDate = ExtendFromNow(sub.ExpiryDate, now, months);
             }
 
             sub.Transactions.Add(new TransactionEntry
             {
                 Date = txDate,
                 Amount = amount,
-                MonthsAdded = monthsAdded,
+                MonthsAdded = months,
+                IsBackfill = isBackfill,
                 Method = method ?? string.Empty,
                 AdminNote = note ?? string.Empty
             });
@@ -371,9 +481,23 @@ public class SubscriptionService
         lock (_lock)
         {
             var live = liveUserIds as HashSet<Guid> ?? new HashSet<Guid>(liveUserIds);
+            // Record what is about to be destroyed before destroying it: deletion of
+            // payment history and admin notes must always be traceable afterwards.
+            var removedIds = Config.Subscriptions
+                .Where(s => !live.Contains(s.UserId))
+                .Select(s => s.UserId)
+                .ToList();
+
             int removed = Config.Subscriptions.RemoveAll(s => !live.Contains(s.UserId));
             if (removed > 0)
             {
+                Audit(
+                    "system",
+                    "subscription.purge",
+                    null,
+                    string.Empty,
+                    $"removed {removed} orphaned subscription record(s): {string.Join(", ", removedIds)}",
+                    persist: false);
                 _save();
                 _logger.LogInformation("NoPayNoPlay: purged {Count} orphaned subscription record(s)", removed);
             }
@@ -388,6 +512,14 @@ public class SubscriptionService
     /// + the configured trial. Used by edit/delete to keep the expiry coherent
     /// with the persisted history.
     /// </summary>
+    /// <remarks>
+    /// The replay uses the exact same rules as <see cref="ApplyPayment"/>: a historical
+    /// backfill (<see cref="TransactionEntry.IsBackfill"/>) only ever pushes the expiry
+    /// forward via <c>max(expiry, date + months)</c>, while a regular payment extends
+    /// from the expiry in force at that date and preserves its anchor day. Replaying
+    /// every entry as a regular payment (the previous behaviour) could move the expiry
+    /// backwards and made editing one transaction rewrite the whole paid history.
+    /// </remarks>
     public DateTime RecomputeExpiry(UserSubscription sub)
     {
         DateTime expiry = sub.SubscriptionDate.AddDays(Math.Max(0, Config.TrialDays));
@@ -395,18 +527,27 @@ public class SubscriptionService
         var ordered = sub.Transactions.OrderBy(t => t.Date).ToList();
         foreach (var t in ordered)
         {
-            int months = Math.Max(1, t.MonthsAdded);
-            // Replay each transaction the same way ApplyPayment handles a regular
-            // (non-backfill) payment: extend from the current expiry, or from the
-            // transaction date if the user was lapsed at that point. Anchor on
-            // the transaction date's own day — mirrors now.Day from ApplyPayment.
-            //
-            // Using t.Date (not the current clock) makes the recompute deterministic:
-            // replaying the same history always yields the same expiry regardless
-            // of when RecomputeExpiry is called. The test at the time of payment
-            // (expiry < now → lapsed) is approximated by expiry < t.Date.
-            DateTime baseDate = expiry < t.Date ? t.Date : expiry;
-            expiry = ComputeNextExpiry(baseDate, months, t.Date.Day);
+            int months = Math.Clamp(t.MonthsAdded, 1, 60);
+            // Entries written before IsBackfill existed are inferred: a payment dated
+            // before the subscription start can only have been a historical backfill.
+            bool isBackfill = t.IsBackfill || t.Date < sub.SubscriptionDate;
+
+            DateTime candidate;
+            if (isBackfill)
+            {
+                candidate = ComputeNextExpiry(t.Date, months, t.Date.Day);
+            }
+            else
+            {
+                DateTime baseDate = expiry < t.Date ? t.Date : expiry;
+                int anchor = expiry >= t.Date ? expiry.Day : t.Date.Day;
+                candidate = ComputeNextExpiry(baseDate, months, anchor);
+            }
+
+            if (candidate > expiry)
+            {
+                expiry = candidate;
+            }
         }
 
         sub.ExpiryDate = expiry;
@@ -486,11 +627,7 @@ public class SubscriptionService
 
             sub.HasPendingPaymentClaim = true;
             sub.PendingPaymentClaimAt = DateTime.UtcNow;
-            sub.PendingPaymentMethod = (method ?? string.Empty).Trim();
-            if (sub.PendingPaymentMethod.Length > 50)
-            {
-                sub.PendingPaymentMethod = sub.PendingPaymentMethod.Substring(0, 50);
-            }
+            sub.PendingPaymentMethod = SafeTruncate((method ?? string.Empty).Trim(), 50);
             return true;
         }
     }
@@ -532,8 +669,9 @@ public class SubscriptionService
             if (sub.RedeemedPromoCodeIds.Contains(promo.Id)) return 0;
 
             int months = Math.Max(1, promo.MonthsGranted);
-            DateTime baseDate = sub.ExpiryDate < now ? now : sub.ExpiryDate;
-            sub.ExpiryDate = ComputeNextExpiry(baseDate, months, now.Day);
+            // Same rule as a regular payment: extend without shortening, keep the
+            // anchor day of the period already paid.
+            sub.ExpiryDate = ExtendFromNow(sub.ExpiryDate, now, months);
             sub.RedeemedPromoCodeIds.Add(promo.Id);
             if (sub.RedeemedPromoCodeIds.Count > MaxRedeemedCodesPerUser)
             {
@@ -653,12 +791,9 @@ public class SubscriptionService
         lock (_lock)
         {
             if (string.IsNullOrEmpty(action)) return;
-            string trimmedDetails = StripControlChars(details ?? string.Empty);
-            if (trimmedDetails.Length > 500) trimmedDetails = trimmedDetails.Substring(0, 500);
-            string trimmedActor = StripControlChars(actor ?? string.Empty);
-            if (trimmedActor.Length > 64) trimmedActor = trimmedActor.Substring(0, 64);
-            string trimmedUsername = StripControlChars(targetUsername ?? string.Empty);
-            if (trimmedUsername.Length > 128) trimmedUsername = trimmedUsername.Substring(0, 128);
+            string trimmedDetails = SafeTruncate(StripControlChars(details ?? string.Empty), 500);
+            string trimmedActor = SafeTruncate(StripControlChars(actor ?? string.Empty), 64);
+            string trimmedUsername = SafeTruncate(StripControlChars(targetUsername ?? string.Empty), 128);
 
             Config.AuditLog.Add(new AuditLogEntry
             {

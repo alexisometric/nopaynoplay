@@ -29,4 +29,13 @@ public class TransactionEntry
 
     /// <summary>Free-form note entered by the administrator.</summary>
     public string AdminNote { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether this payment was recorded as a
+    /// historical backfill (dated in the past). Backfilled periods are applied as
+    /// <c>max(expiry, paymentDate + months)</c> — they never shorten an existing
+    /// expiration — so replaying the history must know which rule to use.
+    /// Entries written before this flag existed are inferred from their date.
+    /// </summary>
+    public bool IsBackfill { get; set; }
 }
