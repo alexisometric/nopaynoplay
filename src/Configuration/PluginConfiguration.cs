@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using MediaBrowser.Model.Plugins;
 
@@ -83,4 +84,44 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>Maximum number of entries kept in <see cref="AuditLog"/>.</summary>
     public int AuditLogMaxEntries { get; set; } = 500;
+
+    /// <summary>Version of the on-disk configuration schema. <c>0</c> means a config written before this field existed.</summary>
+    public int ConfigVersion { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the client IP may be read from the
+    /// <c>X-Forwarded-For</c> header. Keep this disabled unless Jellyfin runs behind a
+    /// reverse proxy that overwrites the header: a client can forge it, which would
+    /// bypass the per-IP throttles and let an attacker lock an arbitrary IP out.
+    /// </summary>
+    public bool TrustForwardedHeaders { get; set; }
+
+    /// <summary>Current configuration schema version.</summary>
+    public const int CurrentConfigVersion = 2;
+
+    /// <summary>
+    /// Normalises values that may come from a hand-edited XML, a restored backup or
+    /// an older release. Called once at load time and before every save, so the rest
+    /// of the code can rely on the invariants (non-negative windows, sane caps).
+    /// </summary>
+    public void Normalize()
+    {
+        Subscriptions ??= new List<UserSubscription>();
+        PromoCodes ??= new List<PromoCode>();
+        Tiers ??= new List<SubscriptionTier>();
+        Tags ??= new List<UserTag>();
+        AuditLog ??= new List<AuditLogEntry>();
+
+        MonthlyPrice = Math.Clamp(MonthlyPrice, 0m, 100000m);
+        GraceDays = Math.Clamp(GraceDays, 0, 365);
+        TrialDays = Math.Clamp(TrialDays, 0, 365);
+        WarningDaysBefore = Math.Clamp(WarningDaysBefore, 0, 90);
+        AuditLogMaxEntries = Math.Clamp(AuditLogMaxEntries, 50, 5000);
+
+        Currency = string.IsNullOrWhiteSpace(Currency)
+            ? "EUR"
+            : (Currency.Trim().Length == 3 ? Currency.Trim().ToUpperInvariant() : Currency.Trim());
+
+        ConfigVersion = CurrentConfigVersion;
+    }
 }
