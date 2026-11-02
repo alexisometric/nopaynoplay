@@ -94,6 +94,29 @@ jobs:
           git commit -m "chore: bump version to ${V}"
           git push origin main
 
+      - name: Wait for CI on the bumped commit
+        # The bump is pushed straight to main, so nothing would stop a broken
+        # commit from being released. Wait for the CI run of that exact commit and
+        # abort the release if it fails.
+        if: steps.changes.outputs.has_changes == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse HEAD)
+          RUN_ID=""
+          for _ in $(seq 1 60); do
+            RUN_ID=$(gh run list --workflow=ci.yml --commit "$SHA" --limit 1 \
+              --json databaseId,status --jq '.[0].databaseId // empty')
+            [[ -n "$RUN_ID" ]] && break
+            sleep 10
+          done
+          if [[ -z "$RUN_ID" ]]; then
+            echo "::error::CI did not start for $SHA"
+            exit 1
+          fi
+          gh run watch "$RUN_ID" --exit-status
+
       - name: Trigger release pipeline
         if: steps.changes.outputs.has_changes == 'true'
         env:

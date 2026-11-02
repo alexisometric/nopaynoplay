@@ -11,7 +11,7 @@ on:
       target_abi:
         description: 'Jellyfin target ABI'
         required: true
-        default: '10.11.9.0'
+        default: '12.0.0.0'
 
 # Single shared group (not per-ref) so two close releases queue instead of racing
 # the manifest commit/push on main.
@@ -59,9 +59,9 @@ jobs:
             ABI="$INPUT_ABI"
           else
             VERSION="${GITHUB_REF#refs/tags/v}"
-            # Source of truth: src/meta.json. Falls back to 10.11.9.0 if absent.
-            ABI=$(jq -r '.targetAbi' src/meta.json 2>/dev/null || echo '10.11.9.0')
-            [[ -z "$ABI" || "$ABI" == "null" ]] && ABI='10.11.9.0'
+            # Source of truth: src/meta.json. Falls back to 12.0.0.0 if absent.
+            ABI=$(jq -r '.targetAbi' src/meta.json 2>/dev/null || echo '12.0.0.0')
+            [[ -z "$ABI" || "$ABI" == "null" ]] && ABI='12.0.0.0'
           fi
           # Strict X.Y.Z.W validation — rejects anything with shell metacharacters.
           [[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){3}$ ]] || { echo "Invalid version: $VERSION" >&2; exit 1; }

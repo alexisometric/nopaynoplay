@@ -10,7 +10,7 @@ VERSION="${1:-$(grep -m1 '<Version>' src/Jellyfin.Plugin.NoPayNoPlay.csproj | se
 # Default the ABI to src/meta.json (single source of truth) so manual builds match
 # the CI release; only fall back to a literal when meta.json can't be read.
 TARGET_ABI="${TARGET_ABI:-$(python3 -c 'import json;print(json.load(open("src/meta.json"))["targetAbi"])' 2>/dev/null || true)}"
-[[ -z "${TARGET_ABI:-}" || "$TARGET_ABI" == "null" ]] && TARGET_ABI="10.11.9.0"
+[[ -z "${TARGET_ABI:-}" || "$TARGET_ABI" == "null" ]] && TARGET_ABI="12.0.0.0"
 OUT_DIR="$ROOT/artifacts"
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf "$WORK_DIR"' EXIT
@@ -60,7 +60,12 @@ cp "src/bin/Release/net10.0/Jellyfin.Plugin.NoPayNoPlay.dll" "$WORK_DIR/"
 
 ZIP="$OUT_DIR/nopaynoplay_${VERSION}.zip"
 rm -f "$ZIP"
-( cd "$WORK_DIR" && zip -q -9 "$ZIP" Jellyfin.Plugin.NoPayNoPlay.dll meta.json )
+
+# Reproducible archives: fix the timestamps and drop the extra file attributes, so
+# two builds of the same commit produce the same zip (and the same md5 published in
+# the manifest) instead of depending on the clock and the build directory.
+touch -t 202001010000 "$WORK_DIR/Jellyfin.Plugin.NoPayNoPlay.dll" "$WORK_DIR/meta.json"
+( cd "$WORK_DIR" && TZ=UTC zip -q -9 -X "$ZIP" Jellyfin.Plugin.NoPayNoPlay.dll meta.json )
 
 # md5 checksum expected by Jellyfin in the manifest.
 MD5="$(md5sum "$ZIP" | awk '{print $1}')"

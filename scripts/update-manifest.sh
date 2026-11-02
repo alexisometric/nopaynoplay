@@ -11,7 +11,7 @@ ZIP_URL="$2"
 MD5="$3"
 # Default the ABI to src/meta.json (single source of truth); fall back only if unreadable.
 TARGET_ABI="${TARGET_ABI:-$(python3 -c 'import json;print(json.load(open("src/meta.json"))["targetAbi"])' 2>/dev/null || true)}"
-[[ -z "${TARGET_ABI:-}" || "$TARGET_ABI" == "null" ]] && TARGET_ABI="10.11.9.0"
+[[ -z "${TARGET_ABI:-}" || "$TARGET_ABI" == "null" ]] && TARGET_ABI="12.0.0.0"
 CHANGELOG="${CHANGELOG:-See the GitHub release notes.}"
 
 python3 - "$VERSION" "$ZIP_URL" "$MD5" "$TARGET_ABI" "$CHANGELOG" <<'PY'
