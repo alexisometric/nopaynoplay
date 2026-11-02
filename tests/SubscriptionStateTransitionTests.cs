@@ -8,13 +8,11 @@ using Xunit;
 namespace Jellyfin.Plugin.NoPayNoPlay.Tests;
 
 /// <summary>
-/// Validates that <see cref="SubscriptionService"/> mutations correctly update
-/// the subscription state so that <see cref="UserPolicyEnforcer"/> (called via
-/// the controller's ApplyEnforcementSafelyAsync wrapper) would see the right
-/// state. These tests exercise the code path that was previously broken by the
-/// infinite-recursion bug in ApplyEnforcementSafelyAsync.
+/// Validates the state transitions of <see cref="SubscriptionService"/>: paying,
+/// exempting, resetting, redeeming a promo code and editing the transaction
+/// history must leave the subscription in the state the enforcement pass reads.
 /// </summary>
-public class EnforcementSafetyTests
+public class SubscriptionStateTransitionTests
 {
     private static PluginConfiguration Config(int warning = 3, int grace = 2, int trial = 7)
         => new() { WarningDaysBefore = warning, GraceDays = grace, TrialDays = trial };
