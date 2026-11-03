@@ -16,7 +16,9 @@ public class WebTransformerTests
 
         string result = WebTransformer.Transform(payload);
 
-        Assert.Contains("NoPayNoPlay/Web/client.js", result);
+        // "../" is load-bearing: index.html lives in <base>/web/, so a bare relative
+        // path would resolve inside /web/ and 404 (no banner and no menu at all).
+        Assert.Contains("src=\"../NoPayNoPlay/Web/client.js", result);
         Assert.True(result.IndexOf("client.js") < result.IndexOf("</body>"));
     }
 

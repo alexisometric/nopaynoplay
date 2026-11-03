@@ -37,10 +37,13 @@ public static class WebTransformer
     /// </summary>
     private static string BuildScriptTag()
     {
-        // Relative to the document, not absolute: Jellyfin can be served under a base
-        // path (e.g. https://host/jellyfin/), where the absolute /NoPayNoPlay/... URL
-        // points outside the application and the script 404s (no UI at all).
-        return "<script defer src=\"NoPayNoPlay/Web/client.js?v=" + WebAssetVersion.Value + "\"></script>";
+        // index.html is always served from <base>/web/, so "../" resolves to the
+        // application root and the tag survives a base URL (https://host/jellyfin/):
+        //   /web/index.html          -> /NoPayNoPlay/Web/client.js
+        //   /jellyfin/web/index.html -> /jellyfin/NoPayNoPlay/Web/client.js
+        // A bare "NoPayNoPlay/..." would resolve *inside* /web/ and 404, and an
+        // absolute "/NoPayNoPlay/..." breaks every install served under a sub-path.
+        return "<script defer src=\"../NoPayNoPlay/Web/client.js?v=" + WebAssetVersion.Value + "\"></script>";
     }
 
     /// <summary>Static method matching the File Transformation callback contract.</summary>

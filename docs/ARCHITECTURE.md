@@ -205,7 +205,7 @@ The `WebTransformer` class registers a callback with the File Transformation plu
 
 1. Looks for `index.html` in the transformable files
 2. Only modifies payloads that look like HTML documents (`<!doctype html` or `<html` start) — avoids corrupting Webpack JS chunks
-3. Injects `<script defer src="NoPayNoPlay/Web/client.js?v=HASH">` before `</body>` — the path is **relative** so the plugin keeps working when Jellyfin is served under a base URL. `HASH` is a 12-hex **content hash** of the embedded `client.js` + `qrcode.js` (`WebAssetVersion`), not the assembly version, so even a hotfix that keeps the same version invalidates browser caches
+3. Injects `<script defer src="../NoPayNoPlay/Web/client.js?v=HASH">` before `</body>` — `index.html` is served from `<base>/web/`, so `../` resolves to the application root whether Jellyfin sits at `/` or under a base URL. `HASH` is a 12-hex **content hash** of the embedded `client.js` + `qrcode.js` (`WebAssetVersion`), not the assembly version, so even a hotfix that keeps the same version invalidates browser caches
 4. Strips previously injected scripts (cache-busting on update)
 5. Retries with back-off (3/8/20/45/90/180 s, then every 15 min for two hours) if the FT assembly isn't loaded yet — Jellyfin loads plugins in an arbitrary order and an admin may install File Transformation after this plugin. The `registered` flag is only kept when FT actually acknowledges the `index.html` pattern, so a failed registration cannot pin the plugin into "already registered" and block every later retry.
 
